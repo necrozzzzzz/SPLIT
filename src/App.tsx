@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 type DeadlockStatus = {
   deadlockRunning: boolean;
@@ -8,6 +9,15 @@ type DeadlockStatus = {
   consoleLogExists: boolean;
   cfgDirExists: boolean;
   source: "legacy-config" | "steam-default" | "not-found";
+};
+
+type PositionSnapshot = {
+  x: number;
+  y: number;
+  z: number;
+  pitch: number;
+  yaw: number;
+  roll: number;
 };
 
 const EMPTY_STATUS: DeadlockStatus = {
@@ -25,6 +35,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 
 function App() {
   const [status, setStatus] = useState<DeadlockStatus>(EMPTY_STATUS);
+  const [lastPosition, setLastPosition] = useState<PositionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +56,26 @@ function App() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<PositionSnapshot>("deadlock://position", (event) => {
+      setLastPosition(event.payload);
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   return (
     <main className="shell">
@@ -95,12 +126,26 @@ function App() {
           </div>
           <code>{status.consoleLogPath ?? "No Deadlock path available"}</code>
         </article>
+
+        <article className="status-card wide">
+          <div className="status-heading">
+            <StatusDot ok={Boolean(lastPosition)} />
+            <span>Last parsed position</span>
+          </div>
+          {lastPosition ? (
+            <code>
+              XYZ {lastPosition.x} {lastPosition.y} {lastPosition.z} · ANG {lastPosition.pitch} {lastPosition.yaw} {lastPosition.roll}
+            </code>
+          ) : (
+            <strong>Waiting for a new getpos response…</strong>
+          )}
+        </article>
       </section>
 
       {error && <div className="error-box">Backend error: {error}</div>}
 
       <footer>
-        No background polling. This screen only refreshes on launch or when you press Refresh.
+        No background polling. File changes are handled by the native Rust watcher and emitted to the UI only when needed.
       </footer>
     </main>
   );
