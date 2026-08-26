@@ -1,7 +1,10 @@
+mod parser;
 mod paths;
 mod process;
+mod watcher;
 
 use serde::Serialize;
+use tauri::AppHandle;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,4 +39,11 @@ pub fn get_status() -> DeadlockStatus {
             source: "not-found",
         },
     }
+}
+
+pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {
+    let paths = paths::detect_deadlock_paths()
+        .ok_or_else(|| "Deadlock folder could not be detected".to_string())?;
+
+    watcher::start(app, paths.console_log)
 }
