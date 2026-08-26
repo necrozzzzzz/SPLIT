@@ -1,9 +1,15 @@
+# SPLIT v2
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store
+
+# SPLIT v1 / legacy Python
 __pycache__/
 build/
-dist/
-
 *.pyc
-*.log
 
 deadlock_savestate_slots.json
 deadlock_savestate_config.json
