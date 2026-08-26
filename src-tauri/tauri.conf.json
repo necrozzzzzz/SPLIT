@@ -30,6 +30,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": ["../assets/split.ico"]
   }
 }
