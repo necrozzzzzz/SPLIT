@@ -44,6 +44,29 @@ type PositionSnapshot = {
   roll: number;
 };
 
+type SaveFailedPayload = {
+  slot: number;
+  reason: string;
+};
+
+type HistoryState = {
+  canUndo: boolean;
+  canRedo: boolean;
+};
+
+type HistoryOperationResult = {
+  preset: number;
+  slots: Array<PositionSnapshot | null>;
+  historyState: HistoryState;
+  favoriteActive: boolean;
+};
+
+type ActiveBankResult = {
+  preset: number;
+  slots: Array<PositionSnapshot | null>;
+  favoriteActive: boolean;
+};
+
 const EMPTY_STATUS: DeadlockStatus = {
   deadlockRunning: false,
   deadlockPath: null,
@@ -123,6 +146,19 @@ function App() {
   ] = useState(
     1,
   );
+
+  const [
+    historyState,
+    setHistoryState,
+  ] = useState<HistoryState>({
+    canUndo: false,
+    canRedo: false,
+  });
+
+  const [
+    favoriteMode,
+    setFavoriteMode,
+  ] = useState(false);
 
   const [
     savingSlot,
@@ -305,6 +341,8 @@ function App() {
         const [
           saved,
           preset,
+          history,
+          favoriteActive,
         ] =
           await Promise.all([
             invoke<
@@ -316,6 +354,14 @@ function App() {
             invoke<number>(
               "get_active_preset",
             ),
+
+            invoke<HistoryState>(
+              "get_history_state",
+            ),
+
+            invoke<boolean>(
+              "get_favorite_mode",
+            ),
           ]);
 
 
@@ -326,6 +372,14 @@ function App() {
 
           setActivePreset(
             preset,
+          );
+
+          setHistoryState(
+            history,
+          );
+
+          setFavoriteMode(
+            favoriteActive,
           );
         }
       } catch (reason) {
@@ -341,6 +395,82 @@ function App() {
 
     return () => {
       disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<SaveFailedPayload>(
+      "deadlock-save-failed",
+      (event) => {
+        if (!disposed) {
+          setSavingSlot(null);
+          setError(event.payload.reason);
+        }
+      },
+    ).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<boolean>(
+      "deadlock-favorite-mode",
+      (event) => {
+        if (!disposed) {
+          setFavoriteMode(event.payload);
+        }
+      },
+    ).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<HistoryState>(
+      "deadlock-history-state",
+      (event) => {
+        if (!disposed) {
+          setHistoryState(event.payload);
+        }
+      },
+    ).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 
@@ -482,7 +612,8 @@ function App() {
       preset: number,
     ) => {
       if (
-        preset === activePreset
+        preset === activePreset &&
+        !favoriteMode
       ) {
         return;
       }
@@ -512,6 +643,8 @@ function App() {
         setSlots(
           saved,
         );
+
+        setFavoriteMode(false);
       } catch (reason) {
         setError(
           String(reason),
@@ -520,8 +653,49 @@ function App() {
     },
     [
       activePreset,
+      favoriteMode,
     ],
   );
+
+  const runHistoryAction =
+    useCallback(
+      async (
+        command: "undo_last_action" | "redo_last_action",
+      ) => {
+        setError(null);
+
+        try {
+          const result =
+            await invoke<HistoryOperationResult>(
+              command,
+            );
+          setActivePreset(result.preset);
+          setSlots(result.slots);
+          setHistoryState(result.historyState);
+          setFavoriteMode(result.favoriteActive);
+        } catch (reason) {
+          setError(String(reason));
+        }
+      },
+      [],
+    );
+
+  const toggleFavorites =
+    useCallback(async () => {
+      setError(null);
+
+      try {
+        const result =
+          await invoke<ActiveBankResult>(
+            "toggle_favorite_mode",
+          );
+        setActivePreset(result.preset);
+        setSlots(result.slots);
+        setFavoriteMode(result.favoriteActive);
+      } catch (reason) {
+        setError(String(reason));
+      }
+    }, []);
 
   const confirmPath =
     useCallback(
@@ -851,6 +1025,7 @@ function App() {
               type="button"
               className={`preset-button ${
                 activePreset === preset
+                  && !favoriteMode
                   ? "active"
                   : ""
               }`}
@@ -870,6 +1045,58 @@ function App() {
         )}
       </div>
 
+      <button
+        className={`favorite-mode-button ${
+          favoriteMode ? "active" : ""
+        }`}
+        type="button"
+        disabled={
+          savingSlot !== null ||
+          loadingSlot !== null
+        }
+        onClick={() =>
+          void toggleFavorites()
+        }
+      >
+        Favorites · F11
+      </button>
+
+      <div className="history-actions">
+        <button
+          className="preset-button"
+          type="button"
+          disabled={
+            !historyState.canUndo ||
+            savingSlot !== null ||
+            loadingSlot !== null
+          }
+          onClick={() =>
+            void runHistoryAction(
+              "undo_last_action",
+            )
+          }
+        >
+          Undo&nbsp;&nbsp;F9
+        </button>
+
+        <button
+          className="preset-button"
+          type="button"
+          disabled={
+            !historyState.canRedo ||
+            savingSlot !== null ||
+            loadingSlot !== null
+          }
+          onClick={() =>
+            void runHistoryAction(
+              "redo_last_action",
+            )
+          }
+        >
+          Redo&nbsp;&nbsp;F10
+        </button>
+      </div>
+
       <div className="slots-grid">
         {slots.map(
           (
@@ -886,7 +1113,10 @@ function App() {
               >
                 <div className="slot-top">
                   <span className="slot-number">
-                    SLOT {slot}
+                    {favoriteMode
+                      ? "FAVORITE"
+                      : "SLOT"}{" "}
+                    {slot}
                   </span>
 
                   <span
@@ -1082,9 +1312,8 @@ function App() {
       )}
 
       <footer>
-        No background polling.
-        File changes are handled
-        by the native Rust watcher.
+        Native file notifications with a lightweight
+        100 ms safety check.
       </footer>
     </main>
   );

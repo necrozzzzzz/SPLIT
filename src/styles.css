@@ -522,3 +522,37 @@ footer {
   cursor: default;
   opacity: 0.45;
 }
+
+.history-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.history-actions .preset-button {
+  min-width: 110px;
+}
+
+.favorite-mode-button {
+  width: 100%;
+  margin: 0 0 14px;
+  border: 1px solid #293341;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #8390a0;
+  background: #171d25;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.favorite-mode-button.active {
+  border-color: #7f96ff;
+  color: #ffffff;
+  background: #252e39;
+}
+
+.favorite-mode-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}

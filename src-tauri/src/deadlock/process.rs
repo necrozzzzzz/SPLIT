@@ -7,10 +7,7 @@ const DEADLOCK_PROCESS_NAME: &str = "deadlock.exe";
 fn system_processes() -> System {
     let mut system = System::new();
 
-    system.refresh_processes(
-        ProcessesToUpdate::All,
-        true,
-    );
+    system.refresh_processes(ProcessesToUpdate::All, true);
 
     system
 }
@@ -25,10 +22,7 @@ fn is_deadlock_process(process: &sysinfo::Process) -> bool {
 pub fn is_deadlock_running() -> bool {
     let system = system_processes();
 
-    system
-        .processes()
-        .values()
-        .any(is_deadlock_process)
+    system.processes().values().any(is_deadlock_process)
 }
 
 pub fn running_deadlock_root() -> Option<PathBuf> {

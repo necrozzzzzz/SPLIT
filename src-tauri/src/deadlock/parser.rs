@@ -36,9 +36,7 @@ fn parse_triplet_after(line: &str, markers: &[&str]) -> Option<[f64; 3]> {
         let tail = &line[index + marker.len()..];
         let segment = tail.split(';').next().unwrap_or(tail);
 
-        let mut values = segment
-            .split_whitespace()
-            .filter_map(parse_number);
+        let mut values = segment.split_whitespace().filter_map(parse_number);
 
         let a = values.next()?;
         let b = values.next()?;
@@ -112,10 +110,8 @@ mod tests {
 
     #[test]
     fn parses_exact_commands_on_same_line() {
-        let parsed = parse_position(
-            "setpos_exact -123.5 456.25 78;setang_exact 12.5 -90 0",
-        )
-        .expect("position should parse");
+        let parsed = parse_position("setpos_exact -123.5 456.25 78;setang_exact 12.5 -90 0")
+            .expect("position should parse");
 
         assert_eq!(
             parsed,
@@ -132,10 +128,8 @@ mod tests {
 
     #[test]
     fn parses_legacy_commands_with_prefix_text() {
-        let parsed = parse_position(
-            "[Console] setpos 1 2 3; setang 4 5 6",
-        )
-        .expect("legacy position should parse");
+        let parsed = parse_position("[Console] setpos 1 2 3; setang 4 5 6")
+            .expect("legacy position should parse");
 
         assert_eq!(
             parsed.to_deadlock_command(),
@@ -147,11 +141,7 @@ mod tests {
     fn assembles_position_from_two_lines() {
         let mut assembler = PositionAssembler::default();
 
-        assert!(
-            assembler
-                .push_line("setpos_exact 10 20 30")
-                .is_none()
-        );
+        assert!(assembler.push_line("setpos_exact 10 20 30").is_none());
 
         let parsed = assembler
             .push_line("setang_exact 1 2 3")
@@ -172,9 +162,6 @@ mod tests {
 
     #[test]
     fn ignores_unrelated_console_lines() {
-        assert!(
-            parse_position("bind scancode11 savestate_getpos")
-                .is_none()
-        );
+        assert!(parse_position("bind scancode11 savestate_getpos").is_none());
     }
 }
