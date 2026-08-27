@@ -107,6 +107,25 @@ pub fn cancel_pending_save() {
     }
 }
 
+pub fn has_pending_save() -> bool {
+    let Ok(pending) =
+        PENDING_SAVE.lock()
+    else {
+        return false;
+    };
+
+    pending
+        .as_ref()
+        .is_some_and(
+            |request| {
+                request
+                    .requested_at
+                    .elapsed()
+                    < Duration::from_secs(2)
+            },
+        )
+}
+
 fn take_pending_save_slot(
 ) -> Option<u8> {
     let mut pending =

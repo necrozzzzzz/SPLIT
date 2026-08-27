@@ -380,6 +380,36 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+
+    let unlisten:
+      | (() => void)
+      | undefined;
+
+    void listen<number>(
+      "deadlock-preset",
+      (event) => {
+        if (!disposed) {
+          setActivePreset(
+            event.payload,
+          );
+        }
+      },
+    ).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const saveCurrentToSlot =
   useCallback(
     async (

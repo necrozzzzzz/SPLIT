@@ -2,6 +2,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{
+            AtomicBool,
             AtomicU16,
             Ordering,
         },
@@ -76,6 +77,12 @@ use std::{
     },   
 };
 
+use tauri::{
+    AppHandle,
+    Emitter,
+    EventTarget,
+};
+
 use super::watcher;
 
 
@@ -91,6 +98,7 @@ use super::watcher;
 enum HotkeyAction {
     Save(u8),
     Load(u8),
+    CyclePreset,
 }
 
 
@@ -109,6 +117,14 @@ static HOTKEY_SENDER:
 static ACTIVE_HOTKEY_KEYS:
     AtomicU16 =
     AtomicU16::new(0);
+
+    /*
+ * Empêche le repeat de V si
+ * la touche reste appuyée.
+ */
+static ACTIVE_PRESET_KEY:
+    AtomicBool =
+    AtomicBool::new(false);
 
 
 fn slot_from_vk(
@@ -641,40 +657,134 @@ fn keyboard_hook(
     }
 
     let keyboard =
-        &*(lparam
-            as *const KBDLLHOOKSTRUCT);
+    &*(lparam
+        as *const KBDLLHOOKSTRUCT);
 
 
-    let Some(slot) =
-        slot_from_vk(
-            keyboard.vkCode,
-        )
-    else {
+let key_down =
+    wparam as u32
+        == WM_KEYDOWN
+    || wparam as u32
+        == WM_SYSKEYDOWN;
+
+
+let key_up =
+    wparam as u32
+        == WM_KEYUP
+    || wparam as u32
+        == WM_SYSKEYUP;
+
+
+/*
+ * V = preset suivant.
+ *
+ * On le traite séparément des
+ * touches F1-F8.
+ */
+if keyboard.vkCode
+    == b'V' as u32
+{
+    /*
+     * Si SPLIT avait intercepté
+     * le keydown, il intercepte
+     * aussi le keyup.
+     */
+    if key_up {
+        let was_active =
+            ACTIVE_PRESET_KEY
+                .swap(
+                    false,
+                    Ordering::SeqCst,
+                );
+
+        if was_active {
+            return 1;
+        }
+
         return CallNextHookEx(
             std::ptr::null_mut(),
             code,
             wparam,
             lparam,
         );
-    };
+    }
 
 
-    let key_down =
-        wparam as u32
-            == WM_KEYDOWN
-        || wparam as u32
-            == WM_SYSKEYDOWN;
+    if !key_down {
+        return CallNextHookEx(
+            std::ptr::null_mut(),
+            code,
+            wparam,
+            lparam,
+        );
+    }
 
 
-    let key_up =
-        wparam as u32
-            == WM_KEYUP
-        || wparam as u32
-            == WM_SYSKEYUP;
+    /*
+     * Dans Brave, VS Code, etc.,
+     * V reste une touche normale.
+     */
+    if !is_deadlock_foreground() {
+        return CallNextHookEx(
+            std::ptr::null_mut(),
+            code,
+            wparam,
+            lparam,
+        );
+    }
 
 
-    let bit =
-        1u16 << (slot - 1);
+    let was_active =
+        ACTIVE_PRESET_KEY
+            .swap(
+                true,
+                Ordering::SeqCst,
+            );
+
+
+    /*
+     * Ignorer l'auto-repeat.
+     */
+    if !was_active {
+        if let Some(sender) =
+            HOTKEY_SENDER.get()
+        {
+            let _ =
+                sender.send(
+                    HotkeyAction::CyclePreset,
+                );
+        }
+    }
+
+
+    /*
+     * Deadlock ne reçoit pas
+     * directement le V physique.
+     */
+    return 1;
+}
+
+
+/*
+ * À partir d'ici :
+ * uniquement F1-F8.
+ */
+let Some(slot) =
+    slot_from_vk(
+        keyboard.vkCode,
+    )
+else {
+    return CallNextHookEx(
+        std::ptr::null_mut(),
+        code,
+        wparam,
+        lparam,
+    );
+};
+
+
+let bit =
+    1u16 << (slot - 1);
 
 
     /*
@@ -781,7 +891,9 @@ fn keyboard_hook(
 }
 
 
-pub fn start() -> Result<(), String> {
+pub fn start(
+    app: AppHandle,
+) -> Result<(), String> {
     let (tx, rx) =
         mpsc::channel::<
             HotkeyAction
@@ -915,6 +1027,65 @@ pub fn start() -> Result<(), String> {
                             eprintln!(
                                 "[SPLIT] Could not load slot {slot}: {error}"
                             );
+                        }
+                    }
+
+                    HotkeyAction::CyclePreset => {
+                        println!(
+                            "[SPLIT] Preset hotkey: V"
+                        );
+
+                        match super::cycle_active_preset() {
+                            Ok((
+                                preset,
+                                saved_slots,
+                            )) => {
+                                println!(
+                                    "[SPLIT] Preset switched to {preset}"
+                                );
+
+                                /*
+                                * Mettre à jour les 8 cartes
+                                * dans React.
+                                */
+                                if let Err(error) =
+                                    app.emit_to(
+                                        EventTarget::webview_window(
+                                            "main",
+                                        ),
+                                        "deadlock-slots",
+                                        saved_slots,
+                                    )
+                                {
+                                    eprintln!(
+                                        "[SPLIT] Could not update slots UI after preset switch: {error}"
+                                    );
+                                }
+
+                                /*
+                                * Mettre à jour le bouton
+                                * Preset actif dans React.
+                                */
+                                if let Err(error) =
+                                    app.emit_to(
+                                        EventTarget::webview_window(
+                                            "main",
+                                        ),
+                                        "deadlock-preset",
+                                        preset,
+                                    )
+                                {
+                                    eprintln!(
+                                        "[SPLIT] Could not update preset UI: {error}"
+                                    );
+                                }
+                            }
+
+                            Err(error) => {
+                                eprintln!(
+                                    "[SPLIT] Could not cycle preset: {error}"
+                                );
+                            }
                         }
                     }
                 }

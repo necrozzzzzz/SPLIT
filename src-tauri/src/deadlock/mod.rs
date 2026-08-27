@@ -88,6 +88,55 @@ pub fn set_active_preset(
     )
 }
 
+pub fn cycle_active_preset(
+) -> Result<
+    (
+        u8,
+        Vec<Option<PositionSnapshot>>,
+    ),
+    String,
+> {
+    /*
+     * Ne jamais changer de preset
+     * pendant qu'une capture Save
+     * attend son getpos_exact.
+     */
+    if watcher::has_pending_save() {
+        return Err(
+            "Cannot switch preset while a save capture is pending"
+                .to_string(),
+        );
+    }
+
+    let current =
+        slots::get_active_preset()?;
+
+    let next =
+        if current >= 4 {
+            1
+        } else {
+            current + 1
+        };
+
+    /*
+     * Réutilise set_active_preset(),
+     * donc :
+     *
+     * - slots.json est mis à jour
+     * - savestate.cfg est régénéré
+     * - autoexec est vérifié
+     */
+    let saved =
+        set_active_preset(
+            next,
+        )?;
+
+    Ok((
+        next,
+        saved,
+    ))
+}
+
 pub(crate) fn persist_slot_position(
     slot: u8,
     position: PositionSnapshot,
@@ -291,8 +340,11 @@ pub fn capture_slot(
 }
 
 pub fn start_hotkeys(
+    app: AppHandle,
 ) -> Result<(), String> {
-    hotkeys::start()
+    hotkeys::start(
+        app,
+    )
 }
 
 pub fn start_console_watcher(

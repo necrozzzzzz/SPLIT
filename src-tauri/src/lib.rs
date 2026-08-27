@@ -118,12 +118,14 @@ pub fn run() {
             }
 
                         if let Err(error) =
-                deadlock::start_hotkeys()
-            {
-                eprintln!(
-                    "SPLIT hotkeys unavailable: {error}"
-                );
-            }
+                            deadlock::start_hotkeys(
+                                app.handle().clone(),
+                            )
+                        {
+                            eprintln!(
+                                "SPLIT hotkeys unavailable: {error}"
+                            );
+                        }
 
             Ok(())
         })
