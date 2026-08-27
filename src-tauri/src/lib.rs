@@ -44,6 +44,12 @@ fn save_slot(
 }
 
 #[tauri::command]
+fn sync_slots_to_deadlock(
+) -> Result<(), String> {
+    deadlock::sync_slots_to_deadlock()
+}
+
+#[tauri::command]
 fn confirm_deadlock_path(
     app: tauri::AppHandle,
     path: String,
@@ -85,6 +91,7 @@ pub fn run() {
                 get_last_position,
                 get_slots,
                 save_slot,
+                sync_slots_to_deadlock,
             ],
         )
         .run(

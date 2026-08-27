@@ -1,3 +1,4 @@
+mod cfg;
 mod parser;
 mod paths;
 mod process;
@@ -49,10 +50,57 @@ pub fn save_slot(
                     .to_string()
             })?;
 
-    slots::save_slot(
-        slot,
-        position,
-    )
+    let saved =
+        slots::save_slot(
+            slot,
+            position,
+        )?;
+
+    /*
+     * Après chaque sauvegarde,
+     * synchroniser Deadlock avec les slots.
+     */
+    let deadlock =
+        paths::configured_deadlock_paths()
+            .ok_or_else(|| {
+                "Deadlock directory is not configured"
+                    .to_string()
+            })?;
+
+    cfg::write_savestate_cfg(
+        &deadlock.cfg_file,
+        &saved,
+    )?;
+
+    cfg::ensure_autoexec(
+        &deadlock.autoexec,
+    )?;
+
+    Ok(saved)
+}
+
+pub fn sync_slots_to_deadlock(
+) -> Result<(), String> {
+    let saved =
+        slots::load_slots()?;
+
+    let deadlock =
+        paths::configured_deadlock_paths()
+            .ok_or_else(|| {
+                "Deadlock directory is not configured"
+                    .to_string()
+            })?;
+
+    cfg::write_savestate_cfg(
+        &deadlock.cfg_file,
+        &saved,
+    )?;
+
+    cfg::ensure_autoexec(
+        &deadlock.autoexec,
+    )?;
+
+    Ok(())
 }
 
 fn status_from_paths(
