@@ -7,7 +7,7 @@ use crate::storage::atomic_write;
 
 const SLOT_COUNT: usize = 8;
 const PRESET_COUNT: usize = 4;
-const SLOT_FILE_VERSION: u32 = 4;
+const SLOT_FILE_VERSION: u32 = 3;
 static STORAGE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -321,7 +321,6 @@ mod tests {
             pitch: value,
             yaw: value,
             roll: value,
-            camera: None,
         }
     }
 

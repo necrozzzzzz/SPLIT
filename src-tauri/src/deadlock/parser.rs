@@ -1,36 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use super::mouse_tracker::MouseSnapshot;
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PositionSnapshot {
     pub x: f64,
     pub y: f64,
     pub z: f64,
-
-    /*
-     * Ces angles viennent encore de
-     * getpos_exact.
-     *
-     * Deadlock ne restaure actuellement
-     * pas correctement setang_exact,
-     * mais on les conserve pour
-     * compatibilité / diagnostic.
-     */
     pub pitch: f64,
     pub yaw: f64,
     pub roll: f64,
-
-    /*
-     * Vraie information utilisée pour
-     * restaurer la caméra SPLIT.
-     *
-     * None = ancien savestate créé avant
-     * l'ajout du Camera Lock.
-     */
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub camera: Option<MouseSnapshot>,
 }
 
 impl PositionSnapshot {
@@ -89,7 +67,6 @@ pub fn parse_position(line: &str) -> Option<PositionSnapshot> {
         pitch: angles[0],
         yaw: angles[1],
         roll: angles[2],
-        camera: None,
     })
 }
 
@@ -123,7 +100,6 @@ impl PositionAssembler {
             pitch: angles[0],
             yaw: angles[1],
             roll: angles[2],
-            camera: None,
         })
     }
 }
@@ -146,7 +122,6 @@ mod tests {
                 pitch: 12.5,
                 yaw: -90.0,
                 roll: 0.0,
-                camera: None,
             }
         );
     }
@@ -181,7 +156,6 @@ mod tests {
                 pitch: 1.0,
                 yaw: 2.0,
                 roll: 3.0,
-                camera: None,
             }
         );
     }

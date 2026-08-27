@@ -10,7 +10,7 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize};
 
 use windows_sys::Win32::{
-    Foundation::{GetLastError, HWND, LPARAM, POINT, RECT, WPARAM},
+    Foundation::{HWND, LPARAM, POINT, RECT, WPARAM},
     Graphics::Gdi::{
         BeginPaint, ClientToScreen, CreateFontW, CreateRoundRectRgn, CreateSolidBrush,
         DeleteObject, DrawTextW, EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode,
@@ -402,23 +402,12 @@ fn create_overlay_window() -> Result<HWND, String> {
 }
 
 fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
-    println!("[SPLIT] Notification request: {}", text,);
-
     let Some(deadlock) = crate::deadlock::foreground_deadlock_window() else {
-        println!("[SPLIT] Notification skipped: Deadlock is not the foreground window");
-
         return;
     };
 
-    println!("[SPLIT] Notification target HWND: {:?}", deadlock,);
-
     let mut client = RECT::default();
-
     if unsafe { GetClientRect(deadlock, &mut client) } == 0 {
-        let error = unsafe { GetLastError() };
-
-        eprintln!("[SPLIT] Notification skipped: GetClientRect failed ({error})");
-
         return;
     }
 
@@ -426,25 +415,14 @@ fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
         x: client.left,
         y: client.top,
     };
-
     let mut bottom_right = POINT {
         x: client.right,
         y: client.bottom,
     };
-
-    if unsafe { ClientToScreen(deadlock, &mut top_left) } == 0 {
-        let error = unsafe { GetLastError() };
-
-        eprintln!("[SPLIT] Notification skipped: ClientToScreen(top-left) failed ({error})");
-
-        return;
-    }
-
-    if unsafe { ClientToScreen(deadlock, &mut bottom_right) } == 0 {
-        let error = unsafe { GetLastError() };
-
-        eprintln!("[SPLIT] Notification skipped: ClientToScreen(bottom-right) failed ({error})");
-
+    if unsafe {
+        ClientToScreen(deadlock, &mut top_left) == 0
+            || ClientToScreen(deadlock, &mut bottom_right) == 0
+    } {
         return;
     }
 
@@ -454,27 +432,17 @@ fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
         right: bottom_right.x,
         bottom: bottom_right.y,
     };
-
     let (x, y) = overlay_position(client, settings.position);
-
-    println!(
-        "[SPLIT] Overlay target position: x={x}, y={y}, client={}x{}",
-        client.right - client.left,
-        client.bottom - client.top,
-    );
 
     if let Ok(mut display_text) = DISPLAY_TEXT.lock() {
         *display_text = text.clone();
     } else {
-        eprintln!("[SPLIT] Notification skipped: DISPLAY_TEXT lock poisoned");
-
         return;
     }
 
     unsafe {
         KillTimer(hwnd, HIDE_TIMER_ID);
-
-        if SetWindowPos(
+        SetWindowPos(
             hwnd,
             HWND_TOPMOST,
             x,
@@ -482,38 +450,15 @@ fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
             OVERLAY_WIDTH,
             OVERLAY_HEIGHT,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
-        ) == 0
-        {
-            let error = GetLastError();
-
-            eprintln!("[SPLIT] SetWindowPos failed ({error})");
-
-            return;
-        }
-
-        /*
-         * ShowWindow retourne l'ancien état
-         * de visibilité, pas un code succès.
-         * On ne traite donc pas 0 comme erreur.
-         */
+        );
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-
         InvalidateRect(hwnd, null(), 1);
-
         UpdateWindow(hwnd);
-
-        let timer = SetTimer(hwnd, HIDE_TIMER_ID, settings.duration_ms, None);
-
-        if timer == 0 {
-            let error = GetLastError();
-
-            eprintln!("[SPLIT] Notification timer creation failed ({error})");
-        }
+        SetTimer(hwnd, HIDE_TIMER_ID, settings.duration_ms, None);
     }
 
     let log_text = text.strip_prefix("SPLIT · ").unwrap_or(&text);
-
-    println!("[SPLIT] Notification displayed: {log_text}");
+    println!("[SPLIT] Notification: {log_text}");
 }
 
 unsafe extern "system" fn window_proc(

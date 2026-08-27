@@ -1,7 +1,6 @@
 mod cfg;
 mod history;
 mod hotkeys;
-mod mouse_tracker;
 mod parser;
 mod paths;
 mod process;
@@ -238,10 +237,8 @@ pub(crate) fn persist_slot_position(
 }
 
 pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
-    let mut position = watcher::get_last_position()
+    let position = watcher::get_last_position()
         .ok_or_else(|| "No position captured yet. Run getpos_exact first.".to_string())?;
-
-    position.camera = Some(mouse_tracker::snapshot());
 
     persist_slot_position(slot, position).map(|result| result.slots)
 }
@@ -380,18 +377,17 @@ pub fn toggle_favorite_mode() -> Result<ActiveBankResult, String> {
     })
 }
 
-pub(crate) fn active_slot_snapshot(slot: u8) -> Result<(bool, Option<PositionSnapshot>), String> {
+pub(crate) fn active_slot_state(slot: u8) -> Result<(bool, bool), String> {
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid load slot {slot}"));
     }
 
     let bank = current_slot_bank()?;
-
     let slots = slots::load_bank(bank)?;
-
-    let position = slots[usize::from(slot - 1)].clone();
-
-    Ok((favorite_mode_for_bank(bank), position))
+    Ok((
+        favorite_mode_for_bank(bank),
+        slots[usize::from(slot - 1)].is_some(),
+    ))
 }
 
 pub(crate) fn emit_active_bank(app: &AppHandle, result: &ActiveBankResult) {
@@ -506,10 +502,6 @@ pub fn start_hotkeys(app: AppHandle) -> Result<(), String> {
     hotkeys::start(app)
 }
 
-pub fn start_mouse_tracker() -> Result<(), String> {
-    mouse_tracker::start()
-}
-
 pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {
     /*
      * Premier lancement :
@@ -523,14 +515,9 @@ pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn shutdown_background_services() {
-    if let Err(error) = mouse_tracker::stop() {
-        eprintln!("[SPLIT] Could not stop mouse tracker cleanly: {error}");
-    }
-
     if let Err(error) = hotkeys::stop() {
         eprintln!("[SPLIT] Could not stop hotkeys cleanly: {error}");
     }
-
     if let Err(error) = watcher::stop() {
         eprintln!("[SPLIT] Could not stop console watcher cleanly: {error}");
     }

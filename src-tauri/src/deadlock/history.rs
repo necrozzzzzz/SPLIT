@@ -134,7 +134,6 @@ mod tests {
             pitch: value,
             yaw: value,
             roll: value,
-            camera: None,
         })
     }
 

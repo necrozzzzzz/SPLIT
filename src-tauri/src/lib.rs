@@ -131,10 +131,6 @@ pub fn run() {
                 eprintln!("SPLIT hotkeys unavailable: {error}");
             }
 
-            if let Err(error) = deadlock::start_mouse_tracker() {
-                eprintln!("SPLIT mouse tracker unavailable: {error}");
-            }
-
             Ok(())
         })
         .on_window_event(|window, event| {

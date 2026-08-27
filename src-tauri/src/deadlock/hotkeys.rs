@@ -20,8 +20,8 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
-                VK_F7, VK_F8, VK_F9, VK_MENU,
+                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
+                VK_F8, VK_F9, VK_MENU,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -50,13 +50,6 @@ enum HotkeyAction {
     Undo,
     Redo,
     ToggleFavorites,
-
-    /*
-     * Temporaire :
-     * test restauration caméra.
-     */
-    CameraTest,
-
     Shutdown,
 }
 
@@ -74,7 +67,6 @@ static ACTIVE_HOTKEY_KEYS: AtomicU16 = AtomicU16::new(0);
  * la touche reste appuyée.
  */
 static ACTIVE_PRESET_KEY: AtomicBool = AtomicBool::new(false);
-static ACTIVE_CAMERA_TEST_KEY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_HISTORY_KEYS: AtomicU8 = AtomicU8::new(0);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
@@ -386,78 +378,18 @@ fn send_load_key(slot: u8) -> Result<(), String> {
 }
 
 fn load_active_slot(slot: u8) -> Result<bool, String> {
-    let (favorite, position) = super::active_slot_snapshot(slot)?;
+    let (favorite, filled) = super::active_slot_state(slot)?;
 
-    let Some(position) = position else {
+    if !filled {
         crate::notifications::show(crate::notifications::Notification::SlotEmpty {
             slot,
             favorite,
         });
-
         return Ok(false);
-    };
-
-    /*
-     * On mémorise la caméra cible AVANT
-     * d'envoyer la commande Deadlock.
-     */
-    let camera = position.camera;
-
-    /*
-     * Téléportation XYZ normale.
-     */
-    send_load_key(slot)?;
-
-    /*
-     * Laisser Deadlock exécuter :
-     *
-     * exec savestate
-     * -> load_slot_N
-     * -> setpos_exact
-     *
-     * avant de corriger la caméra.
-     */
-    thread::sleep(Duration::from_millis(75));
-
-    if let Some(camera) = camera {
-        let current_camera = super::mouse_tracker::snapshot();
-
-        /*
-         * Les compteurs Raw Input sont
-         * relatifs à une session SPLIT.
-         *
-         * Un snapshot venant d'une session
-         * précédente ne doit jamais être
-         * rejoué.
-         */
-        if camera.session_id == current_camera.session_id {
-            println!(
-                "[SPLIT] Restoring camera for slot {slot}: session={} target=({}, {}) current=({}, {})",
-                camera.session_id,
-                camera.x,
-                camera.y,
-                current_camera.x,
-                current_camera.y,
-            );
-
-            if let Err(error) = super::mouse_tracker::restore_to_snapshot(camera) {
-                eprintln!("[SPLIT] Camera restore failed for slot {slot}: {error}");
-            }
-        } else {
-            println!(
-                "[SPLIT] Camera restore skipped for slot {slot}: snapshot belongs to another SPLIT session"
-            );
-        }
-    } else {
-        /*
-         * Ancien slot créé avant
-         * Camera Lock.
-         */
-        println!("[SPLIT] Camera restore skipped for slot {slot}: no camera snapshot");
     }
 
+    send_load_key(slot)?;
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
-
     Ok(true)
 }
 
@@ -594,49 +526,6 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
         /*
          * Deadlock ne reçoit pas
          * directement le V physique.
-         */
-        return 1;
-    }
-
-    /*
-     * F12 = diagnostic caméra.
-     *
-     * Premier appui :
-     * mémorise le compteur Raw Input.
-     *
-     * Deuxième appui :
-     * rejoue le delta et doit revenir
-     * exactement sur la même visée.
-     */
-    if keyboard.vkCode as u16 == VK_F12 {
-        if key_up {
-            let was_active = ACTIVE_CAMERA_TEST_KEY.swap(false, Ordering::SeqCst);
-
-            if was_active {
-                return 1;
-            }
-
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        if !key_down {
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        if !is_deadlock_foreground() {
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        let was_active = ACTIVE_CAMERA_TEST_KEY.swap(true, Ordering::SeqCst);
-
-        if !was_active {
-            if let Some(sender) = HOTKEY_SENDER.get() {
-                let _ = sender.send(HotkeyAction::CameraTest);
-            }
-        }
-
-        /*
-         * Deadlock ne reçoit pas F12.
          */
         return 1;
     }
@@ -896,15 +785,6 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                             }
                         }
                     }
-
-                    HotkeyAction::CameraTest => {
-                        println!("[SPLIT] Camera diagnostic hotkey: F12");
-
-                        if let Err(error) = super::mouse_tracker::toggle_test_anchor() {
-                            eprintln!("[SPLIT] Camera diagnostic failed: {error}");
-                        }
-                    }
-
                     HotkeyAction::Shutdown => break,
                 }
             }
