@@ -1,6 +1,7 @@
 mod cfg;
 mod history;
 mod hotkeys;
+mod mouse_tracker;
 mod parser;
 mod paths;
 mod process;
@@ -502,6 +503,10 @@ pub fn start_hotkeys(app: AppHandle) -> Result<(), String> {
     hotkeys::start(app)
 }
 
+pub fn start_mouse_tracker() -> Result<(), String> {
+    mouse_tracker::start()
+}
+
 pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {
     /*
      * Premier lancement :
@@ -515,9 +520,14 @@ pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn shutdown_background_services() {
+    if let Err(error) = mouse_tracker::stop() {
+        eprintln!("[SPLIT] Could not stop mouse tracker cleanly: {error}");
+    }
+
     if let Err(error) = hotkeys::stop() {
         eprintln!("[SPLIT] Could not stop hotkeys cleanly: {error}");
     }
+
     if let Err(error) = watcher::stop() {
         eprintln!("[SPLIT] Could not stop console watcher cleanly: {error}");
     }

@@ -20,8 +20,8 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
-                VK_F8, VK_F9, VK_MENU,
+                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
+                VK_F7, VK_F8, VK_F9, VK_MENU,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -50,6 +50,13 @@ enum HotkeyAction {
     Undo,
     Redo,
     ToggleFavorites,
+
+    /*
+     * Temporaire :
+     * test restauration caméra.
+     */
+    CameraTest,
+
     Shutdown,
 }
 
@@ -67,6 +74,7 @@ static ACTIVE_HOTKEY_KEYS: AtomicU16 = AtomicU16::new(0);
  * la touche reste appuyée.
  */
 static ACTIVE_PRESET_KEY: AtomicBool = AtomicBool::new(false);
+static ACTIVE_CAMERA_TEST_KEY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_HISTORY_KEYS: AtomicU8 = AtomicU8::new(0);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
@@ -526,6 +534,49 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
         /*
          * Deadlock ne reçoit pas
          * directement le V physique.
+         */
+        return 1;
+    }
+
+    /*
+     * F12 = diagnostic caméra.
+     *
+     * Premier appui :
+     * mémorise le compteur Raw Input.
+     *
+     * Deuxième appui :
+     * rejoue le delta et doit revenir
+     * exactement sur la même visée.
+     */
+    if keyboard.vkCode as u16 == VK_F12 {
+        if key_up {
+            let was_active = ACTIVE_CAMERA_TEST_KEY.swap(false, Ordering::SeqCst);
+
+            if was_active {
+                return 1;
+            }
+
+            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+        }
+
+        if !key_down {
+            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+        }
+
+        if !is_deadlock_foreground() {
+            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+        }
+
+        let was_active = ACTIVE_CAMERA_TEST_KEY.swap(true, Ordering::SeqCst);
+
+        if !was_active {
+            if let Some(sender) = HOTKEY_SENDER.get() {
+                let _ = sender.send(HotkeyAction::CameraTest);
+            }
+        }
+
+        /*
+         * Deadlock ne reçoit pas F12.
          */
         return 1;
     }
