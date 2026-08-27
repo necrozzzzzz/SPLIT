@@ -80,6 +80,14 @@ pub fn run() {
                 );
             }
 
+                        if let Err(error) =
+                deadlock::start_hotkeys()
+            {
+                eprintln!(
+                    "SPLIT hotkeys unavailable: {error}"
+                );
+            }
+
             Ok(())
         })
         .invoke_handler(

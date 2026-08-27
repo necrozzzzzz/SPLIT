@@ -464,3 +464,12 @@ footer {
     flex-direction: column;
   }
 }
+
+.slot-shortcuts {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  color: #6f7c8b;
+  font-size: 10px;
+}

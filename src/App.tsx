@@ -312,6 +312,38 @@ function App() {
     };
   }, []);
 
+    useEffect(() => {
+    let disposed = false;
+
+    let unlisten:
+      | (() => void)
+      | undefined;
+
+    void listen<
+      Array<PositionSnapshot | null>
+    >(
+      "deadlock-slots",
+      (event) => {
+        if (!disposed) {
+          setSlots(
+            event.payload,
+          );
+        }
+      },
+    ).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const saveCurrentToSlot =
     useCallback(
       async (
@@ -658,9 +690,7 @@ function App() {
         </div>
 
         <span className="savestates-hint">
-          {lastPosition
-            ? "Position ready to save"
-            : "Run getpos_exact first"}
+          Save Alt+F1–F8 · Load F1–F8
         </span>
       </div>
 
@@ -696,30 +726,40 @@ function App() {
                   </span>
                 </div>
 
-                {position ? (
-                  <div className="slot-position">
-                    <code>
-                      XYZ{" "}
-                      {position.x.toFixed(2)}{" "}
-                      {position.y.toFixed(2)}{" "}
-                      {position.z.toFixed(2)}
-                    </code>
+                            {position ? (
+              <div className="slot-position">
+                <code>
+                  XYZ{" "}
+                  {position.x.toFixed(2)}{" "}
+                  {position.y.toFixed(2)}{" "}
+                  {position.z.toFixed(2)}
+                </code>
 
-                    <code>
-                      ANG{" "}
-                      {position.pitch.toFixed(2)}{" "}
-                      {position.yaw.toFixed(2)}{" "}
-                      {position.roll.toFixed(2)}
-                    </code>
-                  </div>
-                ) : (
-                  <p className="slot-empty">
-                    No position saved
-                  </p>
-                )}
+                <code>
+                  ANG{" "}
+                  {position.pitch.toFixed(2)}{" "}
+                  {position.yaw.toFixed(2)}{" "}
+                  {position.roll.toFixed(2)}
+                </code>
+              </div>
+            ) : (
+              <p className="slot-empty">
+                No position saved
+              </p>
+            )}
 
-                <button
-                  className="slot-save-button"
+            <div className="slot-shortcuts">
+              <span>
+                Load F{slot}
+              </span>
+
+              <span>
+                Save Alt+F{slot}
+              </span>
+            </div>
+
+            <button
+              className="slot-save-button"
                   type="button"
                   disabled={
                     !lastPosition ||

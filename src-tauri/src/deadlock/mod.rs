@@ -3,6 +3,7 @@ mod parser;
 mod paths;
 mod process;
 mod slots;
+mod hotkeys;
 mod watcher;
 pub use parser::PositionSnapshot;
 
@@ -40,26 +41,19 @@ pub fn get_slots(
     slots::load_slots()
 }
 
-pub fn save_slot(
+pub(crate) fn persist_slot_position(
     slot: u8,
-) -> Result<Vec<Option<PositionSnapshot>>, String> {
-    let position =
-        watcher::get_last_position()
-            .ok_or_else(|| {
-                "No position captured yet. Run getpos_exact first."
-                    .to_string()
-            })?;
-
+    position: PositionSnapshot,
+) -> Result<
+    Vec<Option<PositionSnapshot>>,
+    String,
+> {
     let saved =
         slots::save_slot(
             slot,
             position,
         )?;
 
-    /*
-     * Après chaque sauvegarde,
-     * synchroniser Deadlock avec les slots.
-     */
     let deadlock =
         paths::configured_deadlock_paths()
             .ok_or_else(|| {
@@ -77,6 +71,25 @@ pub fn save_slot(
     )?;
 
     Ok(saved)
+}
+
+pub fn save_slot(
+    slot: u8,
+) -> Result<
+    Vec<Option<PositionSnapshot>>,
+    String,
+> {
+    let position =
+        watcher::get_last_position()
+            .ok_or_else(|| {
+                "No position captured yet. Run getpos_exact first."
+                    .to_string()
+            })?;
+
+    persist_slot_position(
+        slot,
+        position,
+    )
 }
 
 pub fn sync_slots_to_deadlock(
@@ -212,6 +225,11 @@ pub fn get_status() -> DeadlockStatus {
             source: "not-found",
         },
     }
+}
+
+pub fn start_hotkeys(
+) -> Result<(), String> {
+    hotkeys::start()
 }
 
 pub fn start_console_watcher(

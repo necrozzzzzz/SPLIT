@@ -5,7 +5,7 @@ use std::{
 
 use super::parser::PositionSnapshot;
 
-const LOAD_KEYS: [&str; 8] = [
+const LOAD_TRANSPORT_KEYS: [&str; 8] = [
     "u",
     "i",
     "o",
@@ -14,6 +14,17 @@ const LOAD_KEYS: [&str; 8] = [
     "l",
     "n",
     "m",
+];
+
+const LOAD_HOTKEYS: [&str; 8] = [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
 ];
 
 pub fn write_savestate_cfg(
@@ -53,7 +64,11 @@ pub fn write_savestate_cfg(
 
     for index in 0..8 {
         let slot_number = index + 1;
-        let load_key = LOAD_KEYS[index];
+        let transport_key =
+            LOAD_TRANSPORT_KEYS[index];
+
+        let load_hotkey =
+            LOAD_HOTKEYS[index];
 
         match slots.get(index).and_then(|slot| slot.as_ref()) {
             Some(position) => {
@@ -88,7 +103,13 @@ pub fn write_savestate_cfg(
 
         output.push_str(
             &format!(
-                "bind \"{load_key}\" \"exec savestate; load_slot_{slot_number}\"\n\n",
+                "bind \"{transport_key}\" \"exec savestate; load_slot_{slot_number}\"\n",
+            ),
+        );
+
+        output.push_str(
+            &format!(
+                "bind \"{load_hotkey}\" \"exec savestate; load_slot_{slot_number}\"\n\n",
             ),
         );
     }

@@ -21,3 +21,10 @@ sysinfo = "0.39.6"
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-dialog = "2.7.2"
 thiserror = "2"
+
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

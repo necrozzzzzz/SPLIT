@@ -7,7 +7,10 @@ use std::{
         Mutex,
     },
     thread,
-    time::Duration,
+    time::{
+        Duration,
+        Instant,
+    },
 };
 
 use notify::{
@@ -36,6 +39,101 @@ pub fn get_last_position() -> Option<PositionSnapshot> {
         .lock()
         .ok()?
         .clone()
+}
+
+struct PendingSave {
+    slot: u8,
+    requested_at: Instant,
+}
+
+static PENDING_SAVE:
+    Mutex<Option<PendingSave>> =
+    Mutex::new(None);
+
+pub fn request_save_slot(
+    slot: u8,
+) -> Result<(), String> {
+    if !(1..=8).contains(&slot) {
+        return Err(
+            format!(
+                "Invalid slot {slot}"
+            ),
+        );
+    }
+
+    let mut pending =
+        PENDING_SAVE
+            .lock()
+            .map_err(|_| {
+                "Pending save lock poisoned"
+                    .to_string()
+            })?;
+
+    /*
+     * Empêche deux captures de s'écraser.
+     */
+    if let Some(existing) =
+        pending.as_ref()
+    {
+        if existing
+            .requested_at
+            .elapsed()
+            < Duration::from_secs(2)
+        {
+            return Err(
+                format!(
+                    "Slot {} capture is already pending",
+                    existing.slot,
+                ),
+            );
+        }
+    }
+
+    *pending =
+        Some(PendingSave {
+            slot,
+            requested_at:
+                Instant::now(),
+        });
+
+    Ok(())
+}
+
+pub fn cancel_pending_save() {
+    if let Ok(mut pending) =
+        PENDING_SAVE.lock()
+    {
+        *pending = None;
+    }
+}
+
+fn take_pending_save_slot(
+) -> Option<u8> {
+    let mut pending =
+        PENDING_SAVE.lock().ok()?;
+
+    let request =
+        pending.take()?;
+
+    /*
+     * Si getpos n'arrive pas en 2 sec,
+     * on refuse qu'un futur getpos manuel
+     * sauvegarde accidentellement le slot.
+     */
+    if request
+        .requested_at
+        .elapsed()
+        > Duration::from_secs(2)
+    {
+        println!(
+            "[SPLIT] Pending save {} expired",
+            request.slot,
+        );
+
+        return None;
+    }
+
+    Some(request.slot)
 }
 
 fn set_last_position(
@@ -199,6 +297,46 @@ fn process_lines(
         set_last_position(
             position.clone(),
         );
+
+                /*
+         * Si cette position vient d'un
+         * Alt+F1..F8, sauvegarder directement
+         * dans le slot demandé.
+         */
+        if let Some(slot) =
+            take_pending_save_slot()
+        {
+            match super::persist_slot_position(
+                slot,
+                position.clone(),
+            ) {
+                Ok(saved_slots) => {
+                    println!(
+                        "[SPLIT] Hotkey save completed: slot {slot}"
+                    );
+
+                    if let Err(error) =
+                        app.emit_to(
+                            EventTarget::webview_window(
+                                "main",
+                            ),
+                            "deadlock-slots",
+                            saved_slots,
+                        )
+                    {
+                        eprintln!(
+                            "[SPLIT] Could not update slots UI: {error}"
+                        );
+                    }
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "[SPLIT] Hotkey save failed for slot {slot}: {error}"
+                    );
+                }
+            }
+        }
 
         match app.emit_to(
             EventTarget::webview_window(
