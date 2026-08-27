@@ -104,6 +104,26 @@ function App() {
     );
 
   const [
+    slots,
+    setSlots,
+  ] = useState<
+    Array<PositionSnapshot | null>
+  >(
+    () =>
+      Array.from(
+        { length: 8 },
+        () => null,
+      ),
+  );
+
+  const [
+    savingSlot,
+    setSavingSlot,
+  ] = useState<number | null>(
+    null,
+  );
+
+  const [
     loading,
     setLoading,
   ] = useState(false);
@@ -144,7 +164,47 @@ function App() {
         setLoading(false);
       }
     }, []);
+    
+  useEffect(() => {
+    let disposed = false;
 
+    async function initializeSetup() {
+      setSetupLoading(true);
+      setError(null);
+
+      try {
+        const next =
+          await invoke<DeadlockSetupState>(
+            "get_deadlock_setup",
+          );
+
+        if (disposed) {
+          return;
+        }
+
+        setSetup(next);
+
+        if (!next.needsSetup) {
+          await refresh();
+        }
+      } catch (reason) {
+        if (!disposed) {
+          setError(String(reason));
+        }
+      } finally {
+        if (!disposed) {
+          setSetupLoading(false);
+        }
+      }
+    }
+
+    void initializeSetup();
+
+    return () => {
+      disposed = true;
+    };
+  }, [refresh]);
+    
   useEffect(() => {
   let disposed = false;
 
@@ -180,6 +240,69 @@ function App() {
       cleanup();
       return;
     }
+
+
+    useEffect(() => {
+      let disposed = false;
+
+      async function loadSlots() {
+        try {
+          const saved =
+            await invoke<
+              Array<PositionSnapshot | null>
+            >(
+              "get_slots",
+            );
+
+          if (!disposed) {
+            setSlots(saved);
+          }
+        } catch (reason) {
+          if (!disposed) {
+            setError(
+              String(reason),
+            );
+          }
+        }
+      }
+
+      void loadSlots();
+
+      return () => {
+        disposed = true;
+      };
+    }, []);
+
+    const saveCurrentToSlot =
+      useCallback(
+        async (
+          slot: number,
+        ) => {
+          setSavingSlot(slot);
+          setError(null);
+
+          try {
+            const saved =
+              await invoke<
+                Array<PositionSnapshot | null>
+              >(
+                "save_slot",
+                {
+                  slot,
+                },
+              );
+
+            setSlots(saved);
+          } catch (reason) {
+            setError(
+              String(reason),
+            );
+          } finally {
+            setSavingSlot(null);
+          }
+        },
+        [],
+      );
 
     unlisten = cleanup;
 
@@ -220,38 +343,6 @@ function App() {
   };
 }, []);
 
-  useEffect(() => {
-    let disposed = false;
-
-    let unlisten:
-      | (() => void)
-      | undefined;
-
-    void listen<PositionSnapshot>(
-      "deadlock-position",
-      (event) => {
-        console.log(
-          "[SPLIT UI] Position received:",
-          event.payload,
-        );
-
-        setLastPosition(
-          event.payload,
-        );
-      },
-    ).then((cleanup) => {
-      if (disposed) {
-        cleanup();
-      } else {
-        unlisten = cleanup;
-      }
-    });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
 
   const confirmPath =
     useCallback(
@@ -553,6 +644,106 @@ function App() {
           {status.source}
         </span>
       </section>
+
+
+    <section className="savestates-section">
+      <div className="savestates-header">
+        <div>
+          <p className="label">
+            SAVESTATES
+          </p>
+
+          <h2>
+            Position slots
+          </h2>
+        </div>
+
+        <span className="savestates-hint">
+          {lastPosition
+            ? "Position ready to save"
+            : "Run getpos_exact first"}
+        </span>
+      </div>
+
+      <div className="slots-grid">
+        {slots.map(
+          (
+            position,
+            index,
+          ) => {
+            const slot =
+              index + 1;
+
+            return (
+              <article
+                className="slot-card"
+                key={slot}
+              >
+                <div className="slot-top">
+                  <span className="slot-number">
+                    SLOT {slot}
+                  </span>
+
+                  <span
+                    className={`slot-state ${
+                      position
+                        ? "filled"
+                        : ""
+                    }`}
+                  >
+                    {position
+                      ? "Saved"
+                      : "Empty"}
+                  </span>
+                </div>
+
+                {position ? (
+                  <div className="slot-position">
+                    <code>
+                      XYZ{" "}
+                      {position.x.toFixed(2)}{" "}
+                      {position.y.toFixed(2)}{" "}
+                      {position.z.toFixed(2)}
+                    </code>
+
+                    <code>
+                      ANG{" "}
+                      {position.pitch.toFixed(2)}{" "}
+                      {position.yaw.toFixed(2)}{" "}
+                      {position.roll.toFixed(2)}
+                    </code>
+                  </div>
+                ) : (
+                  <p className="slot-empty">
+                    No position saved
+                  </p>
+                )}
+
+                <button
+                  className="slot-save-button"
+                  type="button"
+                  disabled={
+                    !lastPosition ||
+                    savingSlot === slot
+                  }
+                  onClick={() =>
+                    void saveCurrentToSlot(
+                      slot,
+                    )
+                  }
+                >
+                  {savingSlot === slot
+                    ? "Saving…"
+                    : position
+                      ? "Overwrite"
+                      : "Save"}
+                </button>
+              </article>
+            );
+          },
+        )}
+      </div>
+    </section>
 
       <section
         className="status-grid"

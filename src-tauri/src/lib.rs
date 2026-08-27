@@ -23,6 +23,27 @@ fn get_last_position(
 }
 
 #[tauri::command]
+fn get_slots(
+) -> Result<
+    Vec<Option<deadlock::PositionSnapshot>>,
+    String,
+> {
+    deadlock::get_slots()
+}
+
+#[tauri::command]
+fn save_slot(
+    slot: u8,
+) -> Result<
+    Vec<Option<deadlock::PositionSnapshot>>,
+    String,
+> {
+    deadlock::save_slot(
+        slot,
+    )
+}
+
+#[tauri::command]
 fn confirm_deadlock_path(
     app: tauri::AppHandle,
     path: String,
@@ -62,6 +83,8 @@ pub fn run() {
                 scan_deadlock_path,
                 confirm_deadlock_path,
                 get_last_position,
+                get_slots,
+                save_slot,
             ],
         )
         .run(

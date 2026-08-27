@@ -1,6 +1,7 @@
 mod parser;
 mod paths;
 mod process;
+mod slots;
 mod watcher;
 pub use parser::PositionSnapshot;
 
@@ -31,6 +32,27 @@ pub struct DeadlockSetupState {
 pub fn get_last_position(
 ) -> Option<PositionSnapshot> {
     watcher::get_last_position()
+}
+
+pub fn get_slots(
+) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    slots::load_slots()
+}
+
+pub fn save_slot(
+    slot: u8,
+) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    let position =
+        watcher::get_last_position()
+            .ok_or_else(|| {
+                "No position captured yet. Run getpos_exact first."
+                    .to_string()
+            })?;
+
+    slots::save_slot(
+        slot,
+        position,
+    )
 }
 
 fn status_from_paths(

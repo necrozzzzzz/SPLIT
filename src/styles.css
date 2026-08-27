@@ -341,3 +341,126 @@ footer {
     width: 100%;
   }
 }
+
+.savestates-section {
+  margin: 28px 0;
+}
+
+.savestates-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.savestates-header h2 {
+  margin: 5px 0 0;
+  font-size: 22px;
+}
+
+.savestates-hint {
+  color: #818d9b;
+  font-size: 12px;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.slot-card {
+  min-width: 0;
+  border: 1px solid #202936;
+  border-radius: 14px;
+  padding: 16px;
+  background:
+    rgba(16, 22, 30, 0.9);
+}
+
+.slot-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.slot-number {
+  color: #dce4ee;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.slot-state {
+  color: #737f8d;
+  font-size: 11px;
+}
+
+.slot-state.filled {
+  color: #65d995;
+}
+
+.slot-position {
+  display: grid;
+  gap: 5px;
+  min-height: 49px;
+}
+
+.slot-position code {
+  overflow: hidden;
+  color: #9ba8b8;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-empty {
+  min-height: 49px;
+  margin: 0;
+  color: #606c79;
+  font-size: 12px;
+}
+
+.slot-save-button {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 14px;
+  border: 1px solid #303b49;
+  border-radius: 9px;
+  color: #dfe6ef;
+  background: #151c25;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slot-save-button:hover:not(:disabled) {
+  background: #1c2632;
+}
+
+.slot-save-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+@media (max-width: 850px) {
+  .slots-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .slots-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .savestates-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
