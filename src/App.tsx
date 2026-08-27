@@ -241,69 +241,6 @@ function App() {
       return;
     }
 
-
-    useEffect(() => {
-      let disposed = false;
-
-      async function loadSlots() {
-        try {
-          const saved =
-            await invoke<
-              Array<PositionSnapshot | null>
-            >(
-              "get_slots",
-            );
-
-          if (!disposed) {
-            setSlots(saved);
-          }
-        } catch (reason) {
-          if (!disposed) {
-            setError(
-              String(reason),
-            );
-          }
-        }
-      }
-
-      void loadSlots();
-
-      return () => {
-        disposed = true;
-      };
-    }, []);
-
-    const saveCurrentToSlot =
-      useCallback(
-        async (
-          slot: number,
-        ) => {
-          setSavingSlot(slot);
-          setError(null);
-
-          try {
-            const saved =
-              await invoke<
-                Array<PositionSnapshot | null>
-              >(
-                "save_slot",
-                {
-                  slot,
-                },
-              );
-
-            setSlots(saved);
-          } catch (reason) {
-            setError(
-              String(reason),
-            );
-          } finally {
-            setSavingSlot(null);
-          }
-        },
-        [],
-      );
-
     unlisten = cleanup;
 
     /*
@@ -343,6 +280,68 @@ function App() {
   };
 }, []);
 
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadSlots() {
+      try {
+        const saved =
+          await invoke<
+            Array<PositionSnapshot | null>
+          >(
+            "get_slots",
+          );
+
+        if (!disposed) {
+          setSlots(saved);
+        }
+      } catch (reason) {
+        if (!disposed) {
+          setError(
+            String(reason),
+          );
+        }
+      }
+    }
+
+    void loadSlots();
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const saveCurrentToSlot =
+    useCallback(
+      async (
+        slot: number,
+      ) => {
+        setSavingSlot(slot);
+        setError(null);
+
+        try {
+          const saved =
+            await invoke<
+              Array<PositionSnapshot | null>
+            >(
+              "save_slot",
+              {
+                slot,
+              },
+            );
+
+          setSlots(saved);
+        } catch (reason) {
+          setError(
+            String(reason),
+          );
+        } finally {
+          setSavingSlot(null);
+        }
+      },
+      [],
+    );
 
   const confirmPath =
     useCallback(
