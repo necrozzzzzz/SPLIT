@@ -238,8 +238,10 @@ pub(crate) fn persist_slot_position(
 }
 
 pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
-    let position = watcher::get_last_position()
+    let mut position = watcher::get_last_position()
         .ok_or_else(|| "No position captured yet. Run getpos_exact first.".to_string())?;
+
+    position.camera = Some(mouse_tracker::snapshot());
 
     persist_slot_position(slot, position).map(|result| result.slots)
 }
@@ -378,17 +380,18 @@ pub fn toggle_favorite_mode() -> Result<ActiveBankResult, String> {
     })
 }
 
-pub(crate) fn active_slot_state(slot: u8) -> Result<(bool, bool), String> {
+pub(crate) fn active_slot_snapshot(slot: u8) -> Result<(bool, Option<PositionSnapshot>), String> {
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid load slot {slot}"));
     }
 
     let bank = current_slot_bank()?;
+
     let slots = slots::load_bank(bank)?;
-    Ok((
-        favorite_mode_for_bank(bank),
-        slots[usize::from(slot - 1)].is_some(),
-    ))
+
+    let position = slots[usize::from(slot - 1)].clone();
+
+    Ok((favorite_mode_for_bank(bank), position))
 }
 
 pub(crate) fn emit_active_bank(app: &AppHandle, result: &ActiveBankResult) {

@@ -1,12 +1,14 @@
 use std::{
     mem::size_of,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Mutex,
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+use serde::{Deserialize, Serialize};
 
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
@@ -66,8 +68,17 @@ static WINDOW_CLASS_NAME: [u16; 14] = [
     0,
 ];
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MouseSnapshot {
+    /*
+     * Important :
+     * les compteurs Raw Input n'ont de sens
+     * que dans la session SPLIT qui les
+     * a enregistrés.
+     */
+    pub session_id: u64,
+
     pub x: i64,
     pub y: i64,
 }
@@ -113,6 +124,28 @@ static STATE: Mutex<MouseState> = Mutex::new(MouseState::new());
 
 static THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
+static SESSION_ID: AtomicU64 = AtomicU64::new(0);
+
+fn current_session_id() -> u64 {
+    let existing = SESSION_ID.load(Ordering::SeqCst);
+
+    if existing != 0 {
+        return existing;
+    }
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+
+    let generated = (timestamp ^ ((std::process::id() as u64) << 32)).max(1);
+
+    match SESSION_ID.compare_exchange(0, generated, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(_) => generated,
+        Err(existing) => existing,
+    }
+}
+
 /*
  * Pendant que SPLIT restaure la caméra,
  * on ne veut pas que les mouvements
@@ -131,11 +164,17 @@ static TEST_ANCHOR: Mutex<Option<MouseSnapshot>> = Mutex::new(None);
 static RUNTIME: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
 pub fn snapshot() -> MouseSnapshot {
+    let session_id = current_session_id();
+
     let Ok(state) = STATE.lock() else {
-        return MouseSnapshot::default();
+        return MouseSnapshot {
+            session_id,
+            ..MouseSnapshot::default()
+        };
     };
 
     MouseSnapshot {
+        session_id,
         x: state.total_x,
         y: state.total_y,
     }
@@ -158,8 +197,8 @@ fn set_snapshot(snapshot: MouseSnapshot) {
     }
 }
 
-fn send_mouse_step(dx: i32, dy: i32) -> Result<(), String> {
-    let input = INPUT {
+fn make_mouse_input(dx: i32, dy: i32) -> INPUT {
+    INPUT {
         r#type: INPUT_MOUSE,
 
         Anonymous: INPUT_0 {
@@ -169,6 +208,11 @@ fn send_mouse_step(dx: i32, dy: i32) -> Result<(), String> {
 
                 mouseData: 0,
 
+                /*
+                 * NOCOALESCE évite que Windows
+                 * fusionne nos petits mouvements
+                 * en un seul énorme mouvement.
+                 */
                 dwFlags: MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE,
 
                 time: 0,
@@ -176,19 +220,38 @@ fn send_mouse_step(dx: i32, dy: i32) -> Result<(), String> {
                 dwExtraInfo: 0,
             },
         },
+    }
+}
+
+fn send_mouse_batch(inputs: &[INPUT]) -> Result<(), String> {
+    if inputs.is_empty() {
+        return Ok(());
+    }
+
+    let sent = unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            size_of::<INPUT>() as i32,
+        )
     };
 
-    let sent = unsafe { SendInput(1, &input, size_of::<INPUT>() as i32) };
-
-    if sent != 1 {
-        return Err(format!("SendInput mouse correction failed ({sent}/1)"));
+    if sent != inputs.len() as u32 {
+        return Err(format!(
+            "SendInput mouse correction failed ({sent}/{})",
+            inputs.len(),
+        ));
     }
 
     Ok(())
 }
 
-fn restore_to_snapshot(target: MouseSnapshot) -> Result<(), String> {
+pub(super) fn restore_to_snapshot(target: MouseSnapshot) -> Result<(), String> {
     let current = snapshot();
+
+    if target.session_id != current.session_id {
+        return Err("Camera snapshot belongs to another SPLIT session".to_string());
+    }
 
     let mut remaining_x = target.x - current.x;
 
@@ -216,28 +279,47 @@ fn restore_to_snapshot(target: MouseSnapshot) -> Result<(), String> {
     INJECTING.store(true, Ordering::SeqCst);
 
     let result = (|| -> Result<(), String> {
+        let mut inputs = Vec::<INPUT>::new();
+
+        /*
+         * Même principe que le test Python
+         * qui fonctionnait :
+         *
+         * PAS un énorme mouvement unique.
+         *
+         * On construit plein de petits
+         * mouvements de maximum 25 counts.
+         *
+         * Différence :
+         * ils seront envoyés tous ensemble
+         * à Windows, donc aucune animation
+         * lente visible.
+         */
         while remaining_x != 0 || remaining_y != 0 {
             let step_x = remaining_x.clamp(-25, 25) as i32;
 
             let step_y = remaining_y.clamp(-25, 25) as i32;
 
-            send_mouse_step(step_x, step_y)?;
+            inputs.push(make_mouse_input(step_x, step_y));
 
             remaining_x -= i64::from(step_x);
 
             remaining_y -= i64::from(step_y);
-
-            thread::sleep(Duration::from_millis(10));
         }
 
-        Ok(())
+        println!(
+            "[SPLIT] Camera restore batch: {} mouse events",
+            inputs.len(),
+        );
+
+        send_mouse_batch(&inputs)
     })();
 
     /*
      * Laisse quelques millisecondes aux
      * derniers WM_INPUT éventuels.
      */
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(5));
 
     INJECTING.store(false, Ordering::SeqCst);
 

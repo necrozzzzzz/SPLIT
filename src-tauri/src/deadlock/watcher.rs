@@ -17,7 +17,10 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::AppHandle;
 
-use super::parser::{PositionAssembler, PositionSnapshot};
+use super::{
+    mouse_tracker::MouseSnapshot,
+    parser::{PositionAssembler, PositionSnapshot},
+};
 
 static LAST_POSITION: Mutex<Option<PositionSnapshot>> = Mutex::new(None);
 
@@ -29,6 +32,13 @@ struct PendingSave {
     slot: u8,
     generation: u64,
     requested_at: Instant,
+
+    /*
+     * La caméra est capturée immédiatement
+     * au Alt+F1..F8, pas lorsque console.log
+     * répond quelques millisecondes après.
+     */
+    camera: MouseSnapshot,
 }
 
 static PENDING_SAVE: Mutex<Option<PendingSave>> = Mutex::new(None);
@@ -90,6 +100,8 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         return Err(format!("Invalid slot {slot}"));
     }
 
+    let camera = super::mouse_tracker::snapshot();
+
     let mut pending = PENDING_SAVE
         .lock()
         .map_err(|_| "Pending save lock poisoned".to_string())?;
@@ -108,6 +120,7 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         slot,
         generation,
         requested_at: Instant::now(),
+        camera,
     });
     drop(pending);
 
@@ -152,7 +165,9 @@ pub fn has_pending_save() -> bool {
 
 enum PendingSaveResult {
     None,
-    Ready(u8),
+
+    Ready { slot: u8, camera: MouseSnapshot },
+
     Expired(u8),
 }
 
@@ -176,7 +191,10 @@ fn take_pending_save_slot() -> PendingSaveResult {
         return PendingSaveResult::Expired(request.slot);
     }
 
-    PendingSaveResult::Ready(request.slot)
+    PendingSaveResult::Ready {
+        slot: request.slot,
+        camera: request.camera,
+    }
 }
 
 fn set_last_position(position: PositionSnapshot) {
@@ -295,8 +313,17 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
          * dans le slot demandé.
          */
         match take_pending_save_slot() {
-            PendingSaveResult::Ready(slot) => {
-                match super::persist_slot_position(slot, position.clone()) {
+            PendingSaveResult::Ready { slot, camera } => {
+                let mut saved_position = position.clone();
+
+                saved_position.camera = Some(camera);
+
+                println!(
+                    "[SPLIT] Camera captured for slot {slot}: session={} X={} Y={}",
+                    camera.session_id, camera.x, camera.y,
+                );
+
+                match super::persist_slot_position(slot, saved_position) {
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
 
@@ -464,6 +491,7 @@ mod tests {
             slot: 2,
             generation: 12,
             requested_at: Instant::now() - SAVE_TIMEOUT,
+            camera: MouseSnapshot::default(),
         });
 
         assert_eq!(take_expired_generation(&mut pending, 11), None);

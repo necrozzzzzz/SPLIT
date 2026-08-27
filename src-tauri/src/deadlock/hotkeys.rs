@@ -386,18 +386,78 @@ fn send_load_key(slot: u8) -> Result<(), String> {
 }
 
 fn load_active_slot(slot: u8) -> Result<bool, String> {
-    let (favorite, filled) = super::active_slot_state(slot)?;
+    let (favorite, position) = super::active_slot_snapshot(slot)?;
 
-    if !filled {
+    let Some(position) = position else {
         crate::notifications::show(crate::notifications::Notification::SlotEmpty {
             slot,
             favorite,
         });
+
         return Ok(false);
+    };
+
+    /*
+     * On mémorise la caméra cible AVANT
+     * d'envoyer la commande Deadlock.
+     */
+    let camera = position.camera;
+
+    /*
+     * Téléportation XYZ normale.
+     */
+    send_load_key(slot)?;
+
+    /*
+     * Laisser Deadlock exécuter :
+     *
+     * exec savestate
+     * -> load_slot_N
+     * -> setpos_exact
+     *
+     * avant de corriger la caméra.
+     */
+    thread::sleep(Duration::from_millis(75));
+
+    if let Some(camera) = camera {
+        let current_camera = super::mouse_tracker::snapshot();
+
+        /*
+         * Les compteurs Raw Input sont
+         * relatifs à une session SPLIT.
+         *
+         * Un snapshot venant d'une session
+         * précédente ne doit jamais être
+         * rejoué.
+         */
+        if camera.session_id == current_camera.session_id {
+            println!(
+                "[SPLIT] Restoring camera for slot {slot}: session={} target=({}, {}) current=({}, {})",
+                camera.session_id,
+                camera.x,
+                camera.y,
+                current_camera.x,
+                current_camera.y,
+            );
+
+            if let Err(error) = super::mouse_tracker::restore_to_snapshot(camera) {
+                eprintln!("[SPLIT] Camera restore failed for slot {slot}: {error}");
+            }
+        } else {
+            println!(
+                "[SPLIT] Camera restore skipped for slot {slot}: snapshot belongs to another SPLIT session"
+            );
+        }
+    } else {
+        /*
+         * Ancien slot créé avant
+         * Camera Lock.
+         */
+        println!("[SPLIT] Camera restore skipped for slot {slot}: no camera snapshot");
     }
 
-    send_load_key(slot)?;
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
+
     Ok(true)
 }
 
@@ -836,6 +896,15 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                             }
                         }
                     }
+
+                    HotkeyAction::CameraTest => {
+                        println!("[SPLIT] Camera diagnostic hotkey: F12");
+
+                        if let Err(error) = super::mouse_tracker::toggle_test_anchor() {
+                            eprintln!("[SPLIT] Camera diagnostic failed: {error}");
+                        }
+                    }
+
                     HotkeyAction::Shutdown => break,
                 }
             }
