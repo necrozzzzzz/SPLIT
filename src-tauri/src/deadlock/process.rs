@@ -1,15 +1,77 @@
+use std::path::PathBuf;
+
 use sysinfo::{ProcessesToUpdate, System};
 
 const DEADLOCK_PROCESS_NAME: &str = "deadlock.exe";
 
-pub fn is_deadlock_running() -> bool {
+fn system_processes() -> System {
     let mut system = System::new();
-    system.refresh_processes(ProcessesToUpdate::All, true);
 
-    system.processes().values().any(|process| {
-        process
-            .name()
-            .to_string_lossy()
-            .eq_ignore_ascii_case(DEADLOCK_PROCESS_NAME)
-    })
+    system.refresh_processes(
+        ProcessesToUpdate::All,
+        true,
+    );
+
+    system
+}
+
+fn is_deadlock_process(process: &sysinfo::Process) -> bool {
+    process
+        .name()
+        .to_string_lossy()
+        .eq_ignore_ascii_case(DEADLOCK_PROCESS_NAME)
+}
+
+pub fn is_deadlock_running() -> bool {
+    let system = system_processes();
+
+    system
+        .processes()
+        .values()
+        .any(is_deadlock_process)
+}
+
+pub fn running_deadlock_root() -> Option<PathBuf> {
+    let system = system_processes();
+
+    for process in system.processes().values() {
+        if !is_deadlock_process(process) {
+            continue;
+        }
+
+        let Some(exe) = process.exe() else {
+            continue;
+        };
+
+        /*
+         * Exemple :
+         *
+         * Deadlock
+         * └── game
+         *     └── bin
+         *         └── win64
+         *             └── deadlock.exe
+         */
+
+        let Some(root) = exe
+            .parent()
+            .and_then(|path| path.parent())
+            .and_then(|path| path.parent())
+            .and_then(|path| path.parent())
+        else {
+            continue;
+        };
+
+        if root
+            .join("game")
+            .join("bin")
+            .join("win64")
+            .join("deadlock.exe")
+            .is_file()
+        {
+            return Some(root.to_path_buf());
+        }
+    }
+
+    None
 }

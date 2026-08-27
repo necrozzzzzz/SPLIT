@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Default capability for the SPLIT main window",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open"
+  ]
 }
