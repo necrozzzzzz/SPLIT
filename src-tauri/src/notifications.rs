@@ -7,6 +7,8 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+use serde::{Deserialize, Deserializer, Serialize};
+
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, POINT, RECT, WPARAM},
     Graphics::Gdi::{
@@ -30,14 +32,140 @@ use windows_sys::Win32::{
 
 const COMMAND_MESSAGE: u32 = WM_APP + 41;
 const HIDE_TIMER_ID: usize = 1;
-const DISPLAY_MS: u32 = 1_500;
 const OVERLAY_WIDTH: i32 = 264;
 const OVERLAY_HEIGHT: i32 = 56;
 const MARGIN: i32 = 24;
 
 enum Command {
-    Show(String),
+    Show {
+        text: String,
+        settings: NotificationSettings,
+    },
     Shutdown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NotificationPosition {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl<'de> Deserialize<'de> for NotificationPosition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "topLeft" => Self::TopLeft,
+            "bottomLeft" => Self::BottomLeft,
+            "bottomRight" => Self::BottomRight,
+            _ => Self::TopRight,
+        })
+    }
+}
+
+impl Default for NotificationPosition {
+    fn default() -> Self {
+        Self::TopRight
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotificationSettings {
+    pub enabled: bool,
+    pub position: NotificationPosition,
+    #[serde(deserialize_with = "deserialize_duration")]
+    pub duration_ms: u32,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            position: NotificationPosition::TopRight,
+            duration_ms: 1_500,
+        }
+    }
+}
+
+impl NotificationSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if valid_duration(self.duration_ms) {
+            Ok(())
+        } else {
+            Err(format!(
+                "Invalid notification duration: {} ms",
+                self.duration_ms
+            ))
+        }
+    }
+}
+
+fn deserialize_duration<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| valid_duration(*value))
+        .unwrap_or(1_500))
+}
+
+const fn valid_duration(duration_ms: u32) -> bool {
+    matches!(duration_ms, 1_000 | 1_500 | 2_000 | 3_000)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Notification {
+    Preset(u8),
+    SlotSaved { slot: u8, favorite: bool },
+    SlotLoaded { slot: u8, favorite: bool },
+    SlotEmpty { slot: u8, favorite: bool },
+    Favorites(bool),
+    Undo,
+    Redo,
+    NothingToUndo,
+    NothingToRedo,
+    SaveFailed,
+}
+
+impl Notification {
+    fn text(self) -> String {
+        match self {
+            Self::Preset(preset) => format!("SPLIT · Preset {preset}"),
+            Self::SlotSaved { slot, favorite } => {
+                format!("SPLIT · {} {slot} saved", slot_kind(favorite))
+            }
+            Self::SlotLoaded { slot, favorite } => {
+                format!("SPLIT · {} {slot} loaded", slot_kind(favorite))
+            }
+            Self::SlotEmpty { slot, favorite } => {
+                format!("SPLIT · {} {slot} empty", slot_kind(favorite))
+            }
+            Self::Favorites(true) => "SPLIT · Favorites enabled".to_string(),
+            Self::Favorites(false) => "SPLIT · Favorites disabled".to_string(),
+            Self::Undo => "SPLIT · Undo".to_string(),
+            Self::Redo => "SPLIT · Redo".to_string(),
+            Self::NothingToUndo => "SPLIT · Nothing to undo".to_string(),
+            Self::NothingToRedo => "SPLIT · Nothing to redo".to_string(),
+            Self::SaveFailed => "SPLIT · Save failed".to_string(),
+        }
+    }
+}
+
+fn slot_kind(favorite: bool) -> &'static str {
+    if favorite {
+        "Favorite"
+    } else {
+        "Slot"
+    }
 }
 
 struct Runtime {
@@ -49,8 +177,14 @@ struct Runtime {
 static RUNTIME: Mutex<Option<Runtime>> = Mutex::new(None);
 static DISPLAY_TEXT: Mutex<String> = Mutex::new(String::new());
 static WINDOW_READY: AtomicBool = AtomicBool::new(false);
+static SETTINGS: Mutex<NotificationSettings> = Mutex::new(NotificationSettings {
+    enabled: true,
+    position: NotificationPosition::TopRight,
+    duration_ms: 1_500,
+});
 
 pub fn start() -> Result<(), String> {
+    apply_settings(crate::deadlock::get_notification_settings());
     let mut runtime = RUNTIME
         .lock()
         .map_err(|_| "Notification runtime lock poisoned".to_string())?;
@@ -87,8 +221,10 @@ pub fn start() -> Result<(), String> {
     Ok(())
 }
 
-pub fn show_preset(preset: u8) {
-    let text = preset_notification_text(preset);
+pub fn show(notification: Notification) {
+    let Some((text, settings)) = prepare_notification(notification) else {
+        return;
+    };
     let Ok(runtime) = RUNTIME.lock() else {
         return;
     };
@@ -96,11 +232,26 @@ pub fn show_preset(preset: u8) {
         return;
     };
 
-    if runtime.sender.send(Command::Show(text)).is_ok() {
+    if runtime
+        .sender
+        .send(Command::Show { text, settings })
+        .is_ok()
+    {
         unsafe {
             PostThreadMessageW(runtime.thread_id, COMMAND_MESSAGE, 0, 0);
         }
     }
+}
+
+pub fn apply_settings(settings: NotificationSettings) {
+    if let Ok(mut current) = SETTINGS.lock() {
+        *current = settings;
+    }
+}
+
+fn prepare_notification(notification: Notification) -> Option<(String, NotificationSettings)> {
+    let settings = SETTINGS.lock().ok()?.clone();
+    settings.enabled.then(|| (notification.text(), settings))
 }
 
 pub fn stop() -> Result<(), String> {
@@ -129,12 +280,21 @@ pub fn stop() -> Result<(), String> {
     Ok(())
 }
 
-fn preset_notification_text(preset: u8) -> String {
-    format!("SPLIT · Preset {preset}")
-}
-
-fn overlay_position(client: RECT) -> (i32, i32) {
-    (client.right - OVERLAY_WIDTH - MARGIN, client.top + MARGIN)
+fn overlay_position(client: RECT, position: NotificationPosition) -> (i32, i32) {
+    match position {
+        NotificationPosition::TopLeft => (client.left + MARGIN, client.top + MARGIN),
+        NotificationPosition::TopRight => {
+            (client.right - OVERLAY_WIDTH - MARGIN, client.top + MARGIN)
+        }
+        NotificationPosition::BottomLeft => (
+            client.left + MARGIN,
+            client.bottom - OVERLAY_HEIGHT - MARGIN,
+        ),
+        NotificationPosition::BottomRight => (
+            client.right - OVERLAY_WIDTH - MARGIN,
+            client.bottom - OVERLAY_HEIGHT - MARGIN,
+        ),
+    }
 }
 
 fn notification_thread(
@@ -167,7 +327,7 @@ fn notification_thread(
             let mut shutdown = false;
             for command in receiver.try_iter() {
                 match command {
-                    Command::Show(text) => latest = Some(text),
+                    Command::Show { text, settings } => latest = Some((text, settings)),
                     Command::Shutdown => shutdown = true,
                 }
             }
@@ -177,8 +337,8 @@ fn notification_thread(
                 continue;
             }
 
-            if let Some(text) = latest {
-                show_notification(hwnd, text);
+            if let Some((text, settings)) = latest {
+                show_notification(hwnd, text, settings);
             }
             continue;
         }
@@ -241,7 +401,7 @@ fn create_overlay_window() -> Result<HWND, String> {
     Ok(hwnd)
 }
 
-fn show_notification(hwnd: HWND, text: String) {
+fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
     let Some(deadlock) = crate::deadlock::foreground_deadlock_window() else {
         return;
     };
@@ -272,7 +432,7 @@ fn show_notification(hwnd: HWND, text: String) {
         right: bottom_right.x,
         bottom: bottom_right.y,
     };
-    let (x, y) = overlay_position(client);
+    let (x, y) = overlay_position(client, settings.position);
 
     if let Ok(mut display_text) = DISPLAY_TEXT.lock() {
         *display_text = text.clone();
@@ -294,7 +454,7 @@ fn show_notification(hwnd: HWND, text: String) {
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(hwnd, null(), 1);
         UpdateWindow(hwnd);
-        SetTimer(hwnd, HIDE_TIMER_ID, DISPLAY_MS, None);
+        SetTimer(hwnd, HIDE_TIMER_ID, settings.duration_ms, None);
     }
 
     let log_text = text.strip_prefix("SPLIT · ").unwrap_or(&text);
@@ -426,8 +586,63 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_preset_notification() {
-        assert_eq!(preset_notification_text(3), "SPLIT · Preset 3");
+    fn formats_notifications() {
+        let cases = [
+            (Notification::Preset(2), "SPLIT · Preset 2"),
+            (
+                Notification::SlotSaved {
+                    slot: 3,
+                    favorite: false,
+                },
+                "SPLIT · Slot 3 saved",
+            ),
+            (
+                Notification::SlotSaved {
+                    slot: 4,
+                    favorite: true,
+                },
+                "SPLIT · Favorite 4 saved",
+            ),
+            (
+                Notification::SlotLoaded {
+                    slot: 2,
+                    favorite: false,
+                },
+                "SPLIT · Slot 2 loaded",
+            ),
+            (
+                Notification::SlotLoaded {
+                    slot: 7,
+                    favorite: true,
+                },
+                "SPLIT · Favorite 7 loaded",
+            ),
+            (
+                Notification::SlotEmpty {
+                    slot: 5,
+                    favorite: false,
+                },
+                "SPLIT · Slot 5 empty",
+            ),
+            (
+                Notification::SlotEmpty {
+                    slot: 6,
+                    favorite: true,
+                },
+                "SPLIT · Favorite 6 empty",
+            ),
+            (Notification::Favorites(true), "SPLIT · Favorites enabled"),
+            (Notification::Favorites(false), "SPLIT · Favorites disabled"),
+            (Notification::Undo, "SPLIT · Undo"),
+            (Notification::Redo, "SPLIT · Redo"),
+            (Notification::NothingToUndo, "SPLIT · Nothing to undo"),
+            (Notification::NothingToRedo, "SPLIT · Nothing to redo"),
+            (Notification::SaveFailed, "SPLIT · Save failed"),
+        ];
+
+        for (notification, expected) in cases {
+            assert_eq!(notification.text(), expected);
+        }
     }
 
     #[test]
@@ -439,6 +654,77 @@ mod tests {
             bottom: 1_560,
         };
 
-        assert_eq!(overlay_position(client), (4_192, 144));
+        assert_eq!(
+            overlay_position(client, NotificationPosition::TopRight),
+            (4_192, 144)
+        );
+        assert_eq!(
+            overlay_position(client, NotificationPosition::TopLeft),
+            (1_944, 144)
+        );
+        assert_eq!(
+            overlay_position(client, NotificationPosition::BottomLeft),
+            (1_944, 1_480)
+        );
+        assert_eq!(
+            overlay_position(client, NotificationPosition::BottomRight),
+            (4_192, 1_480)
+        );
+    }
+
+    #[test]
+    fn notification_settings_defaults_match_the_prototype() {
+        let settings = NotificationSettings::default();
+        assert!(settings.enabled);
+        assert_eq!(settings.position, NotificationPosition::TopRight);
+        assert_eq!(settings.duration_ms, 1_500);
+    }
+
+    #[test]
+    fn all_positions_round_trip_with_stable_names() {
+        let cases = [
+            (NotificationPosition::TopLeft, "\"topLeft\""),
+            (NotificationPosition::TopRight, "\"topRight\""),
+            (NotificationPosition::BottomLeft, "\"bottomLeft\""),
+            (NotificationPosition::BottomRight, "\"bottomRight\""),
+        ];
+
+        for (position, expected) in cases {
+            let json = serde_json::to_string(&position).unwrap();
+            assert_eq!(json, expected);
+            assert_eq!(
+                serde_json::from_str::<NotificationPosition>(&json).unwrap(),
+                position
+            );
+        }
+    }
+
+    #[test]
+    fn duration_validation_accepts_only_supported_values() {
+        for duration_ms in [1_000, 1_500, 2_000, 3_000] {
+            let settings = NotificationSettings {
+                duration_ms,
+                ..NotificationSettings::default()
+            };
+            assert!(settings.validate().is_ok());
+        }
+
+        for duration_ms in [0, 999, 3_001, u32::MAX] {
+            let settings = NotificationSettings {
+                duration_ms,
+                ..NotificationSettings::default()
+            };
+            assert!(settings.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn disabled_settings_skip_notification_preparation() {
+        apply_settings(NotificationSettings {
+            enabled: false,
+            ..NotificationSettings::default()
+        });
+        assert!(prepare_notification(Notification::Preset(2)).is_none());
+        apply_settings(NotificationSettings::default());
     }
 }

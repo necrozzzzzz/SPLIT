@@ -65,13 +65,14 @@ pub struct SaveFailedPayload {
     reason: String,
 }
 
-fn emit_save_failed(app: &AppHandle, slot: u8, reason: impl Into<String>) {
+pub(crate) fn report_save_failed(app: &AppHandle, slot: u8, reason: impl Into<String>) {
     let payload = SaveFailedPayload {
         slot,
         reason: reason.into(),
     };
 
     crate::ui::emit_to_main_if_present(app, "deadlock-save-failed", payload);
+    crate::notifications::show(crate::notifications::Notification::SaveFailed);
 }
 
 fn take_expired_generation(pending: &mut Option<PendingSave>, generation: u64) -> Option<u8> {
@@ -121,7 +122,7 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         if let Some(expired_slot) = expired_slot {
             let reason = "Timed out waiting for Deadlock getpos_exact response";
             eprintln!("[SPLIT] Save {expired_slot} failed: {reason}");
-            emit_save_failed(&app, expired_slot, reason);
+            report_save_failed(&app, expired_slot, reason);
         }
     });
 
@@ -299,6 +300,11 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
 
+                        crate::notifications::show(crate::notifications::Notification::SlotSaved {
+                            slot,
+                            favorite: super::favorite_mode_for_bank(saved.bank),
+                        });
+
                         crate::ui::emit_to_main_if_present(app, "deadlock-slots", saved.slots);
                         if saved.history_changed {
                             super::emit_history_state(app, saved.history_state);
@@ -307,12 +313,12 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
 
                     Err(error) => {
                         eprintln!("[SPLIT] Hotkey save failed for slot {slot}: {error}");
-                        emit_save_failed(app, slot, error);
+                        report_save_failed(app, slot, error);
                     }
                 }
             }
             PendingSaveResult::Expired(slot) => {
-                emit_save_failed(
+                report_save_failed(
                     app,
                     slot,
                     "Timed out waiting for Deadlock getpos_exact response",

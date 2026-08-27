@@ -377,6 +377,22 @@ fn send_load_key(slot: u8) -> Result<(), String> {
     send_virtual_key(vk)
 }
 
+fn load_active_slot(slot: u8) -> Result<bool, String> {
+    let (favorite, filled) = super::active_slot_state(slot)?;
+
+    if !filled {
+        crate::notifications::show(crate::notifications::Notification::SlotEmpty {
+            slot,
+            favorite,
+        });
+        return Ok(false);
+    }
+
+    send_load_key(slot)?;
+    crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
+    Ok(true)
+}
+
 pub fn load_slot_from_ui(slot: u8) -> Result<(), String> {
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid load slot {slot}"));
@@ -399,9 +415,11 @@ pub fn load_slot_from_ui(slot: u8) -> Result<(), String> {
      */
     thread::sleep(Duration::from_millis(75));
 
-    send_load_key(slot)?;
-
-    println!("[SPLIT] UI load injected: slot {slot}");
+    if load_active_slot(slot)? {
+        println!("[SPLIT] UI load injected: slot {slot}");
+    } else {
+        println!("[SPLIT] UI load skipped: slot {slot} is empty");
+    }
 
     Ok(())
 }
@@ -434,10 +452,12 @@ pub fn save_slot_from_ui(app: AppHandle, slot: u8) -> Result<(), String> {
      * le nouveau getpos_exact, il sait
      * dans quel slot sauvegarder.
      */
-    let generation = watcher::request_save_slot(app, slot)?;
+    let generation = watcher::request_save_slot(app.clone(), slot)?;
 
     if let Err(error) = send_capture_key() {
         watcher::cancel_pending_save(generation);
+
+        watcher::report_save_failed(&app, slot, &error);
 
         return Err(format!("Could not capture slot {slot}: {error}"));
     }
@@ -672,6 +692,8 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                         if let Err(error) = send_capture_key() {
                             watcher::cancel_pending_save(generation);
 
+                            watcher::report_save_failed(&app, slot, &error);
+
                             eprintln!("[SPLIT] Could not send H: {error}");
                         }
                     }
@@ -697,7 +719,7 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                             continue;
                         }
 
-                        if let Err(error) = send_load_key(slot) {
+                        if let Err(error) = load_active_slot(slot) {
                             eprintln!("[SPLIT] Could not load slot {slot}: {error}");
                         }
                     }
@@ -709,7 +731,9 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                             Ok(Some((preset, saved_slots))) => {
                                 println!("[SPLIT] Preset switched to {preset}");
 
-                                crate::notifications::show_preset(preset);
+                                crate::notifications::show(
+                                    crate::notifications::Notification::Preset(preset),
+                                );
 
                                 /*
                                  * Mettre à jour les 8 cartes

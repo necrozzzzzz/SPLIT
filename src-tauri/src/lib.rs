@@ -48,6 +48,18 @@ fn get_favorite_mode() -> bool {
 }
 
 #[tauri::command]
+fn get_notification_settings() -> notifications::NotificationSettings {
+    deadlock::get_notification_settings()
+}
+
+#[tauri::command]
+fn update_notification_settings(
+    settings: notifications::NotificationSettings,
+) -> Result<notifications::NotificationSettings, String> {
+    deadlock::update_notification_settings(settings)
+}
+
+#[tauri::command]
 fn toggle_favorite_mode() -> Result<deadlock::ActiveBankResult, String> {
     deadlock::toggle_favorite_mode()
 }
@@ -145,6 +157,8 @@ pub fn run() {
             get_active_preset,
             get_history_state,
             get_favorite_mode,
+            get_notification_settings,
+            update_notification_settings,
             toggle_favorite_mode,
             undo_last_action,
             redo_last_action,

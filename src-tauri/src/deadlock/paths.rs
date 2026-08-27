@@ -1,12 +1,16 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use serde::{Deserialize, Serialize};
 
 use super::process::running_deadlock_root;
+use crate::notifications::NotificationSettings;
 use crate::storage::atomic_write;
+
+static CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy)]
 pub enum PathSource {
@@ -32,8 +36,30 @@ pub struct DeadlockPaths {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 struct SplitConfig {
     deadlock_path: String,
+    #[serde(deserialize_with = "deserialize_notification_settings")]
+    notifications: NotificationSettings,
+}
+
+impl Default for SplitConfig {
+    fn default() -> Self {
+        Self {
+            deadlock_path: String::new(),
+            notifications: NotificationSettings::default(),
+        }
+    }
+}
+
+fn deserialize_notification_settings<'de, D>(
+    deserializer: D,
+) -> Result<NotificationSettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 impl DeadlockPaths {
@@ -77,6 +103,7 @@ fn config_path() -> Result<PathBuf, String> {
 }
 
 pub fn configured_deadlock_paths() -> Option<DeadlockPaths> {
+    let _guard = CONFIG_LOCK.lock().ok()?;
     let path = config_path().ok()?;
 
     let raw = fs::read_to_string(path).ok()?;
@@ -95,6 +122,9 @@ pub fn save_deadlock_root(root: &Path) -> Result<DeadlockPaths, String> {
             )
         })?;
 
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
     let config_path = config_path()?;
 
     let Some(parent) = config_path.parent() else {
@@ -104,9 +134,11 @@ pub fn save_deadlock_root(root: &Path) -> Result<DeadlockPaths, String> {
     fs::create_dir_all(parent)
         .map_err(|error| format!("Could not create SPLIT configuration directory: {error}"))?;
 
-    let config = SplitConfig {
-        deadlock_path: path_to_string(&paths.root),
-    };
+    let mut config = fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .unwrap_or_default();
+    config.deadlock_path = path_to_string(&paths.root);
 
     let json = serde_json::to_string_pretty(&config)
         .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
@@ -117,6 +149,40 @@ pub fn save_deadlock_root(root: &Path) -> Result<DeadlockPaths, String> {
     println!("[SPLIT] Deadlock directory saved: {}", paths.root.display());
 
     Ok(paths)
+}
+
+pub fn load_notification_settings() -> NotificationSettings {
+    let Ok(_guard) = CONFIG_LOCK.lock() else {
+        return NotificationSettings::default();
+    };
+    let Ok(path) = config_path() else {
+        return NotificationSettings::default();
+    };
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .map(|config| config.notifications)
+        .unwrap_or_default()
+}
+
+pub fn save_notification_settings(
+    settings: NotificationSettings,
+) -> Result<NotificationSettings, String> {
+    settings.validate()?;
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let path = config_path()?;
+    let mut config = fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .unwrap_or_default();
+    config.notifications = settings.clone();
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
+    atomic_write(&path, json)
+        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+    Ok(settings)
 }
 
 fn push_unique(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
@@ -249,4 +315,40 @@ pub fn scan_deadlock_root() -> Option<PathBuf> {
 
 pub fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::notifications::NotificationPosition;
+
+    #[test]
+    fn legacy_config_without_notifications_uses_defaults() {
+        let config: SplitConfig =
+            serde_json::from_str(r#"{"deadlockPath":"C:\\Deadlock"}"#).unwrap();
+
+        assert_eq!(config.deadlock_path, r"C:\Deadlock");
+        assert_eq!(config.notifications, NotificationSettings::default());
+    }
+
+    #[test]
+    fn invalid_notification_fields_fall_back_safely() {
+        let config: SplitConfig = serde_json::from_str(
+            r#"{
+                "deadlockPath": "C:\\Deadlock",
+                "notifications": {
+                    "enabled": true,
+                    "position": "somewhere",
+                    "durationMs": 999999999
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.notifications.position,
+            NotificationPosition::TopRight
+        );
+        assert_eq!(config.notifications.duration_ms, 1_500);
+    }
 }

@@ -59,12 +59,31 @@ type HistoryOperationResult = {
   slots: Array<PositionSnapshot | null>;
   historyState: HistoryState;
   favoriteActive: boolean;
+  performed: boolean;
 };
 
 type ActiveBankResult = {
   preset: number;
   slots: Array<PositionSnapshot | null>;
   favoriteActive: boolean;
+};
+
+type NotificationPosition =
+  | "topLeft"
+  | "topRight"
+  | "bottomLeft"
+  | "bottomRight";
+
+type NotificationSettings = {
+  enabled: boolean;
+  position: NotificationPosition;
+  durationMs: number;
+};
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  position: "topRight",
+  durationMs: 1500,
 };
 
 const EMPTY_STATUS: DeadlockStatus = {
@@ -158,6 +177,18 @@ function App() {
   const [
     favoriteMode,
     setFavoriteMode,
+  ] = useState(false);
+
+  const [
+    notificationSettings,
+    setNotificationSettings,
+  ] = useState<NotificationSettings>(
+    DEFAULT_NOTIFICATION_SETTINGS,
+  );
+
+  const [
+    notificationSettingsSaving,
+    setNotificationSettingsSaving,
   ] = useState(false);
 
   const [
@@ -697,6 +728,60 @@ function App() {
       }
     }, []);
 
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadNotificationSettings() {
+      try {
+        const saved =
+          await invoke<NotificationSettings>(
+            "get_notification_settings",
+          );
+
+        if (!disposed) {
+          setNotificationSettings(saved);
+        }
+      } catch (reason) {
+        if (!disposed) {
+          setError(String(reason));
+        }
+      }
+    }
+
+    void loadNotificationSettings();
+
+    return () => {
+      disposed = true;
+    };
+    }, []);
+
+  const updateNotificationSettings =
+    useCallback(
+      async (
+        next: NotificationSettings,
+      ) => {
+        const previous = notificationSettings;
+        setNotificationSettings(next);
+        setNotificationSettingsSaving(true);
+        setError(null);
+
+        try {
+          const saved =
+            await invoke<NotificationSettings>(
+              "update_notification_settings",
+              { settings: next },
+            );
+          setNotificationSettings(saved);
+        } catch (reason) {
+          setNotificationSettings(previous);
+          setError(String(reason));
+        } finally {
+          setNotificationSettingsSaving(false);
+        }
+      },
+      [notificationSettings],
+    );
+
   const confirmPath =
     useCallback(
       async (
@@ -1210,6 +1295,83 @@ function App() {
         )}
       </div>
     </section>
+
+      <section className="notification-settings-section">
+        <div className="notification-settings-heading">
+          <div>
+            <p className="label">
+              IN-GAME NOTIFICATIONS
+            </p>
+
+            <h2>
+              Overlay settings
+            </h2>
+          </div>
+        </div>
+
+        <div className="notification-settings-grid">
+          <label className="notification-setting-row">
+            <span>Enabled</span>
+            <button
+              className={`notification-toggle ${
+                notificationSettings.enabled
+                  ? "active"
+                  : ""
+              }`}
+              type="button"
+              role="switch"
+              aria-checked={notificationSettings.enabled}
+              disabled={notificationSettingsSaving}
+              onClick={() =>
+                void updateNotificationSettings({
+                  ...notificationSettings,
+                  enabled: !notificationSettings.enabled,
+                })
+              }
+            >
+              {notificationSettings.enabled ? "ON" : "OFF"}
+            </button>
+          </label>
+
+          <label className="notification-setting-row">
+            <span>Position</span>
+            <select
+              value={notificationSettings.position}
+              disabled={notificationSettingsSaving}
+              onChange={(event) =>
+                void updateNotificationSettings({
+                  ...notificationSettings,
+                  position: event.target.value as NotificationPosition,
+                })
+              }
+            >
+              <option value="topLeft">Top Left</option>
+              <option value="topRight">Top Right</option>
+              <option value="bottomLeft">Bottom Left</option>
+              <option value="bottomRight">Bottom Right</option>
+            </select>
+          </label>
+
+          <label className="notification-setting-row">
+            <span>Duration</span>
+            <select
+              value={notificationSettings.durationMs}
+              disabled={notificationSettingsSaving}
+              onChange={(event) =>
+                void updateNotificationSettings({
+                  ...notificationSettings,
+                  durationMs: Number(event.target.value),
+                })
+              }
+            >
+              <option value={1000}>1.0 s</option>
+              <option value={1500}>1.5 s</option>
+              <option value={2000}>2.0 s</option>
+              <option value={3000}>3.0 s</option>
+            </select>
+          </label>
+        </div>
+      </section>
 
       <section
         className="status-grid"

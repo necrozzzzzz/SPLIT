@@ -34,6 +34,7 @@ pub struct HistoryOperationResult {
     slots: Vec<Option<PositionSnapshot>>,
     history_state: HistoryState,
     favorite_active: bool,
+    performed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -45,6 +46,7 @@ pub struct ActiveBankResult {
 }
 
 pub(crate) struct PersistSlotResult {
+    pub bank: slots::SlotBank,
     pub slots: Vec<Option<PositionSnapshot>>,
     pub history_state: HistoryState,
     pub history_changed: bool,
@@ -109,12 +111,29 @@ pub fn get_favorite_mode() -> bool {
     favorite_mode_active()
 }
 
+pub fn get_notification_settings() -> crate::notifications::NotificationSettings {
+    paths::load_notification_settings()
+}
+
+pub fn update_notification_settings(
+    settings: crate::notifications::NotificationSettings,
+) -> Result<crate::notifications::NotificationSettings, String> {
+    let saved = paths::save_notification_settings(settings)?;
+    crate::notifications::apply_settings(saved.clone());
+    Ok(saved)
+}
+
 pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
     ensure_bank_change_allowed(watcher::has_pending_save())?;
-    set_active_preset_locked(preset)
+    let bank_changed = favorite_mode_active() || slots::get_active_preset()? != preset;
+    let saved = set_active_preset_locked(preset)?;
+    if bank_changed {
+        crate::notifications::show(crate::notifications::Notification::Preset(preset));
+    }
+    Ok(saved)
 }
 
 fn set_active_preset_locked(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
@@ -210,6 +229,7 @@ pub(crate) fn persist_slot_position(
     })?;
 
     Ok(PersistSlotResult {
+        bank: saved.bank,
         slots: saved.slots,
         history_state,
         history_changed,
@@ -246,6 +266,7 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
             slots: slots::load_bank(current_slot_bank()?)?,
             history_state: history::state()?,
             favorite_active: favorite_mode_active(),
+            performed: false,
         });
     };
 
@@ -275,6 +296,7 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
         slots: saved,
         history_state,
         favorite_active,
+        performed: true,
     })
 }
 
@@ -287,11 +309,24 @@ fn ensure_history_action_allowed(save_pending: bool) -> Result<(), String> {
 }
 
 pub fn undo_last_action() -> Result<HistoryOperationResult, String> {
-    apply_history_action(true)
+    let result = apply_history_action(true)?;
+    crate::notifications::show(history_notification(true, result.performed));
+    Ok(result)
 }
 
 pub fn redo_last_action() -> Result<HistoryOperationResult, String> {
-    apply_history_action(false)
+    let result = apply_history_action(false)?;
+    crate::notifications::show(history_notification(false, result.performed));
+    Ok(result)
+}
+
+fn history_notification(undo: bool, performed: bool) -> crate::notifications::Notification {
+    match (undo, performed) {
+        (true, true) => crate::notifications::Notification::Undo,
+        (true, false) => crate::notifications::Notification::NothingToUndo,
+        (false, true) => crate::notifications::Notification::Redo,
+        (false, false) => crate::notifications::Notification::NothingToRedo,
+    }
 }
 
 pub(crate) fn emit_history_state(app: &AppHandle, state: HistoryState) {
@@ -333,11 +368,26 @@ pub fn toggle_favorite_mode() -> Result<ActiveBankResult, String> {
     cfg::ensure_autoexec(&deadlock.autoexec)?;
     FAVORITE_MODE.store(active, Ordering::SeqCst);
 
+    crate::notifications::show(crate::notifications::Notification::Favorites(active));
+
     Ok(ActiveBankResult {
         preset,
         slots: saved,
         favorite_active: active,
     })
+}
+
+pub(crate) fn active_slot_state(slot: u8) -> Result<(bool, bool), String> {
+    if !(1..=8).contains(&slot) {
+        return Err(format!("Invalid load slot {slot}"));
+    }
+
+    let bank = current_slot_bank()?;
+    let slots = slots::load_bank(bank)?;
+    Ok((
+        favorite_mode_for_bank(bank),
+        slots[usize::from(slot - 1)].is_some(),
+    ))
 }
 
 pub(crate) fn emit_active_bank(app: &AppHandle, result: &ActiveBankResult) {
@@ -492,5 +542,25 @@ mod tests {
         assert_eq!(next_preset(3, true), 3);
         assert_eq!(next_preset(3, false), 4);
         assert_eq!(next_preset(4, false), 1);
+    }
+
+    #[test]
+    fn history_notification_distinguishes_performed_and_empty_actions() {
+        assert_eq!(
+            history_notification(true, true),
+            crate::notifications::Notification::Undo
+        );
+        assert_eq!(
+            history_notification(true, false),
+            crate::notifications::Notification::NothingToUndo
+        );
+        assert_eq!(
+            history_notification(false, true),
+            crate::notifications::Notification::Redo
+        );
+        assert_eq!(
+            history_notification(false, false),
+            crate::notifications::Notification::NothingToRedo
+        );
     }
 }
