@@ -76,6 +76,7 @@ function App() {
     useState<DeadlockSetupState | null>(
       null,
     );
+    
 
   const [
     setupLoading,
@@ -117,8 +118,22 @@ function App() {
   );
 
   const [
+    activePreset,
+    setActivePreset,
+  ] = useState(
+    1,
+  );
+
+  const [
     savingSlot,
     setSavingSlot,
+  ] = useState<number | null>(
+    null,
+  );
+
+  const [
+    loadingSlot,
+    setLoadingSlot,
   ] = useState<number | null>(
     null,
   );
@@ -133,6 +148,7 @@ function App() {
     setError,
   ] =
     useState<string | null>(null);
+    
 
   const refresh =
     useCallback(async () => {
@@ -286,15 +302,31 @@ function App() {
 
     async function loadSlots() {
       try {
-        const saved =
-          await invoke<
-            Array<PositionSnapshot | null>
-          >(
-            "get_slots",
-          );
+        const [
+          saved,
+          preset,
+        ] =
+          await Promise.all([
+            invoke<
+              Array<PositionSnapshot | null>
+            >(
+              "get_slots",
+            ),
+
+            invoke<number>(
+              "get_active_preset",
+            ),
+          ]);
+
 
         if (!disposed) {
-          setSlots(saved);
+          setSlots(
+            saved,
+          );
+
+          setActivePreset(
+            preset,
+          );
         }
       } catch (reason) {
         if (!disposed) {
@@ -328,6 +360,10 @@ function App() {
           setSlots(
             event.payload,
           );
+
+          setSavingSlot(
+            null,
+          );
         }
       },
     ).then((cleanup) => {
@@ -345,35 +381,117 @@ function App() {
   }, []);
 
   const saveCurrentToSlot =
-    useCallback(
-      async (
-        slot: number,
-      ) => {
-        setSavingSlot(slot);
-        setError(null);
+  useCallback(
+    async (
+      slot: number,
+    ) => {
+      setSavingSlot(
+        slot,
+      );
 
-        try {
-          const saved =
-            await invoke<
-              Array<PositionSnapshot | null>
-            >(
-              "save_slot",
+      setError(
+        null,
+      );
+
+      try {
+        await invoke(
+          "capture_slot",
+          {
+            slot,
+          },
+        );
+      } catch (reason) {
+        setSavingSlot(
+          null,
+        );
+
+        setError(
+          String(reason),
+        );
+      }
+    },
+    [],
+  );
+
+    const loadSavedSlot =
+      useCallback(
+        async (
+          slot: number,
+        ) => {
+          setLoadingSlot(
+            slot,
+          );
+
+          setError(
+            null,
+          );
+
+          try {
+            await invoke(
+              "load_slot",
               {
                 slot,
               },
             );
+          } catch (reason) {
+            setError(
+              String(reason),
+            );
+          } finally {
+            setLoadingSlot(
+              null,
+            );
+          }
+        },
+        [],
+      );
 
-          setSlots(saved);
-        } catch (reason) {
-          setError(
-            String(reason),
+      const switchPreset =
+  useCallback(
+    async (
+      preset: number,
+    ) => {
+      if (
+        preset === activePreset
+      ) {
+        return;
+      }
+
+
+      setError(
+        null,
+      );
+
+
+      try {
+        const saved =
+          await invoke<
+            Array<PositionSnapshot | null>
+          >(
+            "set_active_preset",
+            {
+              preset,
+            },
           );
-        } finally {
-          setSavingSlot(null);
-        }
-      },
-      [],
-    );
+
+
+        setActivePreset(
+          preset,
+        );
+
+        setSlots(
+          saved,
+        );
+      } catch (reason) {
+        setError(
+          String(reason),
+        );
+      }
+    },
+    [
+      activePreset,
+    ],
+  );
 
   const confirmPath =
     useCallback(
@@ -694,6 +812,34 @@ function App() {
         </span>
       </div>
 
+
+      <div className="preset-switcher">
+        {[1, 2, 3, 4].map(
+          (preset) => (
+            <button
+              key={preset}
+              type="button"
+              className={`preset-button ${
+                activePreset === preset
+                  ? "active"
+                  : ""
+              }`}
+              disabled={
+                savingSlot !== null ||
+                loadingSlot !== null
+              }
+              onClick={() =>
+                void switchPreset(
+                  preset,
+                )
+              }
+            >
+              Preset {preset}
+            </button>
+          ),
+        )}
+      </div>
+
       <div className="slots-grid">
         {slots.map(
           (
@@ -758,25 +904,46 @@ function App() {
               </span>
             </div>
 
-            <button
-              className="slot-save-button"
-                  type="button"
-                  disabled={
-                    !lastPosition ||
-                    savingSlot === slot
-                  }
-                  onClick={() =>
-                    void saveCurrentToSlot(
-                      slot,
-                    )
-                  }
-                >
-                  {savingSlot === slot
-                    ? "Saving…"
-                    : position
-                      ? "Overwrite"
-                      : "Save"}
-                </button>
+            <div className="slot-actions">
+              <button
+                className="slot-save-button slot-load-button"
+                type="button"
+                disabled={
+                  !position ||
+                  loadingSlot !== null ||
+                  savingSlot !== null
+                }
+                onClick={() =>
+                  void loadSavedSlot(
+                    slot,
+                  )
+                }
+              >
+                {loadingSlot === slot
+                  ? "Loading…"
+                  : "Load"}
+              </button>
+
+              <button
+                className="slot-save-button"
+                type="button"
+                disabled={
+                  savingSlot !== null ||
+                  loadingSlot !== null
+                }
+                onClick={() =>
+                  void saveCurrentToSlot(
+                    slot,
+                  )
+                }
+              >
+                {savingSlot === slot
+                  ? "Saving…"
+                  : position
+                    ? "Overwrite"
+                    : "Save"}
+              </button>
+            </div>
               </article>
             );
           },

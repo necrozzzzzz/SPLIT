@@ -16,16 +16,7 @@ const LOAD_TRANSPORT_KEYS: [&str; 8] = [
     "m",
 ];
 
-const LOAD_HOTKEYS: [&str; 8] = [
-    "F1",
-    "F2",
-    "F3",
-    "F4",
-    "F5",
-    "F6",
-    "F7",
-    "F8",
-];
+
 
 pub fn write_savestate_cfg(
     cfg_file: &Path,
@@ -67,9 +58,6 @@ pub fn write_savestate_cfg(
         let transport_key =
             LOAD_TRANSPORT_KEYS[index];
 
-        let load_hotkey =
-            LOAD_HOTKEYS[index];
-
         match slots.get(index).and_then(|slot| slot.as_ref()) {
             Some(position) => {
                 output.push_str(
@@ -103,13 +91,7 @@ pub fn write_savestate_cfg(
 
         output.push_str(
             &format!(
-                "bind \"{transport_key}\" \"exec savestate; load_slot_{slot_number}\"\n",
-            ),
-        );
-
-        output.push_str(
-            &format!(
-                "bind \"{load_hotkey}\" \"exec savestate; load_slot_{slot_number}\"\n\n",
+                "bind \"{transport_key}\" \"exec savestate; load_slot_{slot_number}\"\n\n",
             ),
         );
     }

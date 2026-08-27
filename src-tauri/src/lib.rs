@@ -32,6 +32,25 @@ fn get_slots(
 }
 
 #[tauri::command]
+fn get_active_preset(
+) -> Result<u8, String> {
+    deadlock::get_active_preset()
+}
+
+
+#[tauri::command]
+fn set_active_preset(
+    preset: u8,
+) -> Result<
+    Vec<Option<deadlock::PositionSnapshot>>,
+    String,
+> {
+    deadlock::set_active_preset(
+        preset,
+    )
+}
+
+#[tauri::command]
 fn save_slot(
     slot: u8,
 ) -> Result<
@@ -39,6 +58,24 @@ fn save_slot(
     String,
 > {
     deadlock::save_slot(
+        slot,
+    )
+}
+
+#[tauri::command]
+fn load_slot(
+    slot: u8,
+) -> Result<(), String> {
+    deadlock::load_slot(
+        slot,
+    )
+}
+
+#[tauri::command]
+fn capture_slot(
+    slot: u8,
+) -> Result<(), String> {
+    deadlock::capture_slot(
         slot,
     )
 }
@@ -98,7 +135,11 @@ pub fn run() {
                 confirm_deadlock_path,
                 get_last_position,
                 get_slots,
+                get_active_preset,
+                set_active_preset,
                 save_slot,
+                load_slot,
+                capture_slot,
                 sync_slots_to_deadlock,
             ],
         )

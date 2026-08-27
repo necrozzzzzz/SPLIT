@@ -41,6 +41,53 @@ pub fn get_slots(
     slots::load_slots()
 }
 
+pub fn get_active_preset(
+) -> Result<u8, String> {
+    slots::get_active_preset()
+}
+
+
+pub fn set_active_preset(
+    preset: u8,
+) -> Result<
+    Vec<Option<PositionSnapshot>>,
+    String,
+> {
+    let saved =
+        slots::set_active_preset(
+            preset,
+        )?;
+
+
+    /*
+     * Dès qu'on change de preset,
+     * savestate.cfg doit représenter
+     * les 8 slots de CE preset.
+     */
+    let deadlock =
+        paths::configured_deadlock_paths()
+            .ok_or_else(|| {
+                "Deadlock directory is not configured"
+                    .to_string()
+            })?;
+
+
+    cfg::write_savestate_cfg(
+        &deadlock.cfg_file,
+        &saved,
+    )?;
+
+
+    cfg::ensure_autoexec(
+        &deadlock.autoexec,
+    )?;
+
+
+    Ok(
+        saved,
+    )
+}
+
 pub(crate) fn persist_slot_position(
     slot: u8,
     position: PositionSnapshot,
@@ -225,6 +272,22 @@ pub fn get_status() -> DeadlockStatus {
             source: "not-found",
         },
     }
+}
+
+pub fn load_slot(
+    slot: u8,
+) -> Result<(), String> {
+    hotkeys::load_slot_from_ui(
+        slot,
+    )
+}
+
+pub fn capture_slot(
+    slot: u8,
+) -> Result<(), String> {
+    hotkeys::save_slot_from_ui(
+        slot,
+    )
 }
 
 pub fn start_hotkeys(

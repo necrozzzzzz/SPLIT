@@ -12,72 +12,104 @@ use std::{
     time::Duration,
 };
 
-use windows_sys::Win32::{
-    Foundation::CloseHandle,
+    use windows_sys::{
+        core::BOOL,
 
-    System::Threading::{
-        OpenProcess,
-        QueryFullProcessImageNameW,
-        PROCESS_QUERY_LIMITED_INFORMATION,
-    },
+        Win32::{
+            Foundation::{
+                CloseHandle,
+                HWND,
+                LPARAM,
+            },
 
-    UI::{
-        Input::KeyboardAndMouse::{
-            GetAsyncKeyState,
-            SendInput,
-            INPUT,
-            INPUT_0,
-            INPUT_KEYBOARD,
-            KEYBDINPUT,
-            KEYEVENTF_KEYUP,
-            VK_F1,
-            VK_F2,
-            VK_F3,
-            VK_F4,
-            VK_F5,
-            VK_F6,
-            VK_F7,
-            VK_F8,
-            VK_H,
-            VK_MENU,
+        System::Threading::{
+            OpenProcess,
+            QueryFullProcessImageNameW,
+            PROCESS_QUERY_LIMITED_INFORMATION,
         },
 
-        WindowsAndMessaging::{
-            CallNextHookEx,
-            DispatchMessageW,
-            GetForegroundWindow,
-            GetMessageW,
-            GetWindowThreadProcessId,
-            KBDLLHOOKSTRUCT,
-            LLKHF_ALTDOWN,
-            MSG,
-            SetWindowsHookExW,
-            TranslateMessage,
-            UnhookWindowsHookEx,
-            WH_KEYBOARD_LL,
-            WM_KEYDOWN,
-            WM_KEYUP,
-            WM_SYSKEYDOWN,
-            WM_SYSKEYUP,
+        UI::{
+            Input::KeyboardAndMouse::{
+                GetAsyncKeyState,
+                SendInput,
+                INPUT,
+                INPUT_0,
+                INPUT_KEYBOARD,
+                KEYBDINPUT,
+                KEYEVENTF_KEYUP,
+                VK_F1,
+                VK_F2,
+                VK_F3,
+                VK_F4,
+                VK_F5,
+                VK_F6,
+                VK_F7,
+                VK_F8,
+                VK_MENU,
+            },
+
+            WindowsAndMessaging::{
+                CallNextHookEx,
+                DispatchMessageW,
+                EnumWindows,
+                GetForegroundWindow,
+                GetMessageW,
+                GetWindowThreadProcessId,
+                IsIconic,
+                IsWindowVisible,
+                KBDLLHOOKSTRUCT,
+                LLKHF_ALTDOWN,
+                MSG,
+                SetForegroundWindow,
+                SetWindowsHookExW,
+                ShowWindow,
+                SW_RESTORE,
+                TranslateMessage,
+                UnhookWindowsHookEx,
+                WH_KEYBOARD_LL,
+                WM_KEYDOWN,
+                WM_KEYUP,
+                WM_SYSKEYDOWN,
+                WM_SYSKEYUP,
+            },
         },
-    },
+    },   
 };
 
 use super::watcher;
 
-static SAVE_SENDER:
-    OnceLock<mpsc::Sender<u8>> =
-    OnceLock::new();
 
 /*
- * Évite les répétitions Windows si F1 reste
- * appuyé quelques centaines de ms.
- *
- * 1 bit = 1 slot.
+ * Action envoyée par le hook clavier
+ * au worker SPLIT.
  */
-static ACTIVE_SAVE_KEYS:
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+)]
+enum HotkeyAction {
+    Save(u8),
+    Load(u8),
+}
+
+
+static HOTKEY_SENDER:
+    OnceLock<
+        mpsc::Sender<HotkeyAction>
+    > =
+    OnceLock::new();
+
+
+/*
+ * Empêche l'auto-repeat Windows.
+ *
+ * Un bit par touche F1-F8.
+ */
+static ACTIVE_HOTKEY_KEYS:
     AtomicU16 =
     AtomicU16::new(0);
+
 
 fn slot_from_vk(
     vk: u32,
@@ -96,6 +128,61 @@ fn slot_from_vk(
     }
 }
 
+
+/*
+ * Touches internes utilisées par
+ * savestate.cfg pour charger les slots.
+ *
+ * Slot 1 -> U
+ * Slot 2 -> I
+ * Slot 3 -> O
+ * Slot 4 -> J
+ * Slot 5 -> K
+ * Slot 6 -> L
+ * Slot 7 -> N
+ * Slot 8 -> M
+ */
+fn load_transport_vk(
+    slot: u8,
+) -> Option<u16> {
+    match slot {
+        1 => Some(
+            b'U' as u16,
+        ),
+
+        2 => Some(
+            b'I' as u16,
+        ),
+
+        3 => Some(
+            b'O' as u16,
+        ),
+
+        4 => Some(
+            b'J' as u16,
+        ),
+
+        5 => Some(
+            b'K' as u16,
+        ),
+
+        6 => Some(
+            b'L' as u16,
+        ),
+
+        7 => Some(
+            b'N' as u16,
+        ),
+
+        8 => Some(
+            b'M' as u16,
+        ),
+
+        _ => None,
+    }
+}
+
+
 fn alt_is_down() -> bool {
     let state = unsafe {
         GetAsyncKeyState(
@@ -106,13 +193,12 @@ fn alt_is_down() -> bool {
     (state as u16 & 0x8000) != 0
 }
 
+
 fn wait_for_alt_release() -> bool {
     /*
-     * On attend que l'utilisateur relâche Alt
-     * avant d'injecter H.
-     *
-     * Ce petit polling n'existe QUE pendant
-     * l'utilisation d'un hotkey Save.
+     * Pour le Save :
+     * ne pas injecter H pendant
+     * qu'Alt est encore enfoncé.
      */
     for _ in 0..200 {
         if !alt_is_down() {
@@ -120,29 +206,20 @@ fn wait_for_alt_release() -> bool {
         }
 
         thread::sleep(
-            Duration::from_millis(10),
+            Duration::from_millis(
+                10,
+            ),
         );
     }
 
     false
 }
 
-fn is_deadlock_foreground() -> bool {
+
+fn is_deadlock_process(
+    pid: u32,
+) -> bool {
     unsafe {
-        let hwnd =
-            GetForegroundWindow();
-
-        if hwnd.is_null() {
-            return false;
-        }
-
-        let mut pid = 0u32;
-
-        GetWindowThreadProcessId(
-            hwnd,
-            &mut pid,
-        );
-
         if pid == 0 {
             return false;
         }
@@ -173,7 +250,9 @@ fn is_deadlock_foreground() -> bool {
             );
 
         let _ =
-            CloseHandle(process);
+            CloseHandle(
+                process,
+            );
 
         if success == 0 {
             return false;
@@ -186,27 +265,174 @@ fn is_deadlock_foreground() -> bool {
                 ],
             );
 
-        Path::new(&executable)
-            .file_name()
-            .and_then(
-                |name| name.to_str(),
-            )
-            .is_some_and(
-                |name| {
-                    name.eq_ignore_ascii_case(
-                        "deadlock.exe",
-                    )
-                },
-            )
+        Path::new(
+            &executable,
+        )
+        .file_name()
+        .and_then(
+            |name| name.to_str(),
+        )
+        .is_some_and(
+            |name| {
+                name.eq_ignore_ascii_case(
+                    "deadlock.exe",
+                )
+            },
+        )
     }
 }
+
+
+fn is_deadlock_foreground() -> bool {
+    unsafe {
+        let hwnd =
+            GetForegroundWindow();
+
+        if hwnd.is_null() {
+            return false;
+        }
+
+        let mut pid = 0u32;
+
+        GetWindowThreadProcessId(
+            hwnd,
+            &mut pid,
+        );
+
+        is_deadlock_process(
+            pid,
+        )
+    }
+}
+
+
+unsafe extern "system"
+fn enum_deadlock_window(
+    hwnd: HWND,
+    lparam: LPARAM,
+) -> BOOL {
+    /*
+     * On ignore les fenêtres invisibles
+     * appartenant éventuellement au process.
+     */
+    if IsWindowVisible(hwnd) == 0 {
+        return 1;
+    }
+
+    let mut pid = 0u32;
+
+    GetWindowThreadProcessId(
+        hwnd,
+        &mut pid,
+    );
+
+    if !is_deadlock_process(
+        pid,
+    ) {
+        return 1;
+    }
+
+    let target =
+        lparam as *mut HWND;
+
+    if target.is_null() {
+        return 0;
+    }
+
+    *target = hwnd;
+
+    /*
+     * 0 = on arrête EnumWindows :
+     * on a trouvé Deadlock.
+     */
+    0
+}
+
+
+fn find_deadlock_window(
+) -> Option<HWND> {
+    let mut hwnd: HWND =
+        std::ptr::null_mut();
+
+    unsafe {
+        EnumWindows(
+            Some(
+                enum_deadlock_window,
+            ),
+            &mut hwnd
+                as *mut HWND
+                as LPARAM,
+        );
+    }
+
+    if hwnd.is_null() {
+        None
+    } else {
+        Some(hwnd)
+    }
+}
+
+
+fn focus_deadlock_window(
+) -> Result<(), String> {
+    let hwnd =
+        find_deadlock_window()
+            .ok_or_else(|| {
+                "Could not find the Deadlock window"
+                    .to_string()
+            })?;
+
+    unsafe {
+        /*
+         * Si Deadlock est minimisé,
+         * on le restaure d'abord.
+         */
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(
+                hwnd,
+                SW_RESTORE,
+            );
+        }
+
+        SetForegroundWindow(
+            hwnd,
+        );
+    }
+
+    /*
+     * On laisse un très court délai
+     * à Windows pour réellement transférer
+     * le focus.
+     */
+    for _ in 0..30 {
+        if unsafe {
+            GetForegroundWindow()
+        } == hwnd
+        {
+            return Ok(());
+        }
+
+        thread::sleep(
+            Duration::from_millis(
+                10,
+            ),
+        );
+    }
+
+    Err(
+        "Deadlock did not receive foreground focus"
+            .to_string(),
+    )
+}
+
 
 fn make_keyboard_input(
     vk: u16,
     flags: u32,
 ) -> INPUT {
     INPUT {
-        r#type: INPUT_KEYBOARD,
+        r#type:
+            INPUT_KEYBOARD,
 
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
@@ -220,16 +446,18 @@ fn make_keyboard_input(
     }
 }
 
-fn send_capture_key(
+
+fn send_virtual_key(
+    vk: u16,
 ) -> Result<(), String> {
     let inputs = [
         make_keyboard_input(
-            VK_H,
+            vk,
             0,
         ),
 
         make_keyboard_input(
-            VK_H,
+            vk,
             KEYEVENTF_KEYUP,
         ),
     ];
@@ -243,7 +471,9 @@ fn send_capture_key(
         )
     };
 
-    if sent != inputs.len() as u32 {
+    if sent
+        != inputs.len() as u32
+    {
         return Err(
             format!(
                 "SendInput only sent {sent}/{} keyboard events",
@@ -254,6 +484,146 @@ fn send_capture_key(
 
     Ok(())
 }
+
+
+fn send_capture_key(
+) -> Result<(), String> {
+    send_virtual_key(
+        b'H' as u16,
+    )
+}
+
+
+fn send_load_key(
+    slot: u8,
+) -> Result<(), String> {
+    let vk =
+        load_transport_vk(
+            slot,
+        )
+        .ok_or_else(|| {
+            format!(
+                "Invalid load slot {slot}"
+            )
+        })?;
+
+    send_virtual_key(
+        vk,
+    )
+}
+
+pub fn load_slot_from_ui(
+    slot: u8,
+) -> Result<(), String> {
+    if !(1..=8).contains(
+        &slot,
+    ) {
+        return Err(
+            format!(
+                "Invalid load slot {slot}"
+            ),
+        );
+    }
+
+    println!(
+        "[SPLIT] UI load requested: slot {slot}"
+    );
+
+    /*
+     * Au moment du clic, SPLIT est
+     * forcément la fenêtre au premier plan.
+     *
+     * On transfère donc le focus à Deadlock.
+     */
+    focus_deadlock_window()?;
+
+    /*
+     * Petit délai supplémentaire :
+     * on veut que le jeu soit complètement
+     * prêt à recevoir l'input.
+     */
+    thread::sleep(
+        Duration::from_millis(
+            75,
+        ),
+    );
+
+    send_load_key(
+        slot,
+    )?;
+
+    println!(
+        "[SPLIT] UI load injected: slot {slot}"
+    );
+
+    Ok(())
+}
+
+pub fn save_slot_from_ui(
+    slot: u8,
+) -> Result<(), String> {
+    if !(1..=8).contains(
+        &slot,
+    ) {
+        return Err(
+            format!(
+                "Invalid save slot {slot}"
+            ),
+        );
+    }
+
+    println!(
+        "[SPLIT] UI save requested: slot {slot}"
+    );
+
+    /*
+     * Le clic vient de SPLIT.
+     * On remet d'abord Deadlock
+     * au premier plan.
+     */
+    focus_deadlock_window()?;
+
+    /*
+     * Laisser Windows terminer
+     * le changement de focus.
+     */
+    thread::sleep(
+        Duration::from_millis(
+            75,
+        ),
+    );
+
+    /*
+     * IMPORTANT :
+     * on marque le slot AVANT d'envoyer H.
+     *
+     * Ainsi, lorsque watcher.rs reçoit
+     * le nouveau getpos_exact, il sait
+     * dans quel slot sauvegarder.
+     */
+    watcher::request_save_slot(
+        slot,
+    )?;
+
+    if let Err(error) =
+        send_capture_key()
+    {
+        watcher::cancel_pending_save();
+
+        return Err(
+            format!(
+                "Could not capture slot {slot}: {error}"
+            ),
+        );
+    }
+
+    println!(
+        "[SPLIT] UI capture injected: slot {slot}"
+    );
+
+    Ok(())
+}
+
 
 unsafe extern "system"
 fn keyboard_hook(
@@ -274,6 +644,7 @@ fn keyboard_hook(
         &*(lparam
             as *const KBDLLHOOKSTRUCT);
 
+
     let Some(slot) =
         slot_from_vk(
             keyboard.vkCode,
@@ -287,11 +658,13 @@ fn keyboard_hook(
         );
     };
 
+
     let key_down =
         wparam as u32
             == WM_KEYDOWN
         || wparam as u32
             == WM_SYSKEYDOWN;
+
 
     let key_up =
         wparam as u32
@@ -299,16 +672,18 @@ fn keyboard_hook(
         || wparam as u32
             == WM_SYSKEYUP;
 
+
     let bit =
         1u16 << (slot - 1);
 
+
     /*
-     * Si on avait bloqué le keydown,
-     * on bloque aussi son keyup.
+     * Si SPLIT a intercepté le keydown,
+     * il doit aussi intercepter le keyup.
      */
     if key_up {
         let previous =
-            ACTIVE_SAVE_KEYS
+            ACTIVE_HOTKEY_KEYS
                 .fetch_and(
                     !bit,
                     Ordering::SeqCst,
@@ -326,6 +701,7 @@ fn keyboard_hook(
         );
     }
 
+
     if !key_down {
         return CallNextHookEx(
             std::ptr::null_mut(),
@@ -335,20 +711,13 @@ fn keyboard_hook(
         );
     }
 
-    let alt_down =
-        keyboard.flags
-            & LLKHF_ALTDOWN
-            != 0;
 
     /*
-     * IMPORTANT :
-     *
-     * Hors Deadlock :
-     * Alt+F1..F8 restent 100 % normaux.
+     * Ne toucher à F1-F8 QUE
+     * lorsque Deadlock est réellement
+     * la fenêtre au premier plan.
      */
-    if !alt_down
-        || !is_deadlock_foreground()
-    {
+    if !is_deadlock_foreground() {
         return CallNextHookEx(
             std::ptr::null_mut(),
             code,
@@ -357,106 +726,206 @@ fn keyboard_hook(
         );
     }
 
+
     let previous =
-        ACTIVE_SAVE_KEYS.fetch_or(
-            bit,
-            Ordering::SeqCst,
-        );
+        ACTIVE_HOTKEY_KEYS
+            .fetch_or(
+                bit,
+                Ordering::SeqCst,
+            );
+
 
     /*
-     * Auto-repeat :
-     * ne lancer qu'une seule sauvegarde.
+     * Ignorer l'auto-repeat.
      */
     if previous & bit == 0 {
+        let alt_down =
+            keyboard.flags
+                & LLKHF_ALTDOWN
+                != 0;
+
+
+        let action =
+            if alt_down {
+                HotkeyAction::Save(
+                    slot,
+                )
+            } else {
+                HotkeyAction::Load(
+                    slot,
+                )
+            };
+
+
         if let Some(sender) =
-            SAVE_SENDER.get()
+            HOTKEY_SENDER.get()
         {
             let _ =
-                sender.send(slot);
+                sender.send(
+                    action,
+                );
         }
     }
 
+
     /*
-     * Bloquer Alt+Fx dans Deadlock.
+     * Deadlock ne reçoit jamais directement
+     * le F1-F8 physique.
      *
-     * Très important pour Alt+F4 :
-     * Windows ne reçoit donc jamais
-     * la commande "fermer".
+     * SPLIT décide ensuite quoi envoyer :
+     *
+     * F1      -> U
+     * Alt+F1  -> H
      */
     1
 }
 
+
 pub fn start() -> Result<(), String> {
     let (tx, rx) =
-        mpsc::channel::<u8>();
+        mpsc::channel::<
+            HotkeyAction
+        >();
 
-    SAVE_SENDER
+
+    HOTKEY_SENDER
         .set(tx)
         .map_err(|_| {
             "SPLIT hotkeys are already running"
                 .to_string()
         })?;
 
+
     /*
-     * Worker Save.
+     * Worker.
+     *
+     * Aucune logique lourde n'est exécutée
+     * directement dans le hook Windows.
      */
     thread::Builder::new()
         .name(
-            "split-save-hotkey-worker"
+            "split-hotkey-worker"
                 .to_string(),
         )
         .spawn(move || {
-            for slot in rx {
-                println!(
-                    "[SPLIT] Save hotkey: Alt+F{slot}"
-                );
-
-                /*
-                 * Alt doit être relâché avant
-                 * d'injecter H dans Deadlock.
-                 */
-                if !wait_for_alt_release() {
-                    eprintln!(
-                        "[SPLIT] Save {slot} cancelled: Alt was held too long"
-                    );
-
-                    continue;
-                }
-
-                match watcher::request_save_slot(
-                    slot,
-                ) {
-                    Ok(_) => {
+            for action in rx {
+                match action {
+                    /*
+                     * ALT + F1-F8
+                     *
+                     * Capture la position,
+                     * puis watcher.rs la sauvegarde.
+                     */
+                    HotkeyAction::Save(
+                        slot,
+                    ) => {
                         println!(
-                            "[SPLIT] Capture requested for slot {slot}"
-                        );
-                    }
-
-                    Err(error) => {
-                        eprintln!(
-                            "[SPLIT] Could not request save {slot}: {error}"
+                            "[SPLIT] Save hotkey: Alt+F{slot}"
                         );
 
-                        continue;
+
+                        if !wait_for_alt_release() {
+                            eprintln!(
+                                "[SPLIT] Save {slot} cancelled: Alt was held too long"
+                            );
+
+                            continue;
+                        }
+
+
+                        /*
+                         * Important :
+                         * l'utilisateur peut avoir
+                         * Alt-Tab pendant l'attente.
+                         */
+                        if !is_deadlock_foreground() {
+                            println!(
+                                "[SPLIT] Save {slot} cancelled: Deadlock lost focus"
+                            );
+
+                            continue;
+                        }
+
+
+                        match watcher::request_save_slot(
+                            slot,
+                        ) {
+                            Ok(_) => {
+                                println!(
+                                    "[SPLIT] Capture requested for slot {slot}"
+                                );
+                            }
+
+                            Err(error) => {
+                                eprintln!(
+                                    "[SPLIT] Could not request save {slot}: {error}"
+                                );
+
+                                continue;
+                            }
+                        }
+
+
+                        if let Err(error) =
+                            send_capture_key()
+                        {
+                            watcher::cancel_pending_save();
+
+                            eprintln!(
+                                "[SPLIT] Could not send H: {error}"
+                            );
+                        }
                     }
-                }
 
-                if let Err(error) =
-                    send_capture_key()
-                {
-                    watcher::cancel_pending_save();
 
-                    eprintln!(
-                        "[SPLIT] Could not send H: {error}"
-                    );
+                    /*
+                     * F1-F8
+                     *
+                     * On NE dépend PAS des binds
+                     * F1-F8 de Deadlock.
+                     *
+                     * SPLIT transforme :
+                     *
+                     * F1 -> U
+                     * F2 -> I
+                     * etc.
+                     */
+                    HotkeyAction::Load(
+                        slot,
+                    ) => {
+                        println!(
+                            "[SPLIT] Load hotkey: F{slot}"
+                        );
+
+
+                        if !is_deadlock_foreground() {
+                            println!(
+                                "[SPLIT] Load {slot} cancelled: Deadlock lost focus"
+                            );
+
+                            continue;
+                        }
+
+
+                        if let Err(error) =
+                            send_load_key(
+                                slot,
+                            )
+                        {
+                            eprintln!(
+                                "[SPLIT] Could not load slot {slot}: {error}"
+                            );
+                        }
+                    }
                 }
             }
         })
         .map_err(|error| {
             format!(
-                "Could not start save hotkey worker: {error}"
+                "Could not start hotkey worker: {error}"
             )
         })?;
+
 
     /*
      * Hook clavier Windows.
@@ -470,10 +939,13 @@ pub fn start() -> Result<(), String> {
             let hook =
                 SetWindowsHookExW(
                     WH_KEYBOARD_LL,
-                    Some(keyboard_hook),
+                    Some(
+                        keyboard_hook,
+                    ),
                     std::ptr::null_mut(),
                     0,
                 );
+
 
             if hook.is_null() {
                 eprintln!(
@@ -483,12 +955,23 @@ pub fn start() -> Result<(), String> {
                 return;
             }
 
+
             println!(
-                "[SPLIT] Deadlock Save hotkeys active: Alt+F1-F8"
+                "[SPLIT] Deadlock hotkeys active:"
             );
+
+            println!(
+                "[SPLIT]   Save = Alt+F1-F8"
+            );
+
+            println!(
+                "[SPLIT]   Load = F1-F8"
+            );
+
 
             let mut message =
                 MSG::default();
+
 
             while GetMessageW(
                 &mut message,
@@ -506,6 +989,7 @@ pub fn start() -> Result<(), String> {
                 );
             }
 
+
             let _ =
                 UnhookWindowsHookEx(
                     hook,
@@ -516,6 +1000,7 @@ pub fn start() -> Result<(), String> {
                 "Could not start keyboard hook: {error}"
             )
         })?;
+
 
     Ok(())
 }
