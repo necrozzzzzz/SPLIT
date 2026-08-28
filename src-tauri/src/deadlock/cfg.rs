@@ -35,9 +35,21 @@ pub fn write_savestate_cfg(
             Some(position) => {
                 output.push_str(&format!("// Slot {slot_number}\n"));
 
+                let slot_cfg_name = format!("savestate_slot_{slot_number}");
+                let slot_cfg_path = parent.join(format!("{slot_cfg_name}.cfg"));
+
+                let slot_cfg = format!(
+                    "ent_fire !self setabsorigin \"{} {} {}\"\n\
+            setang_exact {} {} {}\n",
+                    position.x, position.y, position.z, position.pitch, position.yaw, position.roll,
+                );
+
+                atomic_write(&slot_cfg_path, slot_cfg).map_err(|error| {
+                    format!("Could not write {}: {error}", slot_cfg_path.display())
+                })?;
+
                 output.push_str(&format!(
-                    "alias \"load_slot_{slot_number}\" \"{};noclip\"\n",
-                    position.to_deadlock_command(),
+                    "alias \"load_slot_{slot_number}\" \"exec {slot_cfg_name}\"\n",
                 ));
             }
 
