@@ -51,10 +51,7 @@ pub struct CameraSnapshot {
     pub yaw: f32,
     pub roll: f32,
 
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<[f32; 3]>,
 }
 
@@ -622,51 +619,28 @@ pub fn warmup() {
 }
 
 pub fn capture() -> Result<CameraSnapshot, String> {
-    let pid =
-        process::deadlock_pid()
-            .ok_or_else(|| "Deadlock is not running".to_string())?;
+    let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
 
     let runtime = runtime_for_pid(pid)?;
 
     let process = open_deadlock(pid)?;
 
     let result = (|| {
-        let camera_object =
-            active_camera_object(
-                process,
-                runtime,
-            )?;
+        let camera_object = active_camera_object(process, runtime)?;
 
-        let position: CameraPosition =
-            read_value(
-                process,
-                camera_object
-                    + CAMERA_POSITION_OFFSET,
-            )?;
+        let position: CameraPosition = read_value(process, camera_object + CAMERA_POSITION_OFFSET)?;
 
-        let angles: CameraAngles =
-            read_value(
-                process,
-                camera_object
-                    + CAMERA_ANGLES_OFFSET,
-            )?;
+        let angles: CameraAngles = read_value(process, camera_object + CAMERA_ANGLES_OFFSET)?;
 
         Ok(CameraSnapshot {
             pitch: angles.pitch,
             yaw: angles.yaw,
             roll: angles.roll,
-            position: Some([
-                position.x,
-                position.y,
-                position.z,
-            ]),
+            position: Some([position.x, position.y, position.z]),
         })
     })();
 
-    let _ =
-        unsafe {
-            CloseHandle(process)
-        };
+    let _ = unsafe { CloseHandle(process) };
 
     if result.is_err() {
         invalidate_runtime(pid);

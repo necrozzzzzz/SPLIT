@@ -382,7 +382,173 @@ fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-fn clear_last_velocity_once(_process: HANDLE, _prediction: usize) -> Result<(), String> {
+fn clear_last_velocity_once(
+    process: HANDLE,
+    prediction: usize,
+    entity_list: usize,
+) -> Result<(), String> {
+    let pawn =
+        read_value::<usize>(
+            process,
+            prediction + LOCAL_PAWN_IN_PREDICTION,
+        )?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    /*
+     * Layout runtime validé :
+     *
+     * pawn + 0x14D0 = CCitadelAbilityComponent
+     * component + 0x68 = m_vecAbilities
+     */
+    let component = pawn + 0x14D0;
+    let abilities_vector = component + 0x68;
+
+    let count =
+        read_value::<u64>(
+            process,
+            abilities_vector + 0x00,
+        )?;
+
+    let data =
+        read_value::<u64>(
+            process,
+            abilities_vector + 0x08,
+        )?;
+
+    if count == 0 || count > 64 || data < 0x10000 {
+        return Err("m_vecAbilities suspect".to_string());
+    }
+
+    let buffer =
+        read_bytes(
+            process,
+            data as usize,
+            count as usize * size_of::<u32>(),
+        )?;
+
+    let mut jump_instance = None;
+
+    for i in 0..count as usize {
+        let offset = i * size_of::<u32>();
+
+        let handle =
+            u32::from_le_bytes(
+                buffer[offset..offset + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+
+        let Some((
+            _resolved_index,
+            _chunk,
+            identity,
+            instance,
+            stored_handle,
+        )) = try_resolve_entity_with_stride(
+            process,
+            entity_list,
+            handle,
+            0x70,
+        ) else {
+            continue;
+        };
+
+        if stored_handle != handle {
+            continue;
+        }
+
+        let designer_ptr =
+            read_value::<usize>(
+                process,
+                identity + 0x20,
+            )
+            .unwrap_or(0);
+
+        let designer =
+            read_c_string_lossy(
+                process,
+                designer_ptr,
+                96,
+            );
+
+        if designer == "citadel_ability_jump" {
+            jump_instance = Some(instance);
+            break;
+        }
+    }
+
+    let jump =
+        jump_instance.ok_or_else(|| {
+            "citadel_ability_jump introuvable".to_string()
+        })?;
+
+    /*
+     * Offset runtime validé dans nos captures :
+     * CCitadel_Ability_Jump::m_LastJumpType
+     */
+    let address = jump + 0x1238;
+
+    let before =
+        read_value::<u8>(
+            process,
+            address,
+        )?;
+
+    println!();
+    println!("[F11] jump instance = 0x{jump:X}");
+    println!(
+        "[F11] LastJumpType avant = {before}"
+    );
+
+    /*
+     * Ce test est volontairement strict.
+     *
+     * On ne touche RIEN si l'état n'est pas
+     * exactement Air (= 1).
+     */
+    if before != 1 {
+        return Err(format!(
+            "Test annulé : LastJumpType vaut {before}, pas Air(1)"
+        ));
+    }
+
+    /*
+     * Test causal unique :
+     *
+     * Air      = 1
+     * DashJump = 3
+     */
+    let forced = 3u8;
+
+    write_value(
+        process,
+        address,
+        &forced,
+    )?;
+
+    let after =
+        read_value::<u8>(
+            process,
+            address,
+        )?;
+
+    println!(
+        "[F11] LastJumpType après = {after}"
+    );
+
+    if after != forced {
+        return Err(format!(
+            "Écriture non confirmée : attendu 3, lu {after}"
+        ));
+    }
+
+    println!(
+        "[F11] TEST ACTIF : Air(1) -> DashJump(3)"
+    );
+
     Ok(())
 }
 
@@ -501,52 +667,437 @@ fn resolve_prediction(
     Err("Plusieurs Prediction candidates et aucun local pawn valide".to_string())
 }
 
-fn dump_ability_handles(process: HANDLE, prediction: usize) -> Result<(), String> {
+fn entity_list_signature_matches(data: &[u8], offset: usize) -> bool {
+    if offset + 16 > data.len() {
+        return false;
+    }
+
+    /*
+     * 48 8B 0D ?? ?? ?? ??
+     * 48 89 7C 24 ??
+     * 8B FA
+     * C1 EB
+     */
+    data[offset] == 0x48
+        && data[offset + 1] == 0x8B
+        && data[offset + 2] == 0x0D
+        && data[offset + 7] == 0x48
+        && data[offset + 8] == 0x89
+        && data[offset + 9] == 0x7C
+        && data[offset + 10] == 0x24
+        && data[offset + 12] == 0x8B
+        && data[offset + 13] == 0xFA
+        && data[offset + 14] == 0xC1
+        && data[offset + 15] == 0xEB
+}
+
+fn resolve_entity_list(
+    process: HANDLE,
+    client_base: usize,
+    client_size: usize,
+) -> Result<usize, String> {
+    /*
+     * Scan limité à client.dll.
+     * Pas de full-process scan.
+     */
+    let client = read_bytes(process, client_base, client_size)?;
+
+    let mut candidates = Vec::new();
+
+    for offset in 0..=client.len().saturating_sub(16) {
+        if !entity_list_signature_matches(&client, offset) {
+            continue;
+        }
+
+        let displacement =
+            i32::from_le_bytes(client[offset + 3..offset + 7].try_into().unwrap()) as isize;
+
+        /*
+         * 48 8B 0D disp32
+         *
+         * RIP est à la fin de l'instruction, donc +7.
+         */
+        let rip = client_base.wrapping_add(offset).wrapping_add(7);
+
+        let global = rip.wrapping_add_signed(displacement);
+
+        let entity_list = read_value::<usize>(process, global).unwrap_or(0);
+
+        if entity_list >= 0x10000 {
+            candidates.push((global, entity_list));
+        }
+    }
+
+    if candidates.len() != 1 {
+        return Err(format!(
+            "Entity List signature: {} candidat(s) valide(s)",
+            candidates.len()
+        ));
+    }
+
+    let (global, entity_list) = candidates[0];
+
+    println!();
+    println!("[ability] entity_list_global=0x{global:X}");
+    println!("[ability] entity_list=0x{entity_list:X}");
+
+    Ok(entity_list)
+}
+
+fn read_c_string_lossy(process: HANDLE, address: usize, max_length: usize) -> String {
+    if address < 0x10000 {
+        return "<null>".to_string();
+    }
+
+    let Ok(buffer) = read_bytes(process, address, max_length) else {
+        return "<unreadable>".to_string();
+    };
+
+    let length = buffer
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(buffer.len());
+
+    String::from_utf8_lossy(&buffer[..length]).into_owned()
+}
+
+fn try_resolve_entity_with_stride(
+    process: HANDLE,
+    entity_list: usize,
+    handle: u32,
+    stride: usize,
+) -> Option<(usize, usize, usize, usize, u32)> {
+    /*
+     * Deadlock : 14-bit entity index.
+     */
+    let index = (handle & 0x3FFF) as usize;
+
+    /*
+     * 512 identities par chunk.
+     */
+    let chunk_index = index >> 9;
+    let slot_index = index & 0x1FF;
+
+    /*
+     * CConcreteEntityList :
+     *
+     * +0x10 = premier pointeur de chunk
+     * puis 8 octets par chunk.
+     */
+    let chunk = read_value::<usize>(
+        process,
+        entity_list + 0x10 + chunk_index * size_of::<usize>(),
+    )
+    .ok()?;
+
+    if chunk < 0x10000 {
+        return None;
+    }
+
+    let identity = chunk + slot_index * stride;
+
+    /*
+     * Le premier qword du slot doit pointer
+     * vers la CEntityInstance.
+     */
+    let instance = read_value::<usize>(process, identity).ok()?;
+
+    if instance < 0x10000 {
+        return None;
+    }
+
+    /*
+     * Validation extrêmement importante :
+     *
+     * CEntityInstance::m_pEntity est à +0x10.
+     *
+     * Il doit repointer EXACTEMENT vers le
+     * CEntityIdentity que nous venons de calculer.
+     */
+    let back_identity = read_value::<usize>(process, instance + 0x10).ok()?;
+
+    if back_identity != identity {
+        return None;
+    }
+
+    /*
+     * CEntityIdentity contient également son handle
+     * autour de +0x10 dans le layout runtime Source 2.
+     *
+     * On le log mais on ne l'utilise PAS encore
+     * comme condition de validation.
+     */
+    let stored_handle = read_value::<u32>(process, identity + 0x10).unwrap_or(0);
+
+    Some((index, chunk, identity, instance, stored_handle))
+}
+
+fn dump_jump_state(process: HANDLE, jump: usize) -> Result<(), String> {
+    println!();
+    println!("[jump] ========================================");
+    println!("[jump] instance=0x{jump:X}");
+
+    /*
+     * Layout candidat beaucoup plus récent :
+     * deadlock-dumper, dump du 7 mai 2026.
+     *
+     * Toujours READ-ONLY.
+     */
+
+    let last_zip = read_value::<f32>(process, jump + 0x11D8)?;
+
+    let last_ground = read_value::<f32>(process, jump + 0x11DC)?;
+
+    let phase_start = read_value::<f32>(process, jump + 0x11E0)?;
+
+    let jump_time = read_value::<f32>(process, jump + 0x11E4)?;
+
+    let wall_fatigue_start = read_value::<f32>(process, jump + 0x11E8)?;
+
+    let last_think = read_value::<f32>(process, jump + 0x11EC)?;
+
+    println!("[jump] lastZip          @11D8 = {last_zip:.6}");
+    println!("[jump] lastGround       @11DC = {last_ground:.6}");
+    println!("[jump] phaseStart       @11E0 = {phase_start:.6}");
+    println!("[jump] jumpTime         @11E4 = {jump_time:.6}");
+    println!("[jump] wallFatigueStart @11E8 = {wall_fatigue_start:.6}");
+    println!("[jump] lastThink        @11EC = {last_think:.6}");
+
+    /*
+     * Wall/jump state.
+     */
+    let last_wall_jump = read_value::<f32>(process, jump + 0x1220)?;
+
+    let wall_facing = read_value::<i16>(process, jump + 0x1230)?;
+
+    let wall_fatigue_strength = read_value::<f32>(process, jump + 0x1234)?;
+
+    let last_jump_type = read_value::<u8>(process, jump + 0x1238)?;
+
+    let create_air_effects = read_value::<u8>(process, jump + 0x1239)?;
+
+    let double_jump_fail_time = read_value::<f32>(process, jump + 0x123C)?;
+
+    let double_jump_fail_reason = read_value::<i32>(process, jump + 0x1240)?;
+
+    println!();
+    println!("[jump] lastWallJump       @1220 = {last_wall_jump:.6}");
+    println!("[jump] wallFacing         @1230 = {wall_facing}");
+    println!("[jump] wallFatigueStrength@1234 = {wall_fatigue_strength:.6}");
+    println!("[jump] lastJumpType       @1238 = {last_jump_type}");
+    println!("[jump] createAirEffects   @1239 = {create_air_effects}");
+    println!("[jump] doubleJumpFailTime @123C = {double_jump_fail_time:.6}");
+    println!("[jump] doubleJumpFailWhy  @1240 = {double_jump_fail_reason}");
+
+    /*
+     * CCitadelAutoScaledTime fait 0x18.
+     *
+     * Son GameTime_t était à +0x08 dans les dumps.
+     * On log également les headers bruts pour ne pas
+     * supposer aveuglément que ce sous-layout est inchangé.
+     */
+    let dash_start_q00 = read_value::<u64>(process, jump + 0x14D0)?;
+
+    let dash_start_time = read_value::<f32>(process, jump + 0x14D8)?;
+
+    let dash_end_q00 = read_value::<u64>(process, jump + 0x14E8)?;
+
+    let dash_end_time = read_value::<f32>(process, jump + 0x14F0)?;
+
+    println!();
+    println!("[jump] dashStart raw      @14D0 = 0x{dash_start_q00:016X}");
+    println!("[jump] dashStart time     @14D8 = {dash_start_time:.6}");
+    println!("[jump] dashEnd raw        @14E8 = 0x{dash_end_q00:016X}");
+    println!("[jump] dashEnd time       @14F0 = {dash_end_time:.6}");
+
+    /*
+     * Etats réseau Jump.
+     */
+    let jumped = read_value::<u8>(process, jump + 0x1500)?;
+
+    let can_dash_jump = read_value::<u8>(process, jump + 0x1501)?;
+
+    let desired_air_jumps = read_value::<i32>(process, jump + 0x1504)?;
+
+    let executed_air_jumps = read_value::<i32>(process, jump + 0x1508)?;
+
+    let in_slide_jump = read_value::<u8>(process, jump + 0x150C)?;
+
+    let consecutive_air_jumps = read_value::<i8>(process, jump + 0x150D)?;
+
+    let consecutive_wall_jumps = read_value::<i8>(process, jump + 0x150E)?;
+
+    let lateral_suppress_end = read_value::<f32>(process, jump + 0x1510)?;
+
+    println!();
+    println!("[jump] jumped             @1500 = {jumped}");
+    println!("[jump] canDashJump        @1501 = {can_dash_jump}");
+    println!("[jump] desiredAirJumps    @1504 = {desired_air_jumps}");
+    println!("[jump] executedAirJumps   @1508 = {executed_air_jumps}");
+    println!("[jump] inSlideJump        @150C = {in_slide_jump}");
+    println!("[jump] consecutiveAir     @150D = {consecutive_air_jumps}");
+    println!("[jump] consecutiveWall    @150E = {consecutive_wall_jumps}");
+    println!("[jump] lateralSuppressEnd @1510 = {lateral_suppress_end:.6}");
+
+    /*
+     * Bruts autour des deux zones critiques pour
+     * vérifier également le layout du build actuel.
+     */
+    println!();
+    println!("[jump] === raw 11D8..11F0 ===");
+
+    for offset in (0x11D8usize..0x11F0usize).step_by(4) {
+        let raw = read_value::<u32>(process, jump + offset)?;
+
+        println!(
+            "[jump] +0x{offset:04X} \
+             raw=0x{raw:08X} \
+             f32={:.6}",
+            f32::from_bits(raw)
+        );
+    }
+
+    println!();
+    println!("[jump] === raw 14D0..1518 ===");
+
+    for offset in (0x14D0usize..0x1518usize).step_by(4) {
+        let raw = read_value::<u32>(process, jump + offset)?;
+
+        println!(
+            "[jump] +0x{offset:04X} \
+             raw=0x{raw:08X} \
+             f32={:.6}",
+            f32::from_bits(raw)
+        );
+    }
+
+    println!("[jump] ========================================");
+    println!();
+
+    Ok(())
+}
+
+fn dump_ability_handles(
+    process: HANDLE,
+    prediction: usize,
+    entity_list: usize,
+) -> Result<(), String> {
     let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
 
     if pawn < 0x10000 {
         return Err("Local pawn nul".to_string());
     }
 
-    let vector = pawn + ABILITY_VECTOR;
+    /*
+     * Validé par les probes précédents :
+     *
+     * pawn + 0x14D0 = CCitadelAbilityComponent runtime
+     * component + 0x68 = m_vecAbilities
+     * component + 0x80 = m_vecThinkableAbilities
+     */
+    let component = pawn + 0x14D0;
 
-    let q00 = read_value::<u64>(process, vector + 0x00)?;
-
-    let q08 = read_value::<u64>(process, vector + 0x08)?;
-
-    let q10 = read_value::<u64>(process, vector + 0x10)?;
+    let abilities_vector = component + 0x68;
+    let thinkable_vector = component + 0x80;
 
     println!();
-    println!("[ability] vector=0x{vector:X}");
-    println!("[ability] +00=0x{q00:016X}");
-    println!("[ability] +08=0x{q08:016X}");
-    println!("[ability] +10=0x{q10:016X}");
+    println!("[ability] pawn=0x{pawn:X}");
+    println!("[ability] component=0x{component:X}");
 
-    let data = q08 as usize;
+    let ability_count = read_value::<u64>(process, abilities_vector + 0x00)?;
+    let ability_data = read_value::<u64>(process, abilities_vector + 0x08)?;
+    let ability_capacity = read_value::<u64>(process, abilities_vector + 0x10)?;
 
-    if data < 0x10000 {
-        return Err(format!("Ability data pointer suspect: 0x{data:X}"));
+    println!();
+    println!("[ability] === m_vecAbilities ===");
+    println!("[ability] vector=0x{abilities_vector:X}");
+    println!("[ability] count={ability_count}");
+    println!("[ability] data=0x{ability_data:016X}");
+    println!("[ability] capacity={ability_capacity}");
+
+    let thinkable_count = read_value::<u64>(process, thinkable_vector + 0x00)?;
+    let thinkable_data = read_value::<u64>(process, thinkable_vector + 0x08)?;
+    let thinkable_capacity = read_value::<u64>(process, thinkable_vector + 0x10)?;
+
+    println!();
+    println!("[ability] === m_vecThinkableAbilities ===");
+    println!("[ability] count={thinkable_count}");
+    println!("[ability] data=0x{thinkable_data:016X}");
+    println!("[ability] capacity={thinkable_capacity}");
+
+    if ability_count == 0 || ability_count > 64 || ability_data < 0x10000 {
+        return Err("m_vecAbilities suspect".to_string());
     }
 
+    let count = ability_count as usize;
+
+    let buffer = read_bytes(process, ability_data as usize, count * size_of::<u32>())?;
+
     println!();
-    println!("[ability] dump autour de data=0x{data:X}");
+    println!("[ability] === resolved ability entities ===");
 
-    for offset in (-0x20isize..0x80isize).step_by(4) {
-        let address = (data as isize + offset) as usize;
+    for index_in_vector in 0..count {
+        let offset = index_in_vector * size_of::<u32>();
 
-        match read_value::<u32>(process, address) {
-            Ok(value) => {
-                println!(
-                    "[ability] data{offset:+#05X} \
-= 0x{value:08X} ({value})"
-                );
-            }
+        let handle = u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
 
-            Err(_) => {
-                println!(
-                    "[ability] data{offset:+#05X} \
-= <unreadable>"
-                );
+        let entity_index = handle & 0x3FFF;
+        let serial = handle >> 14;
+
+        /*
+         * Le stride 0x70 est maintenant validé au runtime.
+         */
+        let Some((resolved_index, _chunk, identity, instance, stored_handle)) =
+            try_resolve_entity_with_stride(process, entity_list, handle, 0x70)
+        else {
+            println!(
+                "[ability] [{index_in_vector:02}] \
+             handle=0x{handle:08X} \
+             index=0x{entity_index:04X} \
+             RESOLVE FAILED"
+            );
+
+            continue;
+        };
+
+        /*
+         * Validation stricte :
+         * l'identity doit contenir exactement
+         * le CHandle qu'on est en train de résoudre.
+         */
+        if stored_handle != handle {
+            println!(
+                "[ability] [{index_in_vector:02}] \
+             handle=0x{handle:08X} \
+             WRONG IDENTITY HANDLE=0x{stored_handle:08X}"
+            );
+
+            continue;
+        }
+
+        let designer_name_ptr = read_value::<usize>(process, identity + 0x20).unwrap_or(0);
+
+        let designer_name = read_c_string_lossy(process, designer_name_ptr, 96);
+
+        let jump_marker = if designer_name.to_ascii_lowercase() == "citadel_ability_jump" {
+            "  <=== JUMP?"
+        } else {
+            ""
+        };
+
+        println!(
+            "[ability] [{index_in_vector:02}] \
+         handle=0x{handle:08X} \
+         idx=0x{resolved_index:04X} \
+         serial={serial} \
+         instance=0x{instance:X} \
+         designer=\"{designer_name}\"\
+         {jump_marker}"
+        );
+
+        if designer_name == "citadel_ability_jump" {
+            if let Err(error) = dump_jump_state(process, instance) {
+                eprintln!("[jump] ERROR: {error}");
             }
         }
     }
@@ -875,14 +1426,14 @@ solid={}/{} physics={} | coll={} landed={}",
     );
 }
 
-fn capture(process: HANDLE, prediction: usize) {
+fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
     println!();
     println!("========== CAPTURE START ==========");
     println!("F11 puis ENTER sur load_slot_4.");
 
     let started = Instant::now();
 
-    if let Err(error) = dump_ability_handles(process, prediction) {
+    if let Err(error) = dump_ability_handles(process, prediction, entity_list) {
         eprintln!("[ability] ERROR: {error}");
     }
 
@@ -1048,6 +1599,8 @@ fn run() -> Result<(), String> {
 
     let prediction = resolve_prediction(process.0, client_base, client_size)?;
 
+    let entity_list = resolve_entity_list(process.0, client_base, client_size)?;
+
     println!();
     println!("=== MOVEMENT / GROUND PROBE ===");
 
@@ -1065,7 +1618,7 @@ fn run() -> Result<(), String> {
         let down = (unsafe { GetAsyncKeyState(VK_F12 as i32) } as u16 & 0x8000) != 0;
 
         if down && !was_down {
-            capture(process.0, prediction);
+            capture(process.0, prediction, entity_list);
         }
 
         was_down = down;
