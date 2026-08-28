@@ -659,7 +659,13 @@ pub fn restore(snapshot: CameraSnapshot) -> Result<(), String> {
     let result = (|| {
         let camera_object = active_camera_object(process, runtime)?;
 
-        write_value(process, camera_object + CAMERA_ANGLES_OFFSET, &snapshot)
+        let angles = CameraAngles {
+            pitch: snapshot.pitch,
+            yaw: snapshot.yaw,
+            roll: snapshot.roll,
+        };
+
+        write_value(process, camera_object + CAMERA_ANGLES_OFFSET, &angles)
     })();
 
     let _ = unsafe { CloseHandle(process) };

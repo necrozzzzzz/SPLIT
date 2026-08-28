@@ -390,13 +390,7 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
     };
 
     /*
-     * Pré-positionner la caméra AVANT
-     * que Deadlock traite le téléport.
-     *
-     * Comme le CFG moderne ne contient
-     * plus de setang_exact, le téléport
-     * ne doit plus provoquer de rotation
-     * intermédiaire du personnage/cadrage.
+     * Replace la vraie caméra sauvegardée.
      */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
@@ -413,11 +407,6 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         }
     }
 
-    /*
-     * Une fois la caméra déjà correctement
-     * orientée, on demande uniquement
-     * le déplacement XYZ à Deadlock.
-     */
     send_load_key(slot)?;
 
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });

@@ -40,6 +40,10 @@ const SERVER_VELOCITY: usize = 0x410;
 const VELOCITY: usize = 0x438;
 
 // C_CitadelPlayerPawn
+const EYE_ANGLES: usize = 0x11B8;
+const CLIENT_CAMERA_ANGLES: usize = 0x1248;
+const LOCKED_EYE_ANGLES: usize = 0x14C0;
+
 const ABILITY_REQUIRES_DEBOUNCE: usize = 0x1188;
 
 const ABILITY_COMPONENT: usize = 0x1468;
@@ -88,6 +92,9 @@ const MOVEMENT_SERVICES: usize = 0xF28;
  * CGameSceneNode
  */
 const ABS_ORIGIN: usize = 0xC8;
+
+const SCENE_LOCAL_ANGLES: usize = 0xB8;
+const SCENE_ABS_ANGLES: usize = 0xD4;
 
 /*
  * CPlayer_MovementServices_Humanoid
@@ -150,7 +157,9 @@ const ENTITY_STATE_SIZE: usize = 0x564 - ENTITY_STATE_BASE;
  */
 const MOVEMENT_STATE_SIZE: usize = (LANDED_ON_GROUND + 1) - FALL_VELOCITY;
 
-const CAPTURE_DURATION: Duration = Duration::from_millis(2500);
+const PAWN_YAW_SCAN_SIZE: usize = 0x2000;
+
+const CAPTURE_DURATION: Duration = Duration::from_millis(6000);
 
 const SAMPLE_DELAY: Duration = Duration::from_millis(1);
 
@@ -159,6 +168,12 @@ struct Vec3 {
     x: f32,
     y: f32,
     z: f32,
+}
+
+struct YawScanBaseline {
+    pawn: usize,
+    yaw: f32,
+    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -382,15 +397,11 @@ fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-fn force_can_dash_jump_once(
-    process: HANDLE,
-    prediction: usize,
-    entity_list: usize,
-) -> Result<(), String> {
+fn clear_last_velocity_once(_process: HANDLE, _prediction: usize) -> Result<(), String> {
     Ok(())
 }
 
-fn force_jump_type_once(
+fn force_can_dash_jump_once(
     process: HANDLE,
     prediction: usize,
     entity_list: usize,
@@ -1372,6 +1383,258 @@ solid={}/{} physics={} | coll={} landed={}",
     );
 }
 
+fn dump_scene_angles_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let scene_node = read_value::<usize>(process, pawn + SCENE_NODE)?;
+
+    if scene_node < 0x10000 {
+        return Err("Scene node nul".to_string());
+    }
+
+    let local = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
+
+    let absolute = read_value::<Vec3>(process, scene_node + SCENE_ABS_ANGLES)?;
+
+    println!();
+    println!("[ANGLE] pawn      = 0x{pawn:X}");
+    println!("[ANGLE] sceneNode = 0x{scene_node:X}");
+
+    println!(
+        "[ANGLE] local +0xB8 = {:.3}, {:.3}, {:.3}",
+        local.x, local.y, local.z
+    );
+
+    println!(
+        "[ANGLE] abs   +0xD4 = {:.3}, {:.3}, {:.3}",
+        absolute.x, absolute.y, absolute.z
+    );
+
+    println!();
+
+    Ok(())
+}
+
+fn force_scene_local_yaw_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let scene_node = read_value::<usize>(process, pawn + SCENE_NODE)?;
+
+    if scene_node < 0x10000 {
+        return Err("Scene node nul".to_string());
+    }
+
+    let address = scene_node + SCENE_LOCAL_ANGLES;
+
+    let before = read_value::<Vec3>(process, address)?;
+
+    println!();
+    println!(
+        "[ANGLE TEST] local avant = {:.3}, {:.3}, {:.3}",
+        before.x, before.y, before.z
+    );
+
+    let forced = Vec3 {
+        x: before.x,
+        y: -179.8125,
+        z: before.z,
+    };
+
+    write_value(process, address, &forced)?;
+
+    let after = read_value::<Vec3>(process, address)?;
+
+    println!(
+        "[ANGLE TEST] local après = {:.3}, {:.3}, {:.3}",
+        after.x, after.y, after.z
+    );
+
+    Ok(())
+}
+
+fn scan_pawn_yaw_candidates(
+    process: HANDLE,
+    prediction: usize,
+    baseline: &mut Option<YawScanBaseline>,
+) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let scene_node = read_value::<usize>(process, pawn + SCENE_NODE)?;
+
+    if scene_node < 0x10000 {
+        return Err("Scene node nul".to_string());
+    }
+
+    /*
+     * On utilise uniquement SceneNode +0xB8
+     * comme référence READ-ONLY du yaw actuel.
+     *
+     * Nos tests précédents ont montré qu'il
+     * correspond exactement à getpos_exact.
+     */
+    let scene_angles = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
+
+    let yaw = scene_angles.y;
+
+    let bytes = read_bytes(process, pawn, PAWN_YAW_SCAN_SIZE)?;
+
+    if baseline.is_none() {
+        println!();
+        println!("========== YAW SCAN BASELINE ==========");
+        println!("[YAW] pawn = 0x{pawn:X}");
+        println!("[YAW] référence = {yaw:.6}");
+        println!("[YAW] Tourne maintenant d'environ 90° puis F11 une deuxième fois.");
+        println!();
+
+        *baseline = Some(YawScanBaseline { pawn, yaw, bytes });
+
+        return Ok(());
+    }
+
+    let first = baseline
+        .take()
+        .ok_or_else(|| "Baseline absente".to_string())?;
+
+    if first.pawn != pawn {
+        return Err("Le local pawn a changé entre les deux captures".to_string());
+    }
+
+    println!();
+    println!("========== YAW SCAN RESULTS ==========");
+    println!(
+        "[YAW] référence A = {:.6} | référence B = {:.6}",
+        first.yaw, yaw
+    );
+
+    let mut matches = 0usize;
+
+    for offset in (0..PAWN_YAW_SCAN_SIZE - 4).step_by(4) {
+        let before = f32::from_le_bytes(first.bytes[offset..offset + 4].try_into().unwrap());
+
+        let after = f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+
+        if !before.is_finite() || !after.is_finite() {
+            continue;
+        }
+
+        let matches_before = (before - first.yaw).abs() <= 0.25;
+        let matches_after = (after - yaw).abs() <= 0.25;
+
+        if matches_before && matches_after {
+            println!(
+                "[YAW CANDIDATE] pawn+0x{offset:04X} : {:.6} -> {:.6}",
+                before, after
+            );
+
+            matches += 1;
+        }
+    }
+
+    println!("[YAW] {matches} candidat(s)");
+    println!("======================================");
+    println!();
+
+    Ok(())
+}
+
+fn dump_pawn_angles_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let scene_node = read_value::<usize>(process, pawn + SCENE_NODE)?;
+
+    if scene_node < 0x10000 {
+        return Err("Scene node nul".to_string());
+    }
+
+    let scene = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
+
+    let eye = read_value::<Vec3>(process, pawn + EYE_ANGLES)?;
+
+    let client_camera = read_value::<Vec3>(process, pawn + CLIENT_CAMERA_ANGLES)?;
+
+    let locked_eye = read_value::<Vec3>(process, pawn + LOCKED_EYE_ANGLES)?;
+
+    println!();
+    println!("========== PAWN ANGLES ==========");
+    println!(
+        "[ANGLES] SceneNode = {:.3}, {:.3}, {:.3}",
+        scene.x, scene.y, scene.z
+    );
+    println!(
+        "[ANGLES] Eye       = {:.3}, {:.3}, {:.3}",
+        eye.x, eye.y, eye.z
+    );
+    println!(
+        "[ANGLES] ClientCam = {:.3}, {:.3}, {:.3}",
+        client_camera.x, client_camera.y, client_camera.z
+    );
+    println!(
+        "[ANGLES] LockedEye = {:.3}, {:.3}, {:.3}",
+        locked_eye.x, locked_eye.y, locked_eye.z
+    );
+    println!("=================================");
+    println!();
+
+    Ok(())
+}
+
+fn force_client_camera_yaw_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let address = pawn + CLIENT_CAMERA_ANGLES;
+
+    let before = read_value::<Vec3>(process, address)?;
+
+    println!();
+    println!(
+        "[CLIENTCAM TEST] avant = {:.3}, {:.3}, {:.3}",
+        before.x, before.y, before.z
+    );
+
+    /*
+     * m_angClientCamera utilise ici des angles 0..360.
+     *
+     * Notre yaw de slot -179.8125° correspond à :
+     * 180.1875°
+     */
+    let forced = Vec3 {
+        x: before.x,
+        y: 180.1875,
+        z: before.z,
+    };
+
+    write_value(process, address, &forced)?;
+
+    let after = read_value::<Vec3>(process, address)?;
+
+    println!(
+        "[CLIENTCAM TEST] après = {:.3}, {:.3}, {:.3}",
+        after.x, after.y, after.z
+    );
+
+    Ok(())
+}
+
 fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
     println!();
     println!("========== CAPTURE START ==========");
@@ -1379,13 +1642,17 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
 
     let started = Instant::now();
 
+    /*
     if let Err(error) = dump_ability_handles(process, prediction, entity_list) {
         eprintln!("[ability] ERROR: {error}");
     }
+    */
 
     let mut samples = Vec::new();
 
     let mut f11_was_down = false;
+
+    let mut yaw_scan_baseline: Option<YawScanBaseline> = None;
 
     let mut clear_ground_active = false;
     let mut clear_ground_started: Option<Instant> = None;
@@ -1406,11 +1673,8 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
         if f11_down && !f11_was_down {
-            println!();
-            println!("[F11] Test causal LastJumpType");
-
-            if let Err(error) = force_can_dash_jump_once(process, prediction, entity_list) {
-                eprintln!("[F11] ERROR: {error}");
+            if let Err(error) = force_client_camera_yaw_once(process, prediction) {
+                eprintln!("[CLIENTCAM TEST] ERROR: {error}");
             }
         }
 
@@ -1503,16 +1767,80 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
         return;
     }
 
-    for index in 0..samples.len() {
-        let sample = &samples[index];
+    /*
+     * Trouve le premier gros déplacement :
+     * c'est notre setabsorigin vers le slot 4.
+     */
+    let initial = samples[0].position;
 
-        let periodic = index == 0 || index % 5 == 0;
+    let tp_index = samples.iter().position(|sample| {
+        let dx = sample.position.x - initial.x;
+        let dy = sample.position.y - initial.y;
+        let dz = sample.position.z - initial.z;
 
-        let transition = index > 0 && discrete_changed(&samples[index - 1], sample);
+        dx * dx + dy * dy + dz * dz > 500.0 * 500.0
+    });
 
-        if periodic || transition {
-            print_sample(sample);
+    if let Some(tp_index) = tp_index {
+        println!();
+        println!("========== TP HIGH RES ==========");
+
+        /*
+         * ~20 samples avant et ~50 après.
+         * Comme on sample autour de 1 ms,
+         * on verra précisément l'ordre des événements.
+         */
+        let start = tp_index.saturating_sub(20);
+        let end = (tp_index + 50).min(samples.len());
+
+        for sample in &samples[start..end] {
+            println!(
+                "{:>4}ms | \
+                XYZ={:.3},{:.3},{:.3} | \
+                ground={} hGround=0x{:08X} | \
+                absV={:.2},{:.2},{:.2} | \
+                srvV={:.2},{:.2},{:.2} | \
+                netV={:.2},{:.2},{:.2} | \
+                pogo={:.2},{:.2},{:.2} | \
+                delta={:.2},{:.2},{:.2} | \
+                fall={:.2} | \
+                support={:.2},{:.2},{:.2} | \
+                move={}/{} coll={} landed={}",
+                sample.ms,
+                sample.position.x,
+                sample.position.y,
+                sample.position.z,
+                sample.on_ground as u8,
+                sample.ground_entity,
+                sample.velocity.x,
+                sample.velocity.y,
+                sample.velocity.z,
+                sample.server_velocity.x,
+                sample.server_velocity.y,
+                sample.server_velocity.z,
+                sample.network_velocity.x,
+                sample.network_velocity.y,
+                sample.network_velocity.z,
+                sample.pogo_velocity.x,
+                sample.pogo_velocity.y,
+                sample.pogo_velocity.z,
+                sample.position_delta_velocity.x,
+                sample.position_delta_velocity.y,
+                sample.position_delta_velocity.z,
+                sample.fall_velocity,
+                sample.support.x,
+                sample.support.y,
+                sample.support.z,
+                sample.move_type,
+                sample.actual_move_type,
+                sample.colliding as u8,
+                sample.landed_on_ground as u8,
+            );
         }
+
+        println!("=================================");
+    } else {
+        println!("[probe] Aucun TP détecté");
     }
 
     println!();

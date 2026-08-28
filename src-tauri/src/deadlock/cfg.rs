@@ -39,9 +39,9 @@ pub fn write_savestate_cfg(
                 let slot_cfg_path = parent.join(format!("{slot_cfg_name}.cfg"));
 
                 let slot_cfg = format!(
-                    "ent_fire !self setabsorigin \"{} {} {}\"\n\
-            setang_exact {} {} {}\n",
-                    position.x, position.y, position.z, position.pitch, position.yaw, position.roll,
+                    "setang_exact {} {} {}\n\
+                            ent_fire !self setabsorigin \"{} {} {}\"\n",
+                    position.pitch, position.yaw, position.roll, position.x, position.y, position.z,
                 );
 
                 atomic_write(&slot_cfg_path, slot_cfg).map_err(|error| {
