@@ -17,7 +17,10 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::AppHandle;
 
-use super::parser::{PositionAssembler, PositionSnapshot};
+use super::{
+    camera::{self, CameraSnapshot},
+    parser::{PositionAssembler, PositionSnapshot},
+};
 
 static LAST_POSITION: Mutex<Option<PositionSnapshot>> = Mutex::new(None);
 
@@ -29,6 +32,12 @@ struct PendingSave {
     slot: u8,
     generation: u64,
     requested_at: Instant,
+
+    /*
+     * Caméra prise au moment exact
+     * où Alt+F1-F8 est déclenché.
+     */
+    camera: Option<CameraSnapshot>,
 }
 
 static PENDING_SAVE: Mutex<Option<PendingSave>> = Mutex::new(None);
@@ -90,6 +99,30 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         return Err(format!("Invalid slot {slot}"));
     }
 
+    /*
+     * On prend la vraie caméra immédiatement.
+     *
+     * Si la résolution caméra échoue après
+     * une update de Deadlock, on n'empêche
+     * PAS les savestates classiques de marcher.
+     */
+    let camera = match camera::capture() {
+        Ok(camera) => {
+            println!(
+                "[SPLIT] Camera captured -> P={:.3} Y={:.3} R={:.3}",
+                camera.pitch, camera.yaw, camera.roll,
+            );
+
+            Some(camera)
+        }
+
+        Err(error) => {
+            eprintln!("[SPLIT] Camera capture unavailable: {error}");
+
+            None
+        }
+    };
+
     let mut pending = PENDING_SAVE
         .lock()
         .map_err(|_| "Pending save lock poisoned".to_string())?;
@@ -108,6 +141,7 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         slot,
         generation,
         requested_at: Instant::now(),
+        camera,
     });
     drop(pending);
 
@@ -152,7 +186,12 @@ pub fn has_pending_save() -> bool {
 
 enum PendingSaveResult {
     None,
-    Ready(u8),
+
+    Ready {
+        slot: u8,
+        camera: Option<CameraSnapshot>,
+    },
+
     Expired(u8),
 }
 
@@ -176,7 +215,10 @@ fn take_pending_save_slot() -> PendingSaveResult {
         return PendingSaveResult::Expired(request.slot);
     }
 
-    PendingSaveResult::Ready(request.slot)
+    PendingSaveResult::Ready {
+        slot: request.slot,
+        camera: request.camera,
+    }
 }
 
 fn set_last_position(position: PositionSnapshot) {
@@ -278,7 +320,7 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
             println!("[SPLIT] Deadlock console -> {}", line);
         }
 
-        let Some(position) = assembler.push_line(&line) else {
+        let Some(mut position) = assembler.push_line(&line) else {
             continue;
         };
 
@@ -287,15 +329,24 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
             position.to_deadlock_command()
         );
 
-        set_last_position(position.clone());
+        /*
+         * Récupère la requête Save associée
+         * à CE getpos_exact.
+         */
+        let pending_save = take_pending_save_slot();
 
         /*
-         * Si cette position vient d'un
-         * Alt+F1..F8, sauvegarder directement
-         * dans le slot demandé.
+         * Position console + vraie caméra
+         * deviennent un seul savestate.
          */
-        match take_pending_save_slot() {
-            PendingSaveResult::Ready(slot) => {
+        if let PendingSaveResult::Ready { camera, .. } = &pending_save {
+            position.camera = *camera;
+        }
+
+        set_last_position(position.clone());
+
+        match pending_save {
+            PendingSaveResult::Ready { slot, camera: _ } => {
                 match super::persist_slot_position(slot, position.clone()) {
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
@@ -464,6 +515,7 @@ mod tests {
             slot: 2,
             generation: 12,
             requested_at: Instant::now() - SAVE_TIMEOUT,
+            camera: None,
         });
 
         assert_eq!(take_expired_generation(&mut pending, 11), None);

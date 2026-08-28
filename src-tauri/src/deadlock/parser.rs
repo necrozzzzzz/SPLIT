@@ -1,3 +1,4 @@
+use super::camera::CameraSnapshot;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9,14 +10,33 @@ pub struct PositionSnapshot {
     pub pitch: f64,
     pub yaw: f64,
     pub roll: f64,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<CameraSnapshot>,
 }
 
 impl PositionSnapshot {
     pub fn to_deadlock_command(&self) -> String {
-        format!(
-            "setpos_exact {} {} {};setang_exact {} {} {}",
-            self.x, self.y, self.z, self.pitch, self.yaw, self.roll
-        )
+        /*
+         * Avec la vraie caméra native disponible,
+         * on ne touche PLUS à setang_exact.
+         *
+         * CCitadel_ThirdPersonCamera et setang_exact
+         * n'utilisent manifestement pas exactement
+         * le même repère, ce qui peut produire
+         * un retournement d'environ 180°.
+         *
+         * Pour les anciens slots sans caméra,
+         * on conserve l'ancien comportement.
+         */
+        if self.camera.is_some() {
+            format!("setpos_exact {} {} {}", self.x, self.y, self.z,)
+        } else {
+            format!(
+                "setpos_exact {} {} {};setang_exact {} {} {}",
+                self.x, self.y, self.z, self.pitch, self.yaw, self.roll,
+            )
+        }
     }
 }
 
@@ -67,6 +87,7 @@ pub fn parse_position(line: &str) -> Option<PositionSnapshot> {
         pitch: angles[0],
         yaw: angles[1],
         roll: angles[2],
+        camera: None,
     })
 }
 
@@ -100,6 +121,7 @@ impl PositionAssembler {
             pitch: angles[0],
             yaw: angles[1],
             roll: angles[2],
+            camera: None,
         })
     }
 }
@@ -122,6 +144,7 @@ mod tests {
                 pitch: 12.5,
                 yaw: -90.0,
                 roll: 0.0,
+                camera: None,
             }
         );
     }
@@ -156,6 +179,7 @@ mod tests {
                 pitch: 1.0,
                 yaw: 2.0,
                 roll: 3.0,
+                camera: None,
             }
         );
     }

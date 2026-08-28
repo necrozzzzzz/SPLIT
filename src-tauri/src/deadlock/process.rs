@@ -19,6 +19,18 @@ fn is_deadlock_process(process: &sysinfo::Process) -> bool {
         .eq_ignore_ascii_case(DEADLOCK_PROCESS_NAME)
 }
 
+pub(crate) fn deadlock_pid() -> Option<u32> {
+    let system = system_processes();
+
+    system.processes().iter().find_map(|(pid, process)| {
+        if is_deadlock_process(process) {
+            Some(pid.as_u32())
+        } else {
+            None
+        }
+    })
+}
+
 pub fn is_deadlock_running() -> bool {
     let system = system_processes();
 

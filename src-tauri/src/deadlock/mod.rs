@@ -1,3 +1,4 @@
+mod camera;
 mod cfg;
 mod history;
 mod hotkeys;
@@ -6,6 +7,7 @@ mod paths;
 mod process;
 mod slots;
 mod watcher;
+pub use camera::CameraSnapshot;
 pub use history::HistoryState;
 pub use parser::PositionSnapshot;
 
@@ -377,17 +379,18 @@ pub fn toggle_favorite_mode() -> Result<ActiveBankResult, String> {
     })
 }
 
-pub(crate) fn active_slot_state(slot: u8) -> Result<(bool, bool), String> {
+pub(crate) fn active_slot_state(slot: u8) -> Result<(bool, Option<PositionSnapshot>), String> {
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid load slot {slot}"));
     }
 
     let bank = current_slot_bank()?;
+
     let slots = slots::load_bank(bank)?;
-    Ok((
-        favorite_mode_for_bank(bank),
-        slots[usize::from(slot - 1)].is_some(),
-    ))
+
+    let snapshot = slots[usize::from(slot - 1)].clone();
+
+    Ok((favorite_mode_for_bank(bank), snapshot))
 }
 
 pub(crate) fn emit_active_bank(app: &AppHandle, result: &ActiveBankResult) {
