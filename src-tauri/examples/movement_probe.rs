@@ -382,16 +382,16 @@ fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-fn clear_last_velocity_once(
+fn clear_last_velocity_once(_process: HANDLE, _prediction: usize) -> Result<(), String> {
+    Ok(())
+}
+
+fn force_jump_type_once(
     process: HANDLE,
     prediction: usize,
     entity_list: usize,
 ) -> Result<(), String> {
-    let pawn =
-        read_value::<usize>(
-            process,
-            prediction + LOCAL_PAWN_IN_PREDICTION,
-        )?;
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
 
     if pawn < 0x10000 {
         return Err("Local pawn nul".to_string());
@@ -406,53 +406,26 @@ fn clear_last_velocity_once(
     let component = pawn + 0x14D0;
     let abilities_vector = component + 0x68;
 
-    let count =
-        read_value::<u64>(
-            process,
-            abilities_vector + 0x00,
-        )?;
+    let count = read_value::<u64>(process, abilities_vector + 0x00)?;
 
-    let data =
-        read_value::<u64>(
-            process,
-            abilities_vector + 0x08,
-        )?;
+    let data = read_value::<u64>(process, abilities_vector + 0x08)?;
 
     if count == 0 || count > 64 || data < 0x10000 {
         return Err("m_vecAbilities suspect".to_string());
     }
 
-    let buffer =
-        read_bytes(
-            process,
-            data as usize,
-            count as usize * size_of::<u32>(),
-        )?;
+    let buffer = read_bytes(process, data as usize, count as usize * size_of::<u32>())?;
 
     let mut jump_instance = None;
 
     for i in 0..count as usize {
         let offset = i * size_of::<u32>();
 
-        let handle =
-            u32::from_le_bytes(
-                buffer[offset..offset + 4]
-                    .try_into()
-                    .unwrap(),
-            );
+        let handle = u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
 
-        let Some((
-            _resolved_index,
-            _chunk,
-            identity,
-            instance,
-            stored_handle,
-        )) = try_resolve_entity_with_stride(
-            process,
-            entity_list,
-            handle,
-            0x70,
-        ) else {
+        let Some((_resolved_index, _chunk, identity, instance, stored_handle)) =
+            try_resolve_entity_with_stride(process, entity_list, handle, 0x70)
+        else {
             continue;
         };
 
@@ -460,19 +433,9 @@ fn clear_last_velocity_once(
             continue;
         }
 
-        let designer_ptr =
-            read_value::<usize>(
-                process,
-                identity + 0x20,
-            )
-            .unwrap_or(0);
+        let designer_ptr = read_value::<usize>(process, identity + 0x20).unwrap_or(0);
 
-        let designer =
-            read_c_string_lossy(
-                process,
-                designer_ptr,
-                96,
-            );
+        let designer = read_c_string_lossy(process, designer_ptr, 96);
 
         if designer == "citadel_ability_jump" {
             jump_instance = Some(instance);
@@ -480,74 +443,52 @@ fn clear_last_velocity_once(
         }
     }
 
-    let jump =
-        jump_instance.ok_or_else(|| {
-            "citadel_ability_jump introuvable".to_string()
-        })?;
+    let jump = jump_instance.ok_or_else(|| "citadel_ability_jump introuvable".to_string())?;
 
     /*
      * Offset runtime validé dans nos captures :
      * CCitadel_Ability_Jump::m_LastJumpType
      */
-    let address = jump + 0x1238;
+    /*
+     * Test causal :
+     *
+     * CCitadel_Ability_Jump::m_bCanDashJump
+     * runtime actuel = +0x1581
+     */
+    let address = jump + 0x1581;
 
-    let before =
-        read_value::<u8>(
-            process,
-            address,
-        )?;
+    let before = read_value::<u8>(process, address)?;
 
     println!();
     println!("[F11] jump instance = 0x{jump:X}");
-    println!(
-        "[F11] LastJumpType avant = {before}"
-    );
+    println!("[F11] canDashJump avant = {before}");
 
     /*
-     * Ce test est volontairement strict.
+     * Dans notre comparaison :
      *
-     * On ne touche RIEN si l'état n'est pas
-     * exactement Air (= 1).
+     * A sain = 1
+     * B bug  = 0
+     *
+     * On refuse donc d'écrire si on n'est pas
+     * exactement dans l'état B attendu.
      */
-    if before != 1 {
-        return Err(format!(
-            "Test annulé : LastJumpType vaut {before}, pas Air(1)"
-        ));
+    if before != 0 {
+        return Err(format!("Test annulé : canDashJump vaut {before}, pas 0"));
     }
 
-    /*
-     * Test causal unique :
-     *
-     * Air      = 1
-     * DashJump = 3
-     */
-    let forced = 3u8;
+    let forced = 1u8;
 
-    write_value(
-        process,
-        address,
-        &forced,
-    )?;
+    write_value(process, address, &forced)?;
 
-    let after =
-        read_value::<u8>(
-            process,
-            address,
-        )?;
+    let after = read_value::<u8>(process, address)?;
 
-    println!(
-        "[F11] LastJumpType après = {after}"
-    );
+    println!("[F11] canDashJump après = {after}");
 
     if after != forced {
-        return Err(format!(
-            "Écriture non confirmée : attendu 3, lu {after}"
-        ));
+        return Err(format!("Écriture non confirmée : attendu 1, lu {after}"));
     }
 
-    println!(
-        "[F11] TEST ACTIF : Air(1) -> DashJump(3)"
-    );
+    println!("[F11] TEST ACTIF : canDashJump 0 -> 1");
 
     Ok(())
 }
@@ -890,59 +831,49 @@ fn dump_jump_state(process: HANDLE, jump: usize) -> Result<(), String> {
     println!("[jump] doubleJumpFailWhy  @1240 = {double_jump_fail_reason}");
 
     /*
-     * CCitadelAutoScaledTime fait 0x18.
-     *
-     * Son GameTime_t était à +0x08 dans les dumps.
-     * On log également les headers bruts pour ne pas
-     * supposer aveuglément que ce sous-layout est inchangé.
+     * Layout client Deadlock récent :
+     * Source revision 10905930, build 12 août 2026.
      */
-    let dash_start_q00 = read_value::<u64>(process, jump + 0x14D0)?;
 
-    let dash_start_time = read_value::<f32>(process, jump + 0x14D8)?;
+    let dash_start_q00 = read_value::<u64>(process, jump + 0x1550)?;
 
-    let dash_end_q00 = read_value::<u64>(process, jump + 0x14E8)?;
+    let dash_start_time = read_value::<f32>(process, jump + 0x1558)?;
 
-    let dash_end_time = read_value::<f32>(process, jump + 0x14F0)?;
+    let dash_end_q00 = read_value::<u64>(process, jump + 0x1568)?;
+
+    let dash_end_time = read_value::<f32>(process, jump + 0x1570)?;
 
     println!();
-    println!("[jump] dashStart raw      @14D0 = 0x{dash_start_q00:016X}");
-    println!("[jump] dashStart time     @14D8 = {dash_start_time:.6}");
-    println!("[jump] dashEnd raw        @14E8 = 0x{dash_end_q00:016X}");
-    println!("[jump] dashEnd time       @14F0 = {dash_end_time:.6}");
+    println!("[jump] dashStart raw      @1550 = 0x{dash_start_q00:016X}");
+    println!("[jump] dashStart time     @1558 = {dash_start_time:.6}");
+    println!("[jump] dashEnd raw        @1568 = 0x{dash_end_q00:016X}");
+    println!("[jump] dashEnd time       @1570 = {dash_end_time:.6}");
 
-    /*
-     * Etats réseau Jump.
-     */
-    let jumped = read_value::<u8>(process, jump + 0x1500)?;
+    let jumped = read_value::<u8>(process, jump + 0x1580)?;
 
-    let can_dash_jump = read_value::<u8>(process, jump + 0x1501)?;
+    let can_dash_jump = read_value::<u8>(process, jump + 0x1581)?;
 
-    let desired_air_jumps = read_value::<i32>(process, jump + 0x1504)?;
+    let desired_air_jumps = read_value::<i32>(process, jump + 0x1584)?;
 
-    let executed_air_jumps = read_value::<i32>(process, jump + 0x1508)?;
+    let executed_air_jumps = read_value::<i32>(process, jump + 0x1588)?;
 
-    let in_slide_jump = read_value::<u8>(process, jump + 0x150C)?;
+    let in_slide_jump = read_value::<u8>(process, jump + 0x158C)?;
 
-    let consecutive_air_jumps = read_value::<i8>(process, jump + 0x150D)?;
+    let consecutive_air_jumps = read_value::<i8>(process, jump + 0x158D)?;
 
-    let consecutive_wall_jumps = read_value::<i8>(process, jump + 0x150E)?;
+    let consecutive_wall_jumps = read_value::<i8>(process, jump + 0x158E)?;
 
-    let lateral_suppress_end = read_value::<f32>(process, jump + 0x1510)?;
+    let lateral_suppress_end = read_value::<f32>(process, jump + 0x1590)?;
 
     println!();
-    println!("[jump] jumped             @1500 = {jumped}");
-    println!("[jump] canDashJump        @1501 = {can_dash_jump}");
-    println!("[jump] desiredAirJumps    @1504 = {desired_air_jumps}");
-    println!("[jump] executedAirJumps   @1508 = {executed_air_jumps}");
-    println!("[jump] inSlideJump        @150C = {in_slide_jump}");
-    println!("[jump] consecutiveAir     @150D = {consecutive_air_jumps}");
-    println!("[jump] consecutiveWall    @150E = {consecutive_wall_jumps}");
-    println!("[jump] lateralSuppressEnd @1510 = {lateral_suppress_end:.6}");
-
-    /*
-     * Bruts autour des deux zones critiques pour
-     * vérifier également le layout du build actuel.
-     */
+    println!("[jump] jumped             @1580 = {jumped}");
+    println!("[jump] canDashJump        @1581 = {can_dash_jump}");
+    println!("[jump] desiredAirJumps    @1584 = {desired_air_jumps}");
+    println!("[jump] executedAirJumps   @1588 = {executed_air_jumps}");
+    println!("[jump] inSlideJump        @158C = {in_slide_jump}");
+    println!("[jump] consecutiveAir     @158D = {consecutive_air_jumps}");
+    println!("[jump] consecutiveWall    @158E = {consecutive_wall_jumps}");
+    println!("[jump] lateralSuppressEnd @1590 = {lateral_suppress_end:.6}");
     println!();
     println!("[jump] === raw 11D8..11F0 ===");
 
@@ -958,7 +889,18 @@ fn dump_jump_state(process: HANDLE, jump: usize) -> Result<(), String> {
     }
 
     println!();
-    println!("[jump] === raw 14D0..1518 ===");
+    println!("[jump] === raw 1550..1598 ===");
+
+    for offset in (0x1550usize..0x1598usize).step_by(4) {
+        let raw = read_value::<u32>(process, jump + offset)?;
+
+        println!(
+            "[jump] +0x{offset:04X} \
+            raw=0x{raw:08X} \
+            f32={:.6}",
+            f32::from_bits(raw)
+        );
+    }
 
     for offset in (0x14D0usize..0x1518usize).step_by(4) {
         let raw = read_value::<u32>(process, jump + offset)?;
@@ -1460,23 +1402,11 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
         if f11_down && !f11_was_down {
-            match read_sample(process, prediction, started) {
-                Ok(sample) => {
-                    clear_ground_active = true;
+            println!();
+            println!("[F11] Test causal LastJumpType");
 
-                    clear_ground_started = Some(Instant::now());
-
-                    clear_ground_start_position = Some(sample.position);
-
-                    println!(
-                        "[probe] F11 : ancien ground/support neutralisés. \
-                         Appuie sur ENTER immédiatement."
-                    );
-                }
-
-                Err(error) => {
-                    eprintln!("[probe] impossible d'armer le ground clear: {error}");
-                }
+            if let Err(error) = force_can_dash_jump_once(process, prediction, entity_list) {
+                eprintln!("[F11] ERROR: {error}");
             }
         }
 
