@@ -382,7 +382,11 @@ fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-fn clear_last_velocity_once(_process: HANDLE, _prediction: usize) -> Result<(), String> {
+fn force_can_dash_jump_once(
+    process: HANDLE,
+    prediction: usize,
+    entity_list: usize,
+) -> Result<(), String> {
     Ok(())
 }
 
