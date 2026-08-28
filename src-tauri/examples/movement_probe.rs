@@ -11,15 +11,18 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
     System::{
         Diagnostics::{
-            Debug::ReadProcessMemory,
+            Debug::{ReadProcessMemory, WriteProcessMemory},
             ToolHelp::{
                 CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, MODULEENTRY32W,
                 TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
             },
         },
-        Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ},
+        Threading::{
+            OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ,
+            PROCESS_VM_WRITE,
+        },
     },
-    UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F12},
+    UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F11, VK_F12},
 };
 
 /*
@@ -31,7 +34,38 @@ const COLLISION_PROPERTY: usize = 0x340;
 const ENTITY_STATE_BASE: usize = 0x400;
 
 const FLAGS: usize = 0x400;
+
 const ABS_VELOCITY: usize = 0x404;
+const SERVER_VELOCITY: usize = 0x410;
+const VELOCITY: usize = 0x438;
+
+// C_CitadelPlayerPawn
+const ABILITY_REQUIRES_DEBOUNCE: usize = 0x1188;
+
+const ABILITY_COMPONENT: usize = 0x1468;
+
+const ABILITY_VECTOR: usize = ABILITY_COMPONENT + 0x68;
+
+const SELECTED_ABILITY: usize = ABILITY_COMPONENT + 0xC8;
+
+const CHANNELLING_ABILITY: usize = ABILITY_COMPONENT + 0xCC;
+
+const CAST_DELAYING_ABILITY: usize = ABILITY_COMPONENT + 0xD0;
+
+const PREVIOUS_ABILITY_QUEUED: usize = ABILITY_COMPONENT + 0xD8;
+
+const ABILITY_INTERRUPT_STATE: usize = ABILITY_COMPONENT + 0xE4;
+
+const EXECUTE_ABILITY_MASK: usize = ABILITY_COMPONENT + 0x1D8;
+
+const LAST_VELOCITY: usize = 0x175C;
+
+const QUEUED_ABILITY: usize = 0x1880;
+const QUEUED_ABILITY_END_TIME: usize = 0x1888;
+
+const ANIM_MOVEMENT_CLIPPED: usize = 0x1890;
+const ANIM_MOVEMENT_DISABLE_GRAVITY: usize = 0x1891;
+const ANIM_MOVEMENT_DIRECT_AIR_CONTROL: usize = 0x1892;
 
 const MOVE_TYPE: usize = 0x521;
 const ACTUAL_MOVE_TYPE: usize = 0x522;
@@ -64,9 +98,20 @@ const GROUND_NORMAL: usize = 0x248;
 /*
  * CCitadelPlayer_MovementServices
  */
+const POSITION_DELTA_VELOCITY: usize = 0x270;
+
+/*
+ * CNetworkVelocityVector
+ * Chaque CNetworkedQuantizedFloat contient sa float en premier.
+ */
+const NETWORK_VELOCITY_X: usize = 0x10;
+const NETWORK_VELOCITY_Y: usize = 0x18;
+const NETWORK_VELOCITY_Z: usize = 0x20;
+
 const TOGGLE_DUCK_ACTIVE: usize = 0x2A0;
 const DUCKED: usize = 0x2A1;
 
+const POGO_VELOCITY: usize = 0x2A4;
 const SUPPORT: usize = 0x2B0;
 const COLLIDING: usize = 0x2BC;
 const LANDED_ON_GROUND: usize = 0x2BD;
@@ -105,9 +150,9 @@ const ENTITY_STATE_SIZE: usize = 0x564 - ENTITY_STATE_BASE;
  */
 const MOVEMENT_STATE_SIZE: usize = (LANDED_ON_GROUND + 1) - FALL_VELOCITY;
 
-const CAPTURE_DURATION: Duration = Duration::from_millis(1400);
+const CAPTURE_DURATION: Duration = Duration::from_millis(2500);
 
-const SAMPLE_DELAY: Duration = Duration::from_millis(2);
+const SAMPLE_DELAY: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone, Copy)]
 struct Vec3 {
@@ -128,6 +173,8 @@ struct Sample {
     on_ground: bool,
 
     velocity: Vec3,
+    server_velocity: Vec3,
+    network_velocity: Vec3,
 
     move_type: u8,
     actual_move_type: u8,
@@ -143,7 +190,29 @@ struct Sample {
 
     fall_velocity: f32,
 
+    position_delta_velocity: Vec3,
+    pogo_velocity: Vec3,
+
     ground_normal: Vec3,
+
+    last_velocity: Vec3,
+
+    ability_requires_debounce: u32,
+    selected_ability: u32,
+    channelling_ability: u32,
+    cast_delaying_ability: u32,
+
+    previous_ability_queued: u8,
+    ability_interrupt_state: u8,
+    execute_ability_mask: u32,
+
+    queued_ability: u64,
+    queued_ability_end_time: f32,
+
+    anim_movement_clipped: u8,
+    anim_movement_disable_gravity: u8,
+    anim_movement_direct_air_control: u8,
+
     support: Vec3,
 
     toggle_duck_active: bool,
@@ -190,7 +259,13 @@ fn deadlock_pid() -> Option<u32> {
 }
 
 fn open_deadlock(pid: u32) -> Result<ProcessHandle, String> {
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION,
+            0,
+            pid,
+        )
+    };
 
     if handle.is_null() {
         return Err("Impossible d'ouvrir deadlock.exe".to_string());
@@ -265,6 +340,26 @@ fn read_value<T: Copy>(process: HANDLE, address: usize) -> Result<T, String> {
     Ok(unsafe { value.assume_init() })
 }
 
+fn write_value<T: Copy>(process: HANDLE, address: usize, value: &T) -> Result<(), String> {
+    let mut written = 0usize;
+
+    let success = unsafe {
+        WriteProcessMemory(
+            process,
+            address as *mut c_void,
+            value as *const T as *const c_void,
+            size_of::<T>(),
+            &mut written,
+        )
+    };
+
+    if success == 0 || written != size_of::<T>() {
+        return Err(format!("WriteProcessMemory failed @ 0x{address:X}"));
+    }
+
+    Ok(())
+}
+
 fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, String> {
     let mut buffer = vec![0u8; size];
 
@@ -287,6 +382,10 @@ fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
+fn clear_last_velocity_once(_process: HANDLE, _prediction: usize) -> Result<(), String> {
+    Ok(())
+}
+
 fn u32_at(buffer: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap())
 }
@@ -304,6 +403,14 @@ fn vec3_at(buffer: &[u8], offset: usize) -> Vec3 {
         x: f32_at(buffer, offset),
         y: f32_at(buffer, offset + 4),
         z: f32_at(buffer, offset + 8),
+    }
+}
+
+fn network_velocity_at(buffer: &[u8], offset: usize) -> Vec3 {
+    Vec3 {
+        x: f32_at(buffer, offset + NETWORK_VELOCITY_X),
+        y: f32_at(buffer, offset + NETWORK_VELOCITY_Y),
+        z: f32_at(buffer, offset + NETWORK_VELOCITY_Z),
     }
 }
 
@@ -394,6 +501,61 @@ fn resolve_prediction(
     Err("Plusieurs Prediction candidates et aucun local pawn valide".to_string())
 }
 
+fn dump_ability_handles(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let vector = pawn + ABILITY_VECTOR;
+
+    let q00 = read_value::<u64>(process, vector + 0x00)?;
+
+    let q08 = read_value::<u64>(process, vector + 0x08)?;
+
+    let q10 = read_value::<u64>(process, vector + 0x10)?;
+
+    println!();
+    println!("[ability] vector=0x{vector:X}");
+    println!("[ability] +00=0x{q00:016X}");
+    println!("[ability] +08=0x{q08:016X}");
+    println!("[ability] +10=0x{q10:016X}");
+
+    let data = q08 as usize;
+
+    if data < 0x10000 {
+        return Err(format!("Ability data pointer suspect: 0x{data:X}"));
+    }
+
+    println!();
+    println!("[ability] dump autour de data=0x{data:X}");
+
+    for offset in (-0x20isize..0x80isize).step_by(4) {
+        let address = (data as isize + offset) as usize;
+
+        match read_value::<u32>(process, address) {
+            Ok(value) => {
+                println!(
+                    "[ability] data{offset:+#05X} \
+= 0x{value:08X} ({value})"
+                );
+            }
+
+            Err(_) => {
+                println!(
+                    "[ability] data{offset:+#05X} \
+= <unreadable>"
+                );
+            }
+        }
+    }
+
+    println!();
+
+    Ok(())
+}
+
 fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<Sample, String> {
     /*
      * Important :
@@ -443,6 +605,10 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
 
     let velocity = vec3_at(&entity, ABS_VELOCITY - ENTITY_STATE_BASE);
 
+    let server_velocity = network_velocity_at(&entity, SERVER_VELOCITY - ENTITY_STATE_BASE);
+
+    let network_velocity = network_velocity_at(&entity, VELOCITY - ENTITY_STATE_BASE);
+
     let move_type = entity[MOVE_TYPE - ENTITY_STATE_BASE];
 
     let actual_move_type = entity[ACTUAL_MOVE_TYPE - ENTITY_STATE_BASE];
@@ -461,9 +627,42 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
 
     let fall_velocity = f32_at(&movement_state, 0);
 
+    let position_delta_velocity =
+        network_velocity_at(&movement_state, POSITION_DELTA_VELOCITY - FALL_VELOCITY);
+
+    let pogo_velocity = vec3_at(&movement_state, POGO_VELOCITY - FALL_VELOCITY);
+
     let ground_normal = vec3_at(&movement_state, GROUND_NORMAL - FALL_VELOCITY);
 
     let support = vec3_at(&movement_state, SUPPORT - FALL_VELOCITY);
+
+    let last_velocity = read_value::<Vec3>(process, pawn + LAST_VELOCITY)?;
+
+    let ability_requires_debounce = read_value::<u32>(process, pawn + ABILITY_REQUIRES_DEBOUNCE)?;
+
+    let selected_ability = read_value::<u32>(process, pawn + SELECTED_ABILITY)?;
+
+    let channelling_ability = read_value::<u32>(process, pawn + CHANNELLING_ABILITY)?;
+
+    let cast_delaying_ability = read_value::<u32>(process, pawn + CAST_DELAYING_ABILITY)?;
+
+    let previous_ability_queued = read_value::<u8>(process, pawn + PREVIOUS_ABILITY_QUEUED)?;
+
+    let ability_interrupt_state = read_value::<u8>(process, pawn + ABILITY_INTERRUPT_STATE)?;
+
+    let execute_ability_mask = read_value::<u32>(process, pawn + EXECUTE_ABILITY_MASK)?;
+
+    let queued_ability = read_value::<u64>(process, pawn + QUEUED_ABILITY)?;
+
+    let queued_ability_end_time = read_value::<f32>(process, pawn + QUEUED_ABILITY_END_TIME)?;
+
+    let anim_movement_clipped = read_value::<u8>(process, pawn + ANIM_MOVEMENT_CLIPPED)?;
+
+    let anim_movement_disable_gravity =
+        read_value::<u8>(process, pawn + ANIM_MOVEMENT_DISABLE_GRAVITY)?;
+
+    let anim_movement_direct_air_control =
+        read_value::<u8>(process, pawn + ANIM_MOVEMENT_DIRECT_AIR_CONTROL)?;
 
     let colliding = movement_state[COLLIDING - FALL_VELOCITY] != 0;
 
@@ -500,6 +699,8 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
         on_ground: flags & 0x1 != 0,
 
         velocity,
+        server_velocity,
+        network_velocity,
 
         move_type,
         actual_move_type,
@@ -515,7 +716,29 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
 
         fall_velocity,
 
+        position_delta_velocity,
+        pogo_velocity,
+
         ground_normal,
+
+        last_velocity,
+
+        ability_requires_debounce,
+        selected_ability,
+        channelling_ability,
+        cast_delaying_ability,
+
+        previous_ability_queued,
+        ability_interrupt_state,
+        execute_ability_mask,
+
+        queued_ability,
+        queued_ability_end_time,
+
+        anim_movement_clipped,
+        anim_movement_disable_gravity,
+        anim_movement_direct_air_control,
+
         support,
 
         toggle_duck_active,
@@ -570,7 +793,14 @@ fn discrete_changed(previous: &Sample, current: &Sample) -> bool {
 
 fn print_sample(sample: &Sample) {
     println!(
-        "{:>4}ms | XYZ={:>8.3},{:>8.3},{:>8.3} velZ={:>8.2} | \
+        "{:>4}ms | XYZ={:>8.3},{:>8.3},{:>8.3} | \
+absV={:>7.2},{:>7.2},{:>7.2} \
+srvV={:>7.2},{:>7.2},{:>7.2} \
+netV={:>7.2},{:>7.2},{:>7.2} | \
+fall={:>7.2} delta={:>7.2},{:>7.2},{:>7.2} \
+pogo={:>7.2},{:>7.2},{:>7.2} | \
+support={:>7.2},{:>7.2},{:>7.2} \
+gN={:>6.2},{:>6.2},{:>6.2} |
 ground={} hGround=0x{:08X} | \
 move={}/{} | duck={}/{} | \
 hullZ={:.2}..{:.2} | \
@@ -580,7 +810,28 @@ solid={}/{} physics={} | coll={} landed={}",
         sample.position.x,
         sample.position.y,
         sample.position.z,
+        sample.velocity.x,
+        sample.velocity.y,
         sample.velocity.z,
+        sample.server_velocity.x,
+        sample.server_velocity.y,
+        sample.server_velocity.z,
+        sample.network_velocity.x,
+        sample.network_velocity.y,
+        sample.network_velocity.z,
+        sample.fall_velocity,
+        sample.position_delta_velocity.x,
+        sample.position_delta_velocity.y,
+        sample.position_delta_velocity.z,
+        sample.pogo_velocity.x,
+        sample.pogo_velocity.y,
+        sample.pogo_velocity.z,
+        sample.support.x,
+        sample.support.y,
+        sample.support.z,
+        sample.ground_normal.x,
+        sample.ground_normal.y,
+        sample.ground_normal.z,
         if sample.on_ground { "YES" } else { " NO" },
         sample.ground_entity,
         sample.move_type,
@@ -598,21 +849,154 @@ solid={}/{} physics={} | coll={} landed={}",
         sample.colliding as u8,
         sample.landed_on_ground as u8,
     );
+
+    println!(
+        "     hidden | \
+    lastV={:>7.2},{:>7.2},{:>7.2} | \
+    debounce=0x{:08X} sel=0x{:08X} chan=0x{:08X} cast=0x{:08X} | \
+    prevQ={} intr={} exec=0x{:08X} | \
+    queued=0x{:016X} qEnd={:.3} | \
+    anim={}/{}/{}",
+        sample.last_velocity.x,
+        sample.last_velocity.y,
+        sample.last_velocity.z,
+        sample.ability_requires_debounce,
+        sample.selected_ability,
+        sample.channelling_ability,
+        sample.cast_delaying_ability,
+        sample.previous_ability_queued,
+        sample.ability_interrupt_state,
+        sample.execute_ability_mask,
+        sample.queued_ability,
+        sample.queued_ability_end_time,
+        sample.anim_movement_clipped,
+        sample.anim_movement_disable_gravity,
+        sample.anim_movement_direct_air_control,
+    );
 }
 
 fn capture(process: HANDLE, prediction: usize) {
     println!();
     println!("========== CAPTURE START ==========");
-
-    println!("Charge ton slot MAINTENANT.");
+    println!("F11 puis ENTER sur load_slot_4.");
 
     let started = Instant::now();
 
+    if let Err(error) = dump_ability_handles(process, prediction) {
+        eprintln!("[ability] ERROR: {error}");
+    }
+
     let mut samples = Vec::new();
 
+    let mut f11_was_down = false;
+
+    let mut clear_ground_active = false;
+    let mut clear_ground_started: Option<Instant> = None;
+    let mut clear_ground_start_position: Option<Vec3> = None;
+
     while started.elapsed() < CAPTURE_DURATION {
+        let f11_down = (unsafe { GetAsyncKeyState(VK_F11 as i32) } as u16 & 0x8000) != 0;
+
+        /*
+         * F11 arme le test.
+         *
+         * Pendant une courte fenêtre, on force uniquement :
+         *
+         *   m_hGroundEntity = INVALID
+         *   m_vecSupport     = 0,0,0
+         *
+         * Dès qu'un gros changement de position est détecté
+         * (le TP), on arrête immédiatement de forcer ces valeurs.
+         */
+        if f11_down && !f11_was_down {
+            match read_sample(process, prediction, started) {
+                Ok(sample) => {
+                    clear_ground_active = true;
+
+                    clear_ground_started = Some(Instant::now());
+
+                    clear_ground_start_position = Some(sample.position);
+
+                    println!(
+                        "[probe] F11 : ancien ground/support neutralisés. \
+                         Appuie sur ENTER immédiatement."
+                    );
+                }
+
+                Err(error) => {
+                    eprintln!("[probe] impossible d'armer le ground clear: {error}");
+                }
+            }
+        }
+
+        f11_was_down = f11_down;
+
+        if clear_ground_active {
+            if let Err(error) = clear_last_velocity_once(process, prediction) {
+                eprintln!("[probe] ground clear error: {error}");
+
+                clear_ground_active = false;
+            }
+        }
+
         match read_sample(process, prediction, started) {
             Ok(sample) => {
+                if clear_ground_active {
+                    if let Some(initial) = clear_ground_start_position {
+                        let dx = sample.position.x - initial.x;
+                        let dy = sample.position.y - initial.y;
+                        let dz = sample.position.z - initial.z;
+
+                        let distance_squared = dx * dx + dy * dy + dz * dz;
+
+                        /*
+                         * Le slot 4 est à plusieurs milliers
+                         * d'unités du toit.
+                         *
+                         * 500 unités suffit donc largement
+                         * à distinguer le TP d'un mouvement normal.
+                         */
+                        if distance_squared > 500.0 * 500.0 {
+                            println!(
+                                "[probe] TP détecté à {} ms : \
+                                maintien du ground clear pendant 100 ms.",
+                                sample.ms,
+                            );
+
+                            let post_tp_started = Instant::now();
+
+                            while post_tp_started.elapsed() < Duration::from_millis(100) {
+                                if let Err(error) = clear_last_velocity_once(process, prediction) {
+                                    eprintln!("[probe] post-TP ground clear error: {error}");
+
+                                    break;
+                                }
+
+                                thread::sleep(Duration::from_millis(1));
+                            }
+
+                            println!("[probe] fin du post-TP ground clear.");
+
+                            clear_ground_active = false;
+                        }
+                    }
+
+                    if clear_ground_active {
+                        let timed_out = clear_ground_started
+                            .map(|instant| instant.elapsed() > Duration::from_millis(1200))
+                            .unwrap_or(false);
+
+                        if timed_out {
+                            println!(
+                                "[probe] ground clear timeout : \
+                                 aucun TP détecté."
+                            );
+
+                            clear_ground_active = false;
+                        }
+                    }
+                }
+
                 samples.push(sample);
             }
 
@@ -634,18 +1018,6 @@ fn capture(process: HANDLE, prediction: usize) {
         return;
     }
 
-    /*
-     * On imprime :
-     *
-     * - le premier sample ;
-     * - environ toutes les 10 ms ;
-     * - immédiatement chaque transition
-     *   d'état importante.
-     *
-     * Ainsi on ne spamme pas le terminal
-     * pendant le jeu, mais on ne rate pas
-     * un NOCLIP/ground transition bref.
-     */
     for index in 0..samples.len() {
         let sample = &samples[index];
 
