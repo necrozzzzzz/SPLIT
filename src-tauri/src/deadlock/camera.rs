@@ -1,7 +1,9 @@
 use std::{
     ffi::OsString,
+    fs,
     mem::{size_of, zeroed},
     os::windows::ffi::OsStringExt,
+    path::PathBuf,
     sync::Mutex,
     thread,
     time::{Duration, Instant},
@@ -84,7 +86,168 @@ struct CameraRuntime {
     primary_vtable: usize,
 }
 
+const CAMERA_CACHE_FILE: &str = "camera-runtime-cache.json";
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CameraRuntimeCache {
+    client_size: usize,
+    pe_timestamp: u32,
+
+    camera_global_rva: usize,
+    primary_vtable_rva: usize,
+}
+
 static CAMERA_RUNTIME: Mutex<Option<CameraRuntime>> = Mutex::new(None);
+
+fn camera_cache_path() -> Result<PathBuf, String> {
+    let app_data =
+        std::env::var_os("APPDATA").ok_or_else(|| "APPDATA is unavailable".to_string())?;
+
+    Ok(PathBuf::from(app_data)
+        .join("SPLIT")
+        .join(CAMERA_CACHE_FILE))
+}
+
+fn read_pe_timestamp(process: HANDLE, client_base: usize) -> Result<u32, String> {
+    /*
+     * IMAGE_DOS_HEADER.e_lfanew
+     */
+    let pe_offset = read_value::<u32>(process, client_base + 0x3C)? as usize;
+
+    /*
+     * e_lfanew doit rester dans une zone
+     * raisonnable du début du module.
+     */
+    if pe_offset < 0x40 || pe_offset > 0x4000 {
+        return Err(format!("Suspicious PE header offset: 0x{pe_offset:X}"));
+    }
+
+    let pe_header = client_base + pe_offset;
+
+    /*
+     * "PE\0\0"
+     */
+    let signature = read_value::<u32>(process, pe_header)?;
+
+    if signature != 0x0000_4550 {
+        return Err(format!(
+            "Invalid client.dll PE signature: 0x{signature:08X}"
+        ));
+    }
+
+    /*
+     * IMAGE_FILE_HEADER.TimeDateStamp
+     *
+     * PE signature : +0x00
+     * Machine      : +0x04
+     * Sections     : +0x06
+     * TimeDateStamp: +0x08
+     */
+    read_value::<u32>(process, pe_header + 0x08)
+}
+
+fn load_persistent_runtime(
+    process: HANDLE,
+    pid: u32,
+    client_base: usize,
+    client_size: usize,
+    pe_timestamp: u32,
+) -> Option<CameraRuntime> {
+    let path = camera_cache_path().ok()?;
+
+    let raw = fs::read_to_string(path).ok()?;
+
+    let cache = serde_json::from_str::<CameraRuntimeCache>(&raw).ok()?;
+
+    /*
+     * Deadlock a changé :
+     * on rejette immédiatement le cache.
+     */
+    if cache.client_size != client_size || cache.pe_timestamp != pe_timestamp {
+        println!("[SPLIT] Camera cache stale");
+
+        return None;
+    }
+
+    if cache.camera_global_rva >= client_size || cache.primary_vtable_rva >= client_size {
+        println!("[SPLIT] Camera cache contains invalid RVA");
+
+        return None;
+    }
+
+    let camera_global = client_base + cache.camera_global_rva;
+
+    let primary_vtable = client_base + cache.primary_vtable_rva;
+
+    /*
+     * Validation runtime réelle :
+     *
+     * global -> camera object -> vtable
+     *
+     * Si ça ne correspond plus,
+     * aucun offset caché n'est utilisé.
+     */
+    let camera_object = read_value::<usize>(process, camera_global).ok()?;
+
+    if camera_object < 0x10000 {
+        return None;
+    }
+
+    let actual_vtable = read_value::<usize>(process, camera_object).ok()?;
+
+    if actual_vtable != primary_vtable {
+        println!("[SPLIT] Camera cache runtime validation failed");
+
+        return None;
+    }
+
+    println!("[SPLIT] Camera cache HIT");
+
+    Some(CameraRuntime {
+        pid,
+        client_base,
+        camera_global,
+        primary_vtable,
+    })
+}
+
+fn save_persistent_runtime(runtime: CameraRuntime, client_size: usize, pe_timestamp: u32) {
+    let Ok(path) = camera_cache_path() else {
+        return;
+    };
+
+    let Some(parent) = path.parent() else {
+        return;
+    };
+
+    if let Err(error) = fs::create_dir_all(parent) {
+        eprintln!("[SPLIT] Could not create camera cache directory: {error}");
+
+        return;
+    }
+
+    let cache = CameraRuntimeCache {
+        client_size,
+        pe_timestamp,
+
+        camera_global_rva: runtime.camera_global - runtime.client_base,
+
+        primary_vtable_rva: runtime.primary_vtable - runtime.client_base,
+    };
+
+    let Ok(json) = serde_json::to_string_pretty(&cache) else {
+        return;
+    };
+
+    if let Err(error) = fs::write(&path, json) {
+        eprintln!("[SPLIT] Could not write camera cache: {error}");
+
+        return;
+    }
+
+    println!("[SPLIT] Camera cache saved");
+}
 
 fn wide_to_string(value: &[u16]) -> String {
     let length = value
@@ -524,6 +687,32 @@ fn resolve_runtime(pid: u32) -> Result<CameraRuntime, String> {
     let process = open_deadlock(pid)?;
 
     let result = (|| {
+        let pe_timestamp = read_pe_timestamp(process, client_base)?;
+
+        /*
+         * CHEMIN RAPIDE.
+         *
+         * Aucun dump de 52 Mo,
+         * aucune recherche RTTI.
+         */
+        if let Some(runtime) =
+            load_persistent_runtime(process, pid, client_base, client_size, pe_timestamp)
+        {
+            println!("[SPLIT] Camera resolved from persistent cache");
+
+            return Ok(runtime);
+        }
+
+        /*
+         * CHEMIN LENT.
+         *
+         * Uniquement si :
+         * - aucun cache
+         * - update Deadlock
+         * - cache invalide
+         */
+        println!("[SPLIT] Camera cache MISS -> full RTTI scan");
+
         println!("[SPLIT] Resolving Deadlock camera...");
 
         let module = read_bytes(process, client_base, client_size)?;
@@ -550,12 +739,16 @@ fn resolve_runtime(pid: u32) -> Result<CameraRuntime, String> {
             camera_global - client_base,
         );
 
-        Ok(CameraRuntime {
+        let runtime = CameraRuntime {
             pid,
             client_base,
             camera_global,
             primary_vtable,
-        })
+        };
+
+        save_persistent_runtime(runtime, client_size, pe_timestamp);
+
+        Ok(runtime)
     })();
 
     let _ = unsafe { CloseHandle(process) };

@@ -20,8 +20,7 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
-                VK_F8, VK_F9, VK_MENU,
+                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,VK_F12,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -371,6 +370,75 @@ fn send_capture_key() -> Result<(), String> {
     send_virtual_key(b'H' as u16)
 }
 
+fn send_prepare_key() -> Result<(), String> {
+    send_virtual_key(VK_F12)
+}
+
+pub(crate) fn prepare_teleports_after_cfg_update() {
+    if !super::cfg::teleports_dirty() {
+        return;
+    }
+
+    /*
+     * Ne JAMAIS envoyer F12 à une autre
+     * application que Deadlock.
+     */
+    if !is_deadlock_foreground() {
+        println!(
+            "[SPLIT] Teleport preparation deferred: Deadlock is not foreground"
+        );
+
+        return;
+    }
+
+    match send_prepare_key() {
+        Ok(()) => {
+            super::cfg::mark_teleports_prepared();
+
+            println!(
+                "[SPLIT] Teleport points prepared"
+            );
+        }
+
+        Err(error) => {
+            eprintln!(
+                "[SPLIT] Could not prepare teleport points: {error}"
+            );
+        }
+    }
+}
+
+fn ensure_teleports_prepared()
+    -> Result<(), String>
+{
+    if !super::cfg::teleports_dirty() {
+        return Ok(());
+    }
+
+    println!(
+        "[SPLIT] Preparing teleport points before load..."
+    );
+
+    send_prepare_key()?;
+
+    /*
+     * Seulement pour le fallback :
+     * laisser Source 2 enregistrer les
+     * point_teleport fraîchement créés.
+     *
+     * En usage normal ce délai ne se produit
+     * PAS car les points sont préparés
+     * immédiatement après Save/ changements.
+     */
+    thread::sleep(
+        Duration::from_millis(50),
+    );
+
+    super::cfg::mark_teleports_prepared();
+
+    Ok(())
+}
+
 fn send_load_key(slot: u8) -> Result<(), String> {
     let vk = load_transport_vk(slot).ok_or_else(|| format!("Invalid load slot {slot}"))?;
 
@@ -389,47 +457,20 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         return Ok(false);
     };
 
-    let camera_before_load = match super::camera::capture() {
-        Ok(camera) => Some(camera),
-
-        Err(error) => {
-            eprintln!("[SPLIT] Camera freeze capture unavailable: {error}");
-
-            None
-        }
-    };
-
-    let camera_hold = camera_before_load.map(|camera| {
-        thread::spawn(move || super::camera::hold(camera, Duration::from_millis(40)))
-    });
-
-    send_load_key(slot)?;
-
-    if let Some(worker) = camera_hold {
-        match worker.join() {
-            Ok(Ok(())) => {
-                println!("[SPLIT] Camera held for 40 ms");
-            }
-
-            Ok(Err(error)) => {
-                eprintln!("[SPLIT] Camera hold failed: {error}");
-            }
-
-            Err(_) => {
-                eprintln!("[SPLIT] Camera hold thread panicked");
-            }
-        }
-    }
+    ensure_teleports_prepared()?;
 
     /*
-     * Maintenant seulement, on remet
-     * l'orientation caméra du slot.
+     * Restaurer immédiatement la vraie
+     * orientation caméra sauvegardée.
+     *
+     * Le resolver caméra est maintenant
+     * accéléré par son cache persistant.
      */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
             Ok(()) => {
                 println!(
-                    "[SPLIT] Camera post-restored -> P={:.3} Y={:.3} R={:.3}",
+                    "[SPLIT] Camera pre-restored -> P={:.3} Y={:.3} R={:.3}",
                     camera.pitch, camera.yaw, camera.roll,
                 );
             }
@@ -439,6 +480,15 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
             }
         }
     }
+
+    /*
+     * Déclenche le CFG du slot :
+     *
+     * point_teleport
+     * +
+     * setang_exact
+     */
+    send_load_key(slot)?;
 
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
 
@@ -783,6 +833,8 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                             Ok(Some((preset, saved_slots))) => {
                                 println!("[SPLIT] Preset switched to {preset}");
 
+                                prepare_teleports_after_cfg_update();
+
                                 crate::notifications::show(
                                     crate::notifications::Notification::Preset(preset),
                                 );
@@ -816,6 +868,7 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                         println!("[SPLIT] Undo hotkey: F9");
                         match super::undo_last_action() {
                             Ok(result) => super::emit_history_operation(&app, &result),
+                            prepare_teleports_after_cfg_update();
                             Err(error) => eprintln!("[SPLIT] Could not undo: {error}"),
                         }
                     }
@@ -824,6 +877,7 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                         println!("[SPLIT] Redo hotkey: F10");
                         match super::redo_last_action() {
                             Ok(result) => super::emit_history_operation(&app, &result),
+                            prepare_teleports_after_cfg_update();
                             Err(error) => eprintln!("[SPLIT] Could not redo: {error}"),
                         }
                     }
@@ -832,6 +886,7 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                         println!("[SPLIT] Favorite Mode hotkey: F11");
                         match super::toggle_favorite_mode() {
                             Ok(result) => super::emit_active_bank(&app, &result),
+                            prepare_teleports_after_cfg_update();
                             Err(error) => {
                                 eprintln!("[SPLIT] Could not toggle Favorite Mode: {error}")
                             }

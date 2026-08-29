@@ -1,9 +1,52 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    sync::{
+        atomic::{
+            AtomicBool,
+            AtomicU64,
+            Ordering,
+        },
+        OnceLock,
+    },
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use super::parser::PositionSnapshot;
 use crate::storage::atomic_write;
 
 const LOAD_TRANSPORT_KEYS: [&str; 8] = ["u", "i", "o", "j", "k", "l", "n", "m"];
+
+static TELEPORT_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+static TELEPORTS_DIRTY:
+    AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn teleports_dirty() -> bool {
+    TELEPORTS_DIRTY.load(Ordering::SeqCst)
+}
+
+pub(crate) fn mark_teleports_prepared() {
+    TELEPORTS_DIRTY.store(
+        false,
+        Ordering::SeqCst,
+    );
+}
+
+static TELEPORT_SESSION: OnceLock<u128> = OnceLock::new();
+
+fn teleport_namespace() -> String {
+    let session = TELEPORT_SESSION.get_or_init(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    });
+
+    let generation = TELEPORT_GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
+
+    format!("{}_{}_{}", session, std::process::id(), generation,)
+}
 
 pub fn write_savestate_cfg(
     cfg_file: &Path,
@@ -18,6 +61,12 @@ pub fn write_savestate_cfg(
 
     let mut output = String::new();
 
+    let namespace = teleport_namespace();
+
+    let prepare_cfg_path = parent.join("savestate_prepare.cfg");
+
+    let mut prepare_output = String::from("// SPLIT 2 - prepared teleport points\n\n");
+
     output.push_str("// SPLIT 2 - auto-generated, do not edit manually\n\n");
 
     /*
@@ -26,6 +75,14 @@ pub fn write_savestate_cfg(
     output.push_str("alias \"savestate_getpos\" \"exec savestate; getpos_exact\"\n");
 
     output.push_str("bind \"h\" \"savestate_getpos\"\n\n");
+
+    /*
+     * F12 est un transport interne SPLIT.
+     *
+     * Il prépare les point_teleport après
+     * qu'un slot/preset a été modifié.
+     */
+    output.push_str("bind \"F12\" \"exec savestate_prepare\"\n\n");
 
     for index in 0..8 {
         let slot_number = index + 1;
@@ -38,10 +95,35 @@ pub fn write_savestate_cfg(
                 let slot_cfg_name = format!("savestate_slot_{slot_number}");
                 let slot_cfg_path = parent.join(format!("{slot_cfg_name}.cfg"));
 
+                let teleport_name = format!("split_tp_{}_{}", namespace, slot_number,);
+
+                /*
+                 * IMPORTANT :
+                 *
+                 * Le point est créé dans un CFG séparé,
+                 * AVANT le futur Load.
+                 */
+                prepare_output.push_str(
+                    &format!(
+                        "ent_create point_teleport {{\"targetname\" \"{}\" \"origin\" \"{} {} {}\" \"angles\" \"0 {} 0\"}}\n",
+                        teleport_name,
+                        position.x,
+                        position.y,
+                        position.z,
+                        position.yaw,
+                    ),
+                );
+
+                /*
+                 * Le Load ne crée RIEN.
+                 *
+                 * Il utilise uniquement un point dont
+                 * on sait désormais qu'il existe déjà.
+                 */
                 let slot_cfg = format!(
-                    "setang_exact {} {} {}\n\
-                            ent_fire !self setabsorigin \"{} {} {}\"\n",
-                    position.pitch, position.yaw, position.roll, position.x, position.y, position.z,
+                    "ent_fire {} TeleportEntity !player\n\
+                    setang_exact {} {} {}\n",
+                    teleport_name, position.pitch, position.yaw, position.roll,
                 );
 
                 atomic_write(&slot_cfg_path, slot_cfg).map_err(|error| {
@@ -67,6 +149,9 @@ pub fn write_savestate_cfg(
         ));
     }
 
+    atomic_write(&prepare_cfg_path, prepare_output)
+        .map_err(|error| format!("Could not write {}: {error}", prepare_cfg_path.display(),))?;
+
     atomic_write(cfg_file, output)
         .map_err(|error| format!("Could not write savestate.cfg: {error}"))?;
 
@@ -74,6 +159,11 @@ pub fn write_savestate_cfg(
 
     Ok(())
 }
+
+TELEPORTS_DIRTY.store(
+    true,
+    Ordering::SeqCst,
+);
 
 pub fn ensure_autoexec(autoexec: &Path) -> Result<(), String> {
     const COMMAND: &str = "exec savestate";
