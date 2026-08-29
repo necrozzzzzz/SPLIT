@@ -173,11 +173,6 @@ const COLLISION_MAXS: usize = 0x4C;
 const SOLID_FLAGS: usize = 0x5A;
 const SOLID_TYPE: usize = 0x5B;
 const PHYSICS_ENABLED: usize = 0x5F;
-const COLLISION_MAXS: usize = 0x4C;
-
-const SOLID_FLAGS: usize = 0x5A;
-const SOLID_TYPE: usize = 0x5B;
-const PHYSICS_ENABLED: usize = 0x5F;
 
 const CAPSULE_CENTER_1: usize = 0x94;
 const CAPSULE_CENTER_2: usize = 0xA0;
