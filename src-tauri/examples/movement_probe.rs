@@ -164,6 +164,15 @@ const HAS_SUCCESSFULLY_INTERPOLATED: usize = 0x3C5;
 const HAS_ADDED_VARS_TO_INTERPOLATION: usize = 0x3C6;
 const RENDER_WHEN_NOT_INTERPOLATED: usize = 0x3C7;
 
+const SIMULATION_TICK: usize = 0x398;
+
+const ANIM_TIME: usize = 0x3BC;
+const SIMULATION_TIME: usize = 0x3C0;
+const SCENE_OBJECT_OVERRIDE_FLAGS: usize = 0x3C4;
+
+const INTERPOLATION_LATCH_DIRTY_FLAGS_0: usize = 0x3C8;
+const INTERPOLATION_LATCH_DIRTY_FLAGS_1: usize = 0x3CC;
+
 /*
  * CCollisionProperty
  */
@@ -246,6 +255,13 @@ struct Sample {
     has_successfully_interpolated: u8,
     has_added_vars_to_interpolation: u8,
     render_when_not_interpolated: u8,
+
+    simulation_tick: i32,
+    anim_time: f32,
+    simulation_time: f32,
+    scene_object_override_flags: u8,
+    interpolation_latch_dirty_0: i32,
+    interpolation_latch_dirty_1: i32,
 
     flags: u32,
     on_ground: bool,
@@ -1308,6 +1324,21 @@ fn read_sample(
     let render_when_not_interpolated =
         read_value::<u8>(process, pawn + RENDER_WHEN_NOT_INTERPOLATED)?;
 
+    let simulation_tick = read_value::<i32>(process, pawn + SIMULATION_TICK)?;
+
+    let anim_time = read_value::<f32>(process, pawn + ANIM_TIME)?;
+
+    let simulation_time = read_value::<f32>(process, pawn + SIMULATION_TIME)?;
+
+    let scene_object_override_flags =
+        read_value::<u8>(process, pawn + SCENE_OBJECT_OVERRIDE_FLAGS)?;
+
+    let interpolation_latch_dirty_0 =
+        read_value::<i32>(process, pawn + INTERPOLATION_LATCH_DIRTY_FLAGS_0)?;
+
+    let interpolation_latch_dirty_1 =
+        read_value::<i32>(process, pawn + INTERPOLATION_LATCH_DIRTY_FLAGS_1)?;
+
     /*
      * Un seul read pour la majorité
      * des champs C_BaseEntity.
@@ -1430,6 +1461,13 @@ fn read_sample(
         has_successfully_interpolated,
         has_added_vars_to_interpolation,
         render_when_not_interpolated,
+
+        simulation_tick,
+        anim_time,
+        simulation_time,
+        scene_object_override_flags,
+        interpolation_latch_dirty_0,
+        interpolation_latch_dirty_1,
 
         flags,
         on_ground: flags & 0x1 != 0,
@@ -2792,6 +2830,11 @@ fn capture(
 
     let mut f11_was_down = false;
 
+    let mut no_tick_test_armed = false;
+    let mut no_tick_test_origin: Option<Vec3> = None;
+
+    let mut no_tick_restore: Option<(usize, i32, Instant)> = None;
+
     let mut yaw_scan_baseline: Option<YawScanBaseline> = None;
 
     let mut graph_instance_baseline: Option<GraphInstanceBaseline> = None;
@@ -2815,10 +2858,15 @@ fn capture(
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
         if f11_down && !f11_was_down {
-            println!("[TEST] F11 -> m_bNoInterpolate");
+            if let Some(last) = samples.last() {
+                no_tick_test_origin = Some(last.position);
 
-            if let Err(error) = test_no_interpolate_once(process, prediction) {
-                eprintln!("[NOINTERP] ERROR: {error}");
+                no_tick_test_armed = true;
+
+                println!("[NOTICK] F11 -> test armé");
+                println!("[NOTICK] fais F4 maintenant");
+            } else {
+                println!("[NOTICK] pas encore de sample");
             }
         }
 
@@ -2841,6 +2889,45 @@ fn capture(
             bone_count,
         ) {
             Ok(sample) => {
+                if no_tick_test_armed {
+                    if let Some(origin) = no_tick_test_origin {
+                        let dx = sample.position.x - origin.x;
+                        let dy = sample.position.y - origin.y;
+                        let dz = sample.position.z - origin.z;
+
+                        let distance_squared = dx * dx + dy * dy + dz * dz;
+
+                        if distance_squared > 500.0 * 500.0 {
+                            let address = sample.pawn + NO_INTERPOLATION_TICK;
+
+                            let before = sample.no_interpolation_tick;
+
+                            let forced = sample.simulation_tick;
+
+                            println!();
+                            println!("[NOTICK] TP détecté à {} ms", sample.ms);
+
+                            println!("[NOTICK] noTick={} simTick={}", before, forced,);
+
+                            match write_value(process, address, &forced) {
+                                Ok(()) => {
+                                    let after =
+                                        read_value::<i32>(process, address).unwrap_or(i32::MIN);
+
+                                    println!("[NOTICK] {} -> {}", before, after,);
+
+                                    no_tick_restore = Some((address, before, Instant::now()));
+                                }
+
+                                Err(error) => {
+                                    eprintln!("[NOTICK] write ERROR: {error}");
+                                }
+                            }
+
+                            no_tick_test_armed = false;
+                        }
+                    }
+                }
                 if clear_ground_active {
                     if let Some(initial) = clear_ground_start_position {
                         let dx = sample.position.x - initial.x;
@@ -2902,6 +2989,22 @@ fn capture(
 
             Err(error) => {
                 eprintln!("[probe] sample error: {error}");
+            }
+        }
+
+        if let Some((address, original, started)) = no_tick_restore {
+            if started.elapsed() >= Duration::from_millis(50) {
+                match write_value(process, address, &original) {
+                    Ok(()) => {
+                        println!("[NOTICK] restauré -> {}", original);
+                    }
+
+                    Err(error) => {
+                        eprintln!("[NOTICK] restore ERROR: {error}");
+                    }
+                }
+
+                no_tick_restore = None;
             }
         }
 
@@ -3013,13 +3116,21 @@ fn capture(
             );
 
             println!(
-                "       INTERP | frame={} noTick={} visNoTick={} success={} added={} renderFail={}",
+                "       INTERP | frame={} noTick={} simTick={} visNoTick={} \
+                success={} added={} renderFail={} override={} \
+                latch={}/{} anim={:.3} sim={:.3}",
                 sample.interpolation_frame,
                 sample.no_interpolation_tick,
+                sample.simulation_tick,
                 sample.visibility_no_interpolation_tick,
                 sample.has_successfully_interpolated,
                 sample.has_added_vars_to_interpolation,
                 sample.render_when_not_interpolated,
+                sample.scene_object_override_flags,
+                sample.interpolation_latch_dirty_0,
+                sample.interpolation_latch_dirty_1,
+                sample.anim_time,
+                sample.simulation_time,
             );
         }
 
