@@ -2329,6 +2329,89 @@ fn compare_graph_instance_once(
     Ok(())
 }
 
+fn dump_ag2_control_params_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let body = read_value::<usize>(process, pawn + BODY_COMPONENT)?;
+
+    if body < 0x10000 {
+        return Err("CBodyComponent invalide".to_string());
+    }
+
+    let anim_controller = body + BODY_ANIM_CONTROLLER;
+
+    let instance = read_value::<usize>(process, anim_controller + 0x18E0)?;
+
+    if instance < 0x10000 {
+        return Err("m_pGraphInstanceAG2 invalide".to_string());
+    }
+
+    /*
+     * Hypothèse à vérifier :
+     * premier pointeur de CNmGraphInstance
+     * -> CNmGraphDefinition
+     */
+    let definition = read_value::<usize>(process, instance + 0x00)?;
+
+    if definition < 0x10000 {
+        return Err("CNmGraphDefinition invalide".to_string());
+    }
+
+    /*
+     * CNmGraphDefinition::m_controlParameterIDs
+     * CUtlVector<CGlobalSymbol> @ +0x50
+     */
+    let vector = read_bytes(process, definition + 0x50, 0x18)?;
+
+    let data = u64::from_le_bytes(vector[0x00..0x08].try_into().unwrap()) as usize;
+
+    let alloc_count = i32::from_le_bytes(vector[0x08..0x0C].try_into().unwrap());
+
+    let grow_size = i32::from_le_bytes(vector[0x0C..0x10].try_into().unwrap());
+
+    let count = i32::from_le_bytes(vector[0x10..0x14].try_into().unwrap());
+
+    println!();
+    println!("========== AG2 CONTROL PARAMS ==========");
+    println!("[AG2DEF] instance   = 0x{instance:X}");
+    println!("[AG2DEF] definition = 0x{definition:X}");
+    println!(
+        "[AG2DEF] vector     = data=0x{data:X} alloc={alloc_count} grow={grow_size} count={count}"
+    );
+
+    if data < 0x10000 {
+        return Err("m_controlParameterIDs data invalide".to_string());
+    }
+
+    if count <= 0 || count > 256 {
+        return Err(format!("m_controlParameterIDs count suspect: {count}"));
+    }
+
+    println!();
+    println!("[AG2DEF] paramètres :");
+
+    for index in 0..count as usize {
+        let symbol = read_value::<usize>(process, data + index * size_of::<usize>())?;
+
+        let name = if symbol >= 0x10000 {
+            read_c_string_lossy(process, symbol, 96)
+        } else {
+            "<null>".to_string()
+        };
+
+        println!("[AG2DEF] [{index:02}] 0x{symbol:X} | {name}");
+    }
+
+    println!("========================================");
+    println!();
+
+    Ok(())
+}
+
 fn capture(
     process: HANDLE,
     prediction: usize,
@@ -2375,10 +2458,10 @@ fn capture(
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
         if f11_down && !f11_was_down {
-            if let Err(error) =
-                compare_graph_instance_once(process, prediction, &mut graph_instance_baseline)
-            {
-                eprintln!("[AG2] ERROR: {error}");
+            println!("[TEST] F11 détecté");
+
+            if let Err(error) = dump_ag2_control_params_once(process, prediction) {
+                eprintln!("[AG2DEF] ERROR: {error}");
             }
         }
 
