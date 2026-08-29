@@ -2826,14 +2826,13 @@ fn capture(
     }
     */
 
-    let mut samples = Vec::new();
+    let mut samples: Vec<Sample> = Vec::new();
 
-    let mut f11_was_down = false;
-
-    let mut no_tick_test_armed = false;
     let mut no_tick_test_origin: Option<Vec3> = None;
+    let mut no_tick_test_done = false;
 
-    let mut no_tick_restore: Option<(usize, i32, Instant)> = None;
+    let mut no_tick_restore:
+        Option<(usize, i32, Instant)> = None;
 
     let mut yaw_scan_baseline: Option<YawScanBaseline> = None;
 
@@ -2844,8 +2843,6 @@ fn capture(
     let mut clear_ground_start_position: Option<Vec3> = None;
 
     while started.elapsed() < CAPTURE_DURATION {
-        let f11_down = (unsafe { GetAsyncKeyState(VK_F11 as i32) } as u16 & 0x8000) != 0;
-
         /*
          * F11 arme le test.
          *
@@ -2857,20 +2854,6 @@ fn capture(
          * Dès qu'un gros changement de position est détecté
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
-        if f11_down && !f11_was_down {
-            if let Some(last) = samples.last() {
-                no_tick_test_origin = Some(last.position);
-
-                no_tick_test_armed = true;
-
-                println!("[NOTICK] F11 -> test armé");
-                println!("[NOTICK] fais F4 maintenant");
-            } else {
-                println!("[NOTICK] pas encore de sample");
-            }
-        }
-
-        f11_was_down = f11_down;
 
         if clear_ground_active {
             if let Err(error) = clear_last_velocity_once(process, prediction) {
@@ -2889,43 +2872,40 @@ fn capture(
             bone_count,
         ) {
             Ok(sample) => {
-                if no_tick_test_armed {
-                    if let Some(origin) = no_tick_test_origin {
-                        let dx = sample.position.x - origin.x;
-                        let dy = sample.position.y - origin.y;
-                        let dz = sample.position.z - origin.z;
+                if let Some(origin) = no_tick_test_origin {
+                    let dx = sample.position.x - origin.x;
+                    let dy = sample.position.y - origin.y;
+                    let dz = sample.position.z - origin.z;
 
-                        let distance_squared = dx * dx + dy * dy + dz * dz;
+                    let distance_squared = dx * dx + dy * dy + dz * dz;
 
-                        if distance_squared > 500.0 * 500.0 {
-                            let address = sample.pawn + NO_INTERPOLATION_TICK;
+                    if distance_squared > 500.0 * 500.0 {
+                        let address = sample.pawn + NO_INTERPOLATION_TICK;
 
-                            let before = sample.no_interpolation_tick;
+                        let before = sample.no_interpolation_tick;
 
-                            let forced = sample.simulation_tick;
+                        let forced = sample.simulation_tick;
 
-                            println!();
-                            println!("[NOTICK] TP détecté à {} ms", sample.ms);
+                        println!();
+                        println!("[NOTICK] TP détecté à {} ms", sample.ms);
 
-                            println!("[NOTICK] noTick={} simTick={}", before, forced,);
+                        println!("[NOTICK] noTick={} simTick={}", before, forced,);
 
-                            match write_value(process, address, &forced) {
-                                Ok(()) => {
-                                    let after =
-                                        read_value::<i32>(process, address).unwrap_or(i32::MIN);
+                        match write_value(process, address, &forced) {
+                            Ok(()) => {
+                                let after = read_value::<i32>(process, address).unwrap_or(i32::MIN);
 
-                                    println!("[NOTICK] {} -> {}", before, after,);
+                                println!("[NOTICK] {} -> {}", before, after,);
 
-                                    no_tick_restore = Some((address, before, Instant::now()));
-                                }
-
-                                Err(error) => {
-                                    eprintln!("[NOTICK] write ERROR: {error}");
-                                }
+                                no_tick_restore = Some((address, before, Instant::now()));
                             }
 
-                            no_tick_test_armed = false;
+                            Err(error) => {
+                                eprintln!("[NOTICK] write ERROR: {error}");
+                            }
                         }
+
+                        no_tick_test_origin = None;
                     }
                 }
                 if clear_ground_active {
