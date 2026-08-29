@@ -206,6 +206,7 @@ struct Sample {
 
     scene_yaw: f32,
     camera_yaw: f32,
+    look_heading: f32,
 
     flags: u32,
     on_ground: bool,
@@ -2329,83 +2330,125 @@ fn compare_graph_instance_once(
     Ok(())
 }
 
-fn dump_ag2_control_params_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+fn dump_live_look_heading_once(
+    process: HANDLE,
+    prediction: usize,
+    client_base: usize,
+    client_size: usize,
+) -> Result<(), String> {
     let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
 
     if pawn < 0x10000 {
         return Err("Local pawn nul".to_string());
     }
 
-    let body = read_value::<usize>(process, pawn + BODY_COMPONENT)?;
-
-    if body < 0x10000 {
-        return Err("CBodyComponent invalide".to_string());
-    }
-
-    let anim_controller = body + BODY_ANIM_CONTROLLER;
-
-    let instance = read_value::<usize>(process, anim_controller + 0x18E0)?;
-
-    if instance < 0x10000 {
-        return Err("m_pGraphInstanceAG2 invalide".to_string());
-    }
-
     /*
-     * Hypothèse à vérifier :
-     * premier pointeur de CNmGraphInstance
-     * -> CNmGraphDefinition
+     * Retrouve CCitadelPlayerPawn_GraphController2.
      */
-    let definition = read_value::<usize>(process, instance + 0x00)?;
+    let manager = pawn + GRAPH_CONTROLLER_MANAGER;
 
-    if definition < 0x10000 {
-        return Err("CNmGraphDefinition invalide".to_string());
+    let count = read_value::<u64>(process, manager + 0x00)?;
+
+    let data = read_value::<usize>(process, manager + 0x08)?;
+
+    if count == 0 || count > 64 || data < 0x10000 {
+        return Err("GraphControllerManager suspect".to_string());
     }
 
-    /*
-     * CNmGraphDefinition::m_controlParameterIDs
-     * CUtlVector<CGlobalSymbol> @ +0x50
-     */
-    let vector = read_bytes(process, definition + 0x50, 0x18)?;
-
-    let data = u64::from_le_bytes(vector[0x00..0x08].try_into().unwrap()) as usize;
-
-    let alloc_count = i32::from_le_bytes(vector[0x08..0x0C].try_into().unwrap());
-
-    let grow_size = i32::from_le_bytes(vector[0x0C..0x10].try_into().unwrap());
-
-    let count = i32::from_le_bytes(vector[0x10..0x14].try_into().unwrap());
-
-    println!();
-    println!("========== AG2 CONTROL PARAMS ==========");
-    println!("[AG2DEF] instance   = 0x{instance:X}");
-    println!("[AG2DEF] definition = 0x{definition:X}");
-    println!(
-        "[AG2DEF] vector     = data=0x{data:X} alloc={alloc_count} grow={grow_size} count={count}"
-    );
-
-    if data < 0x10000 {
-        return Err("m_controlParameterIDs data invalide".to_string());
-    }
-
-    if count <= 0 || count > 256 {
-        return Err(format!("m_controlParameterIDs count suspect: {count}"));
-    }
-
-    println!();
-    println!("[AG2DEF] paramètres :");
+    let mut graph2 = None;
 
     for index in 0..count as usize {
-        let symbol = read_value::<usize>(process, data + index * size_of::<usize>())?;
+        let controller = read_value::<usize>(process, data + index * size_of::<usize>())?;
 
-        let name = if symbol >= 0x10000 {
-            read_c_string_lossy(process, symbol, 96)
-        } else {
-            "<null>".to_string()
-        };
+        if controller < 0x10000 {
+            continue;
+        }
 
-        println!("[AG2DEF] [{index:02}] 0x{symbol:X} | {name}");
+        let name = rtti_name_from_object(process, client_base, client_size, controller);
+
+        if name.contains("CCitadelPlayerPawn_GraphController2") {
+            graph2 = Some(controller);
+            break;
+        }
     }
 
+    let graph2 =
+        graph2.ok_or_else(|| "CCitadelPlayerPawn_GraphController2 introuvable".to_string())?;
+
+    /*
+     * Layout confirmé dans TON client.dll :
+     *
+     * look_heading ParamRef :
+     * +0xF0  symbole
+     * +0xF8  graph
+     * +0x100 index int16
+     */
+    let graph = read_value::<usize>(process, graph2 + 0xF8)?;
+
+    let parameter_index = read_value::<i16>(process, graph2 + 0x100)?;
+
+    if graph < 0x10000 {
+        return Err("look_heading graph invalide".to_string());
+    }
+
+    if parameter_index < 0 {
+        return Err(format!("look_heading non bindé : index={parameter_index}"));
+    }
+
+    /*
+     * Confirmé par le code machine :
+     *
+     * graph + 0x10
+     * -> tableau de pointeurs de paramètres.
+     */
+    let parameter_table = read_value::<usize>(process, graph + 0x10)?;
+
+    if parameter_table < 0x10000 {
+        return Err("table paramètres AG2 invalide".to_string());
+    }
+
+    let parameter_object = read_value::<usize>(
+        process,
+        parameter_table + parameter_index as usize * size_of::<usize>(),
+    )?;
+
+    if parameter_object < 0x10000 {
+        return Err("objet look_heading invalide".to_string());
+    }
+
+    /*
+     * Une routine réelle du client écrit le variant
+     * du paramètre à object + 0x18.
+     *
+     * Pour l'instant on ne suppose PAS encore
+     * son encodage exact : on affiche le raw.
+     */
+    let raw = read_value::<u64>(process, parameter_object + 0x18)?;
+
+    let low = f32::from_bits(raw as u32);
+
+    let high = f32::from_bits((raw >> 32) as u32);
+
+    let scene_node = read_value::<usize>(process, pawn + SCENE_NODE)?;
+
+    let scene_angles = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
+
+    let camera_angles = read_value::<Vec3>(process, pawn + CLIENT_CAMERA_ANGLES)?;
+
+    println!();
+    println!("========== LIVE LOOK_HEADING ==========");
+    println!("[LOOK] graph2 = 0x{graph2:X}");
+    println!("[LOOK] graph  = 0x{graph:X}");
+    println!("[LOOK] index  = {parameter_index}");
+    println!("[LOOK] object = 0x{parameter_object:X}");
+    println!("[LOOK] raw    = 0x{raw:016X}");
+    println!("[LOOK] f32    = low={low:.6} high={high:.6}");
+    println!(
+        "[LOOK] yaw    = scene={:.3} camera={:.3} relative={:.3}",
+        scene_angles.y,
+        camera_angles.y,
+        wrap_angle(camera_angles.y - scene_angles.y),
+    );
     println!("========================================");
     println!();
 
@@ -2460,8 +2503,10 @@ fn capture(
         if f11_down && !f11_was_down {
             println!("[TEST] F11 détecté");
 
-            if let Err(error) = dump_ag2_control_params_once(process, prediction) {
-                eprintln!("[AG2DEF] ERROR: {error}");
+            if let Err(error) =
+                dump_live_look_heading_once(process, prediction, client_base, client_size)
+            {
+                eprintln!("[LOOK] ERROR: {error}");
             }
         }
 
