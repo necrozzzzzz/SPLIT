@@ -448,13 +448,6 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
 
     ensure_teleports_prepared()?;
 
-    /*
-     * Restaurer immédiatement la vraie
-     * orientation caméra sauvegardée.
-     *
-     * Le resolver caméra est maintenant
-     * accéléré par son cache persistant.
-     */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
             Ok(()) => {
@@ -470,13 +463,6 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         }
     }
 
-    /*
-     * Déclenche le CFG du slot :
-     *
-     * point_teleport
-     * +
-     * setang_exact
-     */
     send_load_key(slot)?;
 
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });

@@ -144,9 +144,35 @@ const COLLIDING: usize = 0x2BC;
 const LANDED_ON_GROUND: usize = 0x2BD;
 
 /*
+ * C_BaseModelEntity
+ *
+ * Candidat schema public.
+ * READ-ONLY tant que non validé runtime.
+ */
+const NO_INTERPOLATE: usize = 0x731;
+
+/*
+ * C_BaseEntity - interpolation state.
+ *
+ * READ-ONLY.
+ */
+const INTERPOLATION_FRAME: usize = 0x369;
+const NO_INTERPOLATION_TICK: usize = 0x370;
+const VISIBILITY_NO_INTERPOLATION_TICK: usize = 0x374;
+
+const HAS_SUCCESSFULLY_INTERPOLATED: usize = 0x3C5;
+const HAS_ADDED_VARS_TO_INTERPOLATION: usize = 0x3C6;
+const RENDER_WHEN_NOT_INTERPOLATED: usize = 0x3C7;
+
+/*
  * CCollisionProperty
  */
 const COLLISION_MINS: usize = 0x40;
+const COLLISION_MAXS: usize = 0x4C;
+
+const SOLID_FLAGS: usize = 0x5A;
+const SOLID_TYPE: usize = 0x5B;
+const PHYSICS_ENABLED: usize = 0x5F;
 const COLLISION_MAXS: usize = 0x4C;
 
 const SOLID_FLAGS: usize = 0x5A;
@@ -215,6 +241,16 @@ struct Sample {
     camera_yaw: f32,
     look_heading: f32,
     bone_yaws: [f32; BONE_SAMPLE_COUNT],
+
+    no_interpolate: u8,
+
+    interpolation_frame: u8,
+    no_interpolation_tick: i32,
+    visibility_no_interpolation_tick: i32,
+
+    has_successfully_interpolated: u8,
+    has_added_vars_to_interpolation: u8,
+    render_when_not_interpolated: u8,
 
     flags: u32,
     on_ground: bool,
@@ -1259,6 +1295,24 @@ fn read_sample(
 
     let bone_yaws = read_bone_yaws(process, bone_array, bone_count)?;
 
+    let no_interpolate = read_value::<u8>(process, pawn + NO_INTERPOLATE)?;
+
+    let interpolation_frame = read_value::<u8>(process, pawn + INTERPOLATION_FRAME)?;
+
+    let no_interpolation_tick = read_value::<i32>(process, pawn + NO_INTERPOLATION_TICK)?;
+
+    let visibility_no_interpolation_tick =
+        read_value::<i32>(process, pawn + VISIBILITY_NO_INTERPOLATION_TICK)?;
+
+    let has_successfully_interpolated =
+        read_value::<u8>(process, pawn + HAS_SUCCESSFULLY_INTERPOLATED)?;
+
+    let has_added_vars_to_interpolation =
+        read_value::<u8>(process, pawn + HAS_ADDED_VARS_TO_INTERPOLATION)?;
+
+    let render_when_not_interpolated =
+        read_value::<u8>(process, pawn + RENDER_WHEN_NOT_INTERPOLATED)?;
+
     /*
      * Un seul read pour la majorité
      * des champs C_BaseEntity.
@@ -1371,6 +1425,16 @@ fn read_sample(
         camera_yaw: camera_angles.y,
         look_heading,
         bone_yaws,
+
+        no_interpolate,
+
+        interpolation_frame,
+        no_interpolation_tick,
+        visibility_no_interpolation_tick,
+
+        has_successfully_interpolated,
+        has_added_vars_to_interpolation,
+        render_when_not_interpolated,
 
         flags,
         on_ground: flags & 0x1 != 0,
@@ -2620,6 +2684,70 @@ fn resolve_live_look_heading_address(
     Ok(parameter_object + 0x18)
 }
 
+fn test_no_interpolate_once(process: HANDLE, prediction: usize) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let address = pawn + NO_INTERPOLATE;
+
+    let before = read_value::<u8>(process, address)?;
+
+    println!();
+    println!("[NOINTERP] address = pawn+0x731 = 0x{address:X}");
+    println!("[NOINTERP] avant = {before}");
+
+    /*
+     * Sécurité :
+     *
+     * notre lecture précédente donne 0.
+     * Si ce n'est plus 0, on n'écrit rien.
+     */
+    if before != 0 {
+        return Err(format!(
+            "Test annulé : m_bNoInterpolate vaut {before}, pas 0"
+        ));
+    }
+
+    write_value(process, address, &1u8)?;
+
+    let after = read_value::<u8>(process, address)?;
+
+    println!("[NOINTERP] après écriture = {after}");
+
+    if after != 1 {
+        /*
+         * Tentative de restauration,
+         * même si la vérification échoue.
+         */
+        let _ = write_value(process, address, &before);
+
+        return Err(format!("Écriture non confirmée : attendu 1, lu {after}"));
+    }
+
+    println!("[NOINTERP] TEST ACTIF pendant 1000 ms");
+    println!("[NOINTERP] FAIS F4 MAINTENANT");
+
+    thread::sleep(Duration::from_millis(1000));
+
+    write_value(process, address, &before)?;
+
+    let restored = read_value::<u8>(process, address)?;
+
+    println!("[NOINTERP] restauré = {restored}");
+    println!();
+
+    if restored != before {
+        return Err(format!(
+            "Restauration incorrecte : attendu {before}, lu {restored}"
+        ));
+    }
+
+    Ok(())
+}
+
 fn capture(
     process: HANDLE,
     prediction: usize,
@@ -2692,12 +2820,10 @@ fn capture(
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
         if f11_down && !f11_was_down {
-            println!("[TEST] F11 détecté");
+            println!("[TEST] F11 -> m_bNoInterpolate");
 
-            if let Err(error) =
-                dump_live_look_heading_once(process, prediction, client_base, client_size)
-            {
-                eprintln!("[LOOK] ERROR: {error}");
+            if let Err(error) = test_no_interpolate_once(process, prediction) {
+                eprintln!("[NOINTERP] ERROR: {error}");
             }
         }
 
@@ -2827,7 +2953,7 @@ fn capture(
             println!(
                 "{:>4}ms | \
                 XYZ={:.3},{:.3},{:.3} | \
-                yaw={:>8.3} cam={:>8.3} rel={:>8.3} look={:>9.4} | \
+                yaw={:>8.3} cam={:>8.3} rel={:>8.3} look={:>9.4} noInterp={} | \
                 ground={} hGround=0x{:08X} | \
                 absV={:.2},{:.2},{:.2} | \
                 srvV={:.2},{:.2},{:.2} | \
@@ -2845,6 +2971,7 @@ fn capture(
                 sample.camera_yaw,
                 wrap_angle(sample.camera_yaw - sample.scene_yaw),
                 sample.look_heading,
+                sample.no_interpolate,
                 sample.on_ground as u8,
                 sample.ground_entity,
                 sample.velocity.x,
@@ -2888,6 +3015,16 @@ fn capture(
                 sample.bone_yaws[9],
                 sample.bone_yaws[10],
                 sample.bone_yaws[11],
+            );
+
+            println!(
+                "       INTERP | frame={} noTick={} visNoTick={} success={} added={} renderFail={}",
+                sample.interpolation_frame,
+                sample.no_interpolation_tick,
+                sample.visibility_no_interpolation_tick,
+                sample.has_successfully_interpolated,
+                sample.has_added_vars_to_interpolation,
+                sample.render_when_not_interpolated,
             );
         }
 
