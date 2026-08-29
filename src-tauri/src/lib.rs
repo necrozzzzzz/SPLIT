@@ -117,19 +117,54 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            /*
+             * Le tray est léger et nécessaire
+             * immédiatement.
+             */
             tray::setup(app)?;
 
-            if let Err(error) = notifications::start() {
-                eprintln!("[SPLIT] Native notifications unavailable: {error}");
-            }
+            /*
+             * IMPORTANT :
+             *
+             * Ne jamais bloquer le thread de setup Tauri
+             * avec les services Deadlock / notifications.
+             *
+             * La fenêtre et le WebView doivent devenir
+             * interactifs immédiatement.
+             */
+            let background_app = app.handle().clone();
 
-            if let Err(error) = deadlock::start_console_watcher(app.handle().clone()) {
-                eprintln!("SPLIT console watcher unavailable: {error}");
-            }
+            std::thread::Builder::new()
+                .name("split-background-startup".to_string())
+                .spawn(move || {
+                    println!("[SPLIT] Background services starting...");
 
-            if let Err(error) = deadlock::start_hotkeys(app.handle().clone()) {
-                eprintln!("SPLIT hotkeys unavailable: {error}");
-            }
+                    /*
+                     * Le watcher doit être prêt avant
+                     * les hotkeys de Save.
+                     */
+                    if let Err(error) = deadlock::start_console_watcher(background_app.clone()) {
+                        eprintln!("[SPLIT] Console watcher unavailable: {error}");
+                    }
+
+                    if let Err(error) = deadlock::start_hotkeys(background_app.clone()) {
+                        eprintln!("[SPLIT] Hotkeys unavailable: {error}");
+                    }
+
+                    /*
+                     * Les notifications sont les moins
+                     * critiques et peuvent être les dernières.
+                     *
+                     * Leur initialisation peut attendre
+                     * ready_receiver.recv() sans bloquer l'UI.
+                     */
+                    if let Err(error) = notifications::start() {
+                        eprintln!("[SPLIT] Native notifications unavailable: {error}");
+                    }
+
+                    println!("[SPLIT] Background services ready");
+                })
+                .map_err(|error| format!("Could not start SPLIT background services: {error}"))?;
 
             Ok(())
         })
