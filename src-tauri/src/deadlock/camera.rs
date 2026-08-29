@@ -3,6 +3,8 @@ use std::{
     mem::{size_of, zeroed},
     os::windows::ffi::OsStringExt,
     sync::Mutex,
+    thread,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -666,6 +668,54 @@ pub fn restore(snapshot: CameraSnapshot) -> Result<(), String> {
         };
 
         write_value(process, camera_object + CAMERA_ANGLES_OFFSET, &angles)
+    })();
+
+    let _ = unsafe { CloseHandle(process) };
+
+    if result.is_err() {
+        invalidate_runtime(pid);
+    }
+
+    result
+}
+
+pub fn hold(snapshot: CameraSnapshot, duration: Duration) -> Result<(), String> {
+    let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
+
+    let runtime = runtime_for_pid(pid)?;
+
+    let process = open_deadlock(pid)?;
+
+    let result = (|| {
+        let camera_object = active_camera_object(process, runtime)?;
+
+        let position = snapshot
+            .position
+            .ok_or_else(|| "Camera snapshot has no position".to_string())?;
+
+        let position = CameraPosition {
+            x: position[0],
+            y: position[1],
+            z: position[2],
+        };
+
+        let angles = CameraAngles {
+            pitch: snapshot.pitch,
+            yaw: snapshot.yaw,
+            roll: snapshot.roll,
+        };
+
+        let started = Instant::now();
+
+        while started.elapsed() < duration {
+            write_value(process, camera_object + CAMERA_POSITION_OFFSET, &position)?;
+
+            write_value(process, camera_object + CAMERA_ANGLES_OFFSET, &angles)?;
+
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        Ok(())
     })();
 
     let _ = unsafe { CloseHandle(process) };

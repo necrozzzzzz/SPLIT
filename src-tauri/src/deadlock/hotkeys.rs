@@ -389,14 +389,47 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         return Ok(false);
     };
 
+    let camera_before_load = match super::camera::capture() {
+        Ok(camera) => Some(camera),
+
+        Err(error) => {
+            eprintln!("[SPLIT] Camera freeze capture unavailable: {error}");
+
+            None
+        }
+    };
+
+    let camera_hold = camera_before_load.map(|camera| {
+        thread::spawn(move || super::camera::hold(camera, Duration::from_millis(40)))
+    });
+
+    send_load_key(slot)?;
+
+    if let Some(worker) = camera_hold {
+        match worker.join() {
+            Ok(Ok(())) => {
+                println!("[SPLIT] Camera held for 40 ms");
+            }
+
+            Ok(Err(error)) => {
+                eprintln!("[SPLIT] Camera hold failed: {error}");
+            }
+
+            Err(_) => {
+                eprintln!("[SPLIT] Camera hold thread panicked");
+            }
+        }
+    }
+
     /*
-     * Replace la vraie caméra sauvegardée.
+     * Maintenant seulement, on remet
+     * l'orientation caméra du slot.
      */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
             Ok(()) => {
                 println!(
-                    "[SPLIT] Camera pre-restored -> P={:.3} Y={:.3} R={:.3}",
+                    "[SPLIT] Camera post-restored -> P={:.3} Y={:.3} R={:.3}",
                     camera.pitch, camera.yaw, camera.roll,
                 );
             }
@@ -406,8 +439,6 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
             }
         }
     }
-
-    send_load_key(slot)?;
 
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
 

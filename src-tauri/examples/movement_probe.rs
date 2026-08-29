@@ -101,6 +101,13 @@ const MOVEMENT_SERVICES: usize = 0xF28;
  */
 const BODY_ANIM_CONTROLLER: usize = 0x4D0;
 
+const SKELETON_INSTANCE: usize = 0x80;
+
+const BONE_TRANSFORMS: usize = 0x1D0;
+const BONE_COUNT: usize = 0x1E4;
+
+const BONE_SAMPLE_COUNT: usize = 12;
+
 /*
  * CGameSceneNode
  */
@@ -207,6 +214,7 @@ struct Sample {
     scene_yaw: f32,
     camera_yaw: f32,
     look_heading: f32,
+    bone_yaws: [f32; BONE_SAMPLE_COUNT],
 
     flags: u32,
     on_ground: bool,
@@ -1133,11 +1141,85 @@ fn dump_ability_handles(
     Ok(())
 }
 
+fn quaternion_yaw_deg(x: f32, y: f32, z: f32, w: f32) -> f32 {
+    let sin_yaw = 2.0 * (w * z + x * y);
+
+    let cos_yaw = 1.0 - 2.0 * (y * y + z * z);
+
+    sin_yaw.atan2(cos_yaw).to_degrees()
+}
+
+fn resolve_bone_array(process: HANDLE, prediction: usize) -> Result<(usize, usize), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let body = read_value::<usize>(process, pawn + BODY_COMPONENT)?;
+
+    if body < 0x10000 {
+        return Err("CBodyComponent invalide".to_string());
+    }
+
+    let skeleton = body + SKELETON_INSTANCE;
+
+    let bone_array = read_value::<usize>(process, skeleton + BONE_TRANSFORMS)?;
+
+    let bone_count = read_value::<i32>(process, skeleton + BONE_COUNT)?;
+
+    if bone_array < 0x10000 {
+        return Err("Bone transform array invalide".to_string());
+    }
+
+    if bone_count <= 0 || bone_count > 512 {
+        return Err(format!("Bone count suspect : {bone_count}"));
+    }
+
+    Ok((bone_array, bone_count as usize))
+}
+
+fn read_bone_yaws(
+    process: HANDLE,
+    bone_array: usize,
+    bone_count: usize,
+) -> Result<[f32; BONE_SAMPLE_COUNT], String> {
+    let mut result = [f32::NAN; BONE_SAMPLE_COUNT];
+
+    let count = bone_count.min(BONE_SAMPLE_COUNT);
+
+    /*
+     * CTransform = 0x20 bytes :
+     *
+     * +0x00 VectorAligned position
+     * +0x10 QuaternionAligned orientation
+     */
+    let bytes = read_bytes(process, bone_array, count * 0x20)?;
+
+    for index in 0..count {
+        let base = index * 0x20 + 0x10;
+
+        let x = f32::from_le_bytes(bytes[base..base + 4].try_into().unwrap());
+
+        let y = f32::from_le_bytes(bytes[base + 4..base + 8].try_into().unwrap());
+
+        let z = f32::from_le_bytes(bytes[base + 8..base + 12].try_into().unwrap());
+
+        let w = f32::from_le_bytes(bytes[base + 12..base + 16].try_into().unwrap());
+
+        result[index] = quaternion_yaw_deg(x, y, z, w);
+    }
+
+    Ok(result)
+}
+
 fn read_sample(
     process: HANDLE,
     prediction: usize,
     started: Instant,
     look_heading_address: usize,
+    bone_array: usize,
+    bone_count: usize,
 ) -> Result<Sample, String> {
     /*
      * Important :
@@ -1173,11 +1255,9 @@ fn read_sample(
 
     let camera_angles = read_value::<Vec3>(process, pawn + CLIENT_CAMERA_ANGLES)?;
 
-    let look_heading =
-        read_value::<f32>(
-            process,
-            look_heading_address,
-        )?;
+    let look_heading = read_value::<f32>(process, look_heading_address)?;
+
+    let bone_yaws = read_bone_yaws(process, bone_array, bone_count)?;
 
     /*
      * Un seul read pour la majorité
@@ -1290,6 +1370,7 @@ fn read_sample(
         scene_yaw: scene_angles.y,
         camera_yaw: camera_angles.y,
         look_heading,
+        bone_yaws,
 
         flags,
         on_ground: flags & 0x1 != 0,
@@ -2473,11 +2554,7 @@ fn resolve_live_look_heading_address(
     client_base: usize,
     client_size: usize,
 ) -> Result<usize, String> {
-    let pawn =
-        read_value::<usize>(
-            process,
-            prediction + LOCAL_PAWN_IN_PREDICTION,
-        )?;
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
 
     if pawn < 0x10000 {
         return Err("Local pawn nul".to_string());
@@ -2485,110 +2562,59 @@ fn resolve_live_look_heading_address(
 
     let manager = pawn + GRAPH_CONTROLLER_MANAGER;
 
-    let count =
-        read_value::<u64>(
-            process,
-            manager + 0x00,
-        )?;
+    let count = read_value::<u64>(process, manager + 0x00)?;
 
-    let data =
-        read_value::<usize>(
-            process,
-            manager + 0x08,
-        )?;
+    let data = read_value::<usize>(process, manager + 0x08)?;
 
-    if count == 0
-        || count > 64
-        || data < 0x10000
-    {
-        return Err(
-            "GraphControllerManager suspect".to_string(),
-        );
+    if count == 0 || count > 64 || data < 0x10000 {
+        return Err("GraphControllerManager suspect".to_string());
     }
 
     let mut graph2 = None;
 
     for index in 0..count as usize {
-        let controller =
-            read_value::<usize>(
-                process,
-                data + index * size_of::<usize>(),
-            )?;
+        let controller = read_value::<usize>(process, data + index * size_of::<usize>())?;
 
         if controller < 0x10000 {
             continue;
         }
 
-        let name =
-            rtti_name_from_object(
-                process,
-                client_base,
-                client_size,
-                controller,
-            );
+        let name = rtti_name_from_object(process, client_base, client_size, controller);
 
-        if name.contains(
-            "CCitadelPlayerPawn_GraphController2",
-        ) {
+        if name.contains("CCitadelPlayerPawn_GraphController2") {
             graph2 = Some(controller);
             break;
         }
     }
 
     let graph2 =
-        graph2.ok_or_else(|| {
-            "CCitadelPlayerPawn_GraphController2 introuvable"
-                .to_string()
-        })?;
+        graph2.ok_or_else(|| "CCitadelPlayerPawn_GraphController2 introuvable".to_string())?;
 
-    let graph =
-        read_value::<usize>(
-            process,
-            graph2 + 0xF8,
-        )?;
+    let graph = read_value::<usize>(process, graph2 + 0xF8)?;
 
-    let parameter_index =
-        read_value::<i16>(
-            process,
-            graph2 + 0x100,
-        )?;
+    let parameter_index = read_value::<i16>(process, graph2 + 0x100)?;
 
     if graph < 0x10000 {
-        return Err(
-            "look_heading graph invalide".to_string(),
-        );
+        return Err("look_heading graph invalide".to_string());
     }
 
     if parameter_index < 0 {
-        return Err(format!(
-            "look_heading non bindé : index={parameter_index}"
-        ));
+        return Err(format!("look_heading non bindé : index={parameter_index}"));
     }
 
-    let parameter_table =
-        read_value::<usize>(
-            process,
-            graph + 0x10,
-        )?;
+    let parameter_table = read_value::<usize>(process, graph + 0x10)?;
 
     if parameter_table < 0x10000 {
-        return Err(
-            "table paramètres AG2 invalide".to_string(),
-        );
+        return Err("table paramètres AG2 invalide".to_string());
     }
 
-    let parameter_object =
-        read_value::<usize>(
-            process,
-            parameter_table
-                + parameter_index as usize
-                    * size_of::<usize>(),
-        )?;
+    let parameter_object = read_value::<usize>(
+        process,
+        parameter_table + parameter_index as usize * size_of::<usize>(),
+    )?;
 
     if parameter_object < 0x10000 {
-        return Err(
-            "objet look_heading invalide".to_string(),
-        );
+        return Err("objet look_heading invalide".to_string());
     }
 
     Ok(parameter_object + 0x18)
@@ -2606,26 +2632,30 @@ fn capture(
     println!("F11 puis ENTER sur load_slot_4.");
 
     let look_heading_address =
-        match resolve_live_look_heading_address(
-            process,
-            prediction,
-            client_base,
-            client_size,
-        ) {
+        match resolve_live_look_heading_address(process, prediction, client_base, client_size) {
             Ok(address) => {
-                println!(
-                    "[LOOK] sampling address = 0x{address:X}"
-                );
+                println!("[LOOK] sampling address = 0x{address:X}");
                 address
             }
 
             Err(error) => {
-                eprintln!(
-                    "[LOOK] resolve error: {error}"
-                );
+                eprintln!("[LOOK] resolve error: {error}");
                 return;
             }
         };
+
+    let (bone_array, bone_count) = match resolve_bone_array(process, prediction) {
+        Ok(result) => {
+            println!("[BONES] array=0x{:X} count={}", result.0, result.1,);
+
+            result
+        }
+
+        Err(error) => {
+            eprintln!("[BONES] resolve error: {error}");
+            return;
+        }
+    };
 
     let started = Instant::now();
 
@@ -2686,6 +2716,8 @@ fn capture(
             prediction,
             started,
             look_heading_address,
+            bone_array,
+            bone_count,
         ) {
             Ok(sample) => {
                 if clear_ground_active {
@@ -2795,7 +2827,7 @@ fn capture(
             println!(
                 "{:>4}ms | \
                 XYZ={:.3},{:.3},{:.3} | \
-                yaw={:>8.3} cam={:>8.3} rel={:>8.3} | \
+                yaw={:>8.3} cam={:>8.3} rel={:>8.3} look={:>9.4} | \
                 ground={} hGround=0x{:08X} | \
                 absV={:.2},{:.2},{:.2} | \
                 srvV={:.2},{:.2},{:.2} | \
@@ -2812,6 +2844,7 @@ fn capture(
                 sample.scene_yaw,
                 sample.camera_yaw,
                 wrap_angle(sample.camera_yaw - sample.scene_yaw),
+                sample.look_heading,
                 sample.on_ground as u8,
                 sample.ground_entity,
                 sample.velocity.x,
@@ -2837,6 +2870,24 @@ fn capture(
                 sample.actual_move_type,
                 sample.colliding as u8,
                 sample.landed_on_ground as u8,
+            );
+            println!(
+                "       BONES | \
+                00={:>7.2} 01={:>7.2} 02={:>7.2} 03={:>7.2} \
+                04={:>7.2} 05={:>7.2} 06={:>7.2} 07={:>7.2} \
+                08={:>7.2} 09={:>7.2} 10={:>7.2} 11={:>7.2}",
+                sample.bone_yaws[0],
+                sample.bone_yaws[1],
+                sample.bone_yaws[2],
+                sample.bone_yaws[3],
+                sample.bone_yaws[4],
+                sample.bone_yaws[5],
+                sample.bone_yaws[6],
+                sample.bone_yaws[7],
+                sample.bone_yaws[8],
+                sample.bone_yaws[9],
+                sample.bone_yaws[10],
+                sample.bone_yaws[11],
             );
         }
 
