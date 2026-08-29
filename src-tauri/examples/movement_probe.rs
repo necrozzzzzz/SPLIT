@@ -1133,7 +1133,12 @@ fn dump_ability_handles(
     Ok(())
 }
 
-fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<Sample, String> {
+fn read_sample(
+    process: HANDLE,
+    prediction: usize,
+    started: Instant,
+    look_heading_address: usize,
+) -> Result<Sample, String> {
     /*
      * Important :
      * on relit le pawn à chaque sample.
@@ -1167,6 +1172,12 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
     let scene_angles = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
 
     let camera_angles = read_value::<Vec3>(process, pawn + CLIENT_CAMERA_ANGLES)?;
+
+    let look_heading =
+        read_value::<f32>(
+            process,
+            look_heading_address,
+        )?;
 
     /*
      * Un seul read pour la majorité
@@ -1278,6 +1289,7 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
 
         scene_yaw: scene_angles.y,
         camera_yaw: camera_angles.y,
+        look_heading,
 
         flags,
         on_ground: flags & 0x1 != 0,
