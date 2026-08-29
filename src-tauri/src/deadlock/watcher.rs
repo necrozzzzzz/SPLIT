@@ -351,8 +351,7 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
 
-                        super::hotkeys::
-                            prepare_teleports_after_cfg_update();
+                        super::hotkeys::prepare_teleports_after_cfg_update();
 
                         crate::notifications::show(crate::notifications::Notification::SlotSaved {
                             slot,

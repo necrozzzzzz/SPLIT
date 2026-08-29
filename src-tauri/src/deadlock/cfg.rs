@@ -2,11 +2,7 @@ use std::{
     fs,
     path::Path,
     sync::{
-        atomic::{
-            AtomicBool,
-            AtomicU64,
-            Ordering,
-        },
+        atomic::{AtomicBool, AtomicU64, Ordering},
         OnceLock,
     },
     time::{SystemTime, UNIX_EPOCH},
@@ -19,18 +15,14 @@ const LOAD_TRANSPORT_KEYS: [&str; 8] = ["u", "i", "o", "j", "k", "l", "n", "m"];
 
 static TELEPORT_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-static TELEPORTS_DIRTY:
-    AtomicBool = AtomicBool::new(false);
+static TELEPORTS_DIRTY: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn teleports_dirty() -> bool {
     TELEPORTS_DIRTY.load(Ordering::SeqCst)
 }
 
 pub(crate) fn mark_teleports_prepared() {
-    TELEPORTS_DIRTY.store(
-        false,
-        Ordering::SeqCst,
-    );
+    TELEPORTS_DIRTY.store(false, Ordering::SeqCst);
 }
 
 static TELEPORT_SESSION: OnceLock<u128> = OnceLock::new();
@@ -157,13 +149,10 @@ pub fn write_savestate_cfg(
 
     println!("[SPLIT] savestate.cfg updated: {}", cfg_file.display(),);
 
+    TELEPORTS_DIRTY.store(true, Ordering::SeqCst);
+
     Ok(())
 }
-
-TELEPORTS_DIRTY.store(
-    true,
-    Ordering::SeqCst,
-);
 
 pub fn ensure_autoexec(autoexec: &Path) -> Result<(), String> {
     const COMMAND: &str = "exec savestate";

@@ -20,7 +20,8 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,VK_F12,
+                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
+                VK_F7, VK_F8, VK_F9, VK_MENU,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -384,9 +385,7 @@ pub(crate) fn prepare_teleports_after_cfg_update() {
      * application que Deadlock.
      */
     if !is_deadlock_foreground() {
-        println!(
-            "[SPLIT] Teleport preparation deferred: Deadlock is not foreground"
-        );
+        println!("[SPLIT] Teleport preparation deferred: Deadlock is not foreground");
 
         return;
     }
@@ -395,29 +394,21 @@ pub(crate) fn prepare_teleports_after_cfg_update() {
         Ok(()) => {
             super::cfg::mark_teleports_prepared();
 
-            println!(
-                "[SPLIT] Teleport points prepared"
-            );
+            println!("[SPLIT] Teleport points prepared");
         }
 
         Err(error) => {
-            eprintln!(
-                "[SPLIT] Could not prepare teleport points: {error}"
-            );
+            eprintln!("[SPLIT] Could not prepare teleport points: {error}");
         }
     }
 }
 
-fn ensure_teleports_prepared()
-    -> Result<(), String>
-{
+fn ensure_teleports_prepared() -> Result<(), String> {
     if !super::cfg::teleports_dirty() {
         return Ok(());
     }
 
-    println!(
-        "[SPLIT] Preparing teleport points before load..."
-    );
+    println!("[SPLIT] Preparing teleport points before load...");
 
     send_prepare_key()?;
 
@@ -430,9 +421,7 @@ fn ensure_teleports_prepared()
      * PAS car les points sont préparés
      * immédiatement après Save/ changements.
      */
-    thread::sleep(
-        Duration::from_millis(50),
-    );
+    thread::sleep(Duration::from_millis(50));
 
     super::cfg::mark_teleports_prepared();
 
@@ -866,29 +855,48 @@ pub fn start(app: AppHandle) -> Result<(), String> {
 
                     HotkeyAction::Undo => {
                         println!("[SPLIT] Undo hotkey: F9");
+
                         match super::undo_last_action() {
-                            Ok(result) => super::emit_history_operation(&app, &result),
-                            prepare_teleports_after_cfg_update();
-                            Err(error) => eprintln!("[SPLIT] Could not undo: {error}"),
+                            Ok(result) => {
+                                super::emit_history_operation(&app, &result);
+
+                                prepare_teleports_after_cfg_update();
+                            }
+
+                            Err(error) => {
+                                eprintln!("[SPLIT] Could not undo: {error}");
+                            }
                         }
                     }
 
                     HotkeyAction::Redo => {
                         println!("[SPLIT] Redo hotkey: F10");
+
                         match super::redo_last_action() {
-                            Ok(result) => super::emit_history_operation(&app, &result),
-                            prepare_teleports_after_cfg_update();
-                            Err(error) => eprintln!("[SPLIT] Could not redo: {error}"),
+                            Ok(result) => {
+                                super::emit_history_operation(&app, &result);
+
+                                prepare_teleports_after_cfg_update();
+                            }
+
+                            Err(error) => {
+                                eprintln!("[SPLIT] Could not redo: {error}");
+                            }
                         }
                     }
 
                     HotkeyAction::ToggleFavorites => {
                         println!("[SPLIT] Favorite Mode hotkey: F11");
+
                         match super::toggle_favorite_mode() {
-                            Ok(result) => super::emit_active_bank(&app, &result),
-                            prepare_teleports_after_cfg_update();
+                            Ok(result) => {
+                                super::emit_active_bank(&app, &result);
+
+                                prepare_teleports_after_cfg_update();
+                            }
+
                             Err(error) => {
-                                eprintln!("[SPLIT] Could not toggle Favorite Mode: {error}")
+                                eprintln!("[SPLIT] Could not toggle Favorite Mode: {error}");
                             }
                         }
                     }
