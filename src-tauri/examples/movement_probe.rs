@@ -18,8 +18,8 @@ use windows_sys::Win32::{
             },
         },
         Threading::{
-            OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ,
-            PROCESS_VM_WRITE,
+            GetProcessId, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION,
+            PROCESS_VM_READ, PROCESS_VM_WRITE,
         },
     },
     UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F11, VK_F12},
@@ -28,6 +28,8 @@ use windows_sys::Win32::{
 /*
  * C_BaseEntity
  */
+const BODY_COMPONENT: usize = 0x30;
+
 const SCENE_NODE: usize = 0x330;
 const COLLISION_PROPERTY: usize = 0x340;
 
@@ -43,6 +45,12 @@ const VELOCITY: usize = 0x438;
 const EYE_ANGLES: usize = 0x11B8;
 const CLIENT_CAMERA_ANGLES: usize = 0x1248;
 const LOCKED_EYE_ANGLES: usize = 0x14C0;
+
+/*
+ * CBaseAnimGraph
+ */
+const GRAPH_CONTROLLER_MANAGER: usize = 0x9A8;
+const MAIN_GRAPH_CONTROLLER: usize = 0xA58;
 
 const ABILITY_REQUIRES_DEBOUNCE: usize = 0x1188;
 
@@ -87,6 +95,11 @@ const GRAVITY_ACTUALLY_DISABLED: usize = 0x560;
  * C_BasePlayerPawn
  */
 const MOVEMENT_SERVICES: usize = 0xF28;
+
+/*
+ * CBodyComponentBaseAnimGraph
+ */
+const BODY_ANIM_CONTROLLER: usize = 0x4D0;
 
 /*
  * CGameSceneNode
@@ -176,6 +189,13 @@ struct YawScanBaseline {
     bytes: Vec<u8>,
 }
 
+struct GraphInstanceBaseline {
+    instance: usize,
+    scene_yaw: f32,
+    camera_yaw: f32,
+    bytes: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Sample {
     ms: u128,
@@ -183,6 +203,9 @@ struct Sample {
     pawn: usize,
 
     position: Vec3,
+
+    scene_yaw: f32,
+    camera_yaw: f32,
 
     flags: u32,
     on_ground: bool,
@@ -331,6 +354,51 @@ fn client_module(pid: u32) -> Result<(usize, usize), String> {
     }
 
     found.ok_or_else(|| "client.dll introuvable".to_string())
+}
+
+fn module_containing_address(
+    process: HANDLE,
+    address: usize,
+) -> Result<Option<(String, usize, usize)>, String> {
+    let pid = unsafe { GetProcessId(process) };
+
+    if pid == 0 {
+        return Err("GetProcessId a échoué".to_string());
+    }
+
+    let snapshot =
+        unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid) };
+
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err("CreateToolhelp32Snapshot a échoué".to_string());
+    }
+
+    let mut entry: MODULEENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = size_of::<MODULEENTRY32W>() as u32;
+
+    let mut result = None;
+
+    let mut success = unsafe { Module32FirstW(snapshot, &mut entry) };
+
+    while success != 0 {
+        let base = entry.modBaseAddr as usize;
+        let size = entry.modBaseSize as usize;
+        let end = base.saturating_add(size);
+
+        if address >= base && address < end {
+            result = Some((wide_to_string(&entry.szModule), base, size));
+
+            break;
+        }
+
+        success = unsafe { Module32NextW(snapshot, &mut entry) };
+    }
+
+    unsafe {
+        CloseHandle(snapshot);
+    }
+
+    Ok(result)
 }
 
 fn read_value<T: Copy>(process: HANDLE, address: usize) -> Result<T, String> {
@@ -1095,6 +1163,10 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
 
     let position = read_value::<Vec3>(process, scene_node + ABS_ORIGIN)?;
 
+    let scene_angles = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
+
+    let camera_angles = read_value::<Vec3>(process, pawn + CLIENT_CAMERA_ANGLES)?;
+
     /*
      * Un seul read pour la majorité
      * des champs C_BaseEntity.
@@ -1202,6 +1274,9 @@ fn read_sample(process: HANDLE, prediction: usize, started: Instant) -> Result<S
         pawn,
 
         position,
+
+        scene_yaw: scene_angles.y,
+        camera_yaw: camera_angles.y,
 
         flags,
         on_ground: flags & 0x1 != 0,
@@ -1635,7 +1710,632 @@ fn force_client_camera_yaw_once(process: HANDLE, prediction: usize) -> Result<()
     Ok(())
 }
 
-fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
+fn rtti_name_from_object(
+    process: HANDLE,
+    client_base: usize,
+    client_size: usize,
+    object: usize,
+) -> String {
+    if object < 0x10000 {
+        return "<null>".to_string();
+    }
+
+    let Ok(vtable) = read_value::<usize>(process, object) else {
+        return "<vtable unreadable>".to_string();
+    };
+
+    let client_end = client_base.saturating_add(client_size);
+
+    if vtable < client_base || vtable >= client_end {
+        return format!("<vtable 0x{vtable:X} hors client.dll>");
+    }
+
+    if vtable < 8 {
+        return "<invalid vtable>".to_string();
+    }
+
+    /*
+     * MSVC x64 :
+     *
+     * vtable[-1] = RTTICompleteObjectLocator*
+     */
+    let Ok(col) = read_value::<usize>(process, vtable - 8) else {
+        return "<COL unreadable>".to_string();
+    };
+
+    if col < client_base || col >= client_end {
+        return format!("<COL 0x{col:X} hors client.dll>");
+    }
+
+    /*
+     * RTTICompleteObjectLocator +0x0C
+     * = RVA du TypeDescriptor.
+     */
+    let Ok(type_rva) = read_value::<u32>(process, col + 0x0C) else {
+        return "<TypeDescriptor RVA unreadable>".to_string();
+    };
+
+    let type_descriptor = client_base + type_rva as usize;
+
+    if type_descriptor < client_base || type_descriptor >= client_end {
+        return "<TypeDescriptor hors client.dll>".to_string();
+    }
+
+    /*
+     * TypeDescriptor +0x10 = nom MSVC :
+     * ".?AVClassName@@"
+     */
+    read_c_string_lossy(process, type_descriptor + 0x10, 160)
+}
+
+fn dump_graph_controllers_once(
+    process: HANDLE,
+    prediction: usize,
+    client_base: usize,
+    client_size: usize,
+) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let manager = pawn + GRAPH_CONTROLLER_MANAGER;
+
+    let main = read_value::<usize>(process, pawn + MAIN_GRAPH_CONTROLLER)?;
+
+    /*
+     * CAnimGraphControllerManager::m_controllers
+     * est un CUtlVector occupant 0x18 octets.
+     *
+     * On log d'abord le layout brut avant
+     * de faire confiance au count.
+     */
+    let count = read_value::<u64>(process, manager + 0x00)?;
+    let data = read_value::<usize>(process, manager + 0x08)?;
+    let capacity = read_value::<u64>(process, manager + 0x10)?;
+
+    println!();
+    println!("========== ANIM GRAPH CONTROLLERS ==========");
+    println!("[GRAPH] pawn    = 0x{pawn:X}");
+    println!("[GRAPH] manager = 0x{manager:X}");
+    println!("[GRAPH] vector: count={count} data=0x{data:X} capacity={capacity}");
+
+    println!(
+        "[GRAPH] main = 0x{main:X} | {}",
+        rtti_name_from_object(process, client_base, client_size, main,)
+    );
+
+    /*
+     * Refus de parcourir si le layout ne ressemble
+     * pas à un CUtlVector valide.
+     */
+    if data < 0x10000 {
+        return Err("m_controllers data invalide".to_string());
+    }
+
+    if count == 0 || count > 64 {
+        return Err(format!("m_controllers count suspect : {count}"));
+    }
+
+    println!();
+    println!("[GRAPH] controllers :");
+
+    for index in 0..count as usize {
+        let controller = read_value::<usize>(process, data + index * size_of::<usize>())?;
+
+        let name = rtti_name_from_object(process, client_base, client_size, controller);
+
+        let external_graph = if controller >= 0x10000 {
+            read_value::<u32>(process, controller + 0x18).unwrap_or(0xFFFF_FFFF)
+        } else {
+            0xFFFF_FFFF
+        };
+
+        println!(
+            "[GRAPH] [{index:02}] 0x{controller:X} \
+             ext=0x{external_graph:08X} | {name}"
+        );
+    }
+
+    println!("============================================");
+    println!();
+
+    Ok(())
+}
+
+fn dump_graph2_param_block(
+    process: HANDLE,
+    controller: usize,
+    offset: usize,
+    name: &str,
+    client_base: usize,
+    client_size: usize,
+) -> Result<(), String> {
+    let bytes = read_bytes(process, controller + offset, 0x18)?;
+
+    let q0 = u64::from_le_bytes(bytes[0x00..0x08].try_into().unwrap()) as usize;
+
+    let q1 = u64::from_le_bytes(bytes[0x08..0x10].try_into().unwrap()) as usize;
+
+    let q2 = u64::from_le_bytes(bytes[0x10..0x18].try_into().unwrap());
+
+    println!("[GRAPH2] {name} @ +0x{offset:X}");
+    println!("         qword = {q0:016X} {q1:016X} {q2:016X}");
+
+    /*
+     * Hypothèse :
+     * q0 = nom/symbole du paramètre.
+     */
+    let q0_string = read_c_string_lossy(process, q0, 96);
+
+    println!("         q0 str = \"{q0_string}\"");
+
+    /*
+     * Hypothèse :
+     * q1 = objet/contexte de bindings AnimGraph2.
+     *
+     * On essaye son RTTI sans rien écrire.
+     */
+    let q1_vtable = read_value::<usize>(process, q1).unwrap_or(0);
+
+    println!("         q1 vtable = 0x{q1_vtable:X}");
+
+    match module_containing_address(process, q1_vtable)? {
+        Some((module_name, module_base, module_size)) => {
+            println!(
+                "         q1 module = {} \
+                base=0x{:X} size=0x{:X}",
+                module_name, module_base, module_size,
+            );
+
+            let q1_rtti = rtti_name_from_object(process, module_base, module_size, q1);
+
+            println!("         q1 RTTI = {q1_rtti}");
+        }
+
+        None => {
+            println!("         q1 module = <aucun module trouvé>");
+        }
+    }
+
+    /*
+     * Décompose q2 pour voir clairement
+     * les flags / index.
+     */
+    println!(
+        "         q2 low16=0x{:04X} \
+         mid16=0x{:04X} \
+         high32=0x{:08X}",
+        q2 & 0xFFFF,
+        (q2 >> 16) & 0xFFFF,
+        q2 >> 32,
+    );
+
+    Ok(())
+}
+
+fn dump_player_graph2_once(
+    process: HANDLE,
+    prediction: usize,
+    client_base: usize,
+    client_size: usize,
+) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let manager = pawn + GRAPH_CONTROLLER_MANAGER;
+
+    let count = read_value::<u64>(process, manager + 0x00)?;
+    let data = read_value::<usize>(process, manager + 0x08)?;
+
+    if count == 0 || count > 64 || data < 0x10000 {
+        return Err("Graph controllers vector invalide".to_string());
+    }
+
+    let mut graph2 = None;
+
+    for index in 0..count as usize {
+        let controller = read_value::<usize>(process, data + index * size_of::<usize>())?;
+
+        let name = rtti_name_from_object(process, client_base, client_size, controller);
+
+        if name.contains("CCitadelPlayerPawn_GraphController2") {
+            graph2 = Some(controller);
+            break;
+        }
+    }
+
+    let graph2 =
+        graph2.ok_or_else(|| "CCitadelPlayerPawn_GraphController2 introuvable".to_string())?;
+
+    println!();
+    println!("========== PLAYER GRAPH2 PARAMS ==========");
+    println!("[GRAPH2] controller = 0x{graph2:X}");
+
+    dump_graph2_param_block(
+        process,
+        graph2,
+        0xF0,
+        "m_flLookHeading",
+        client_base,
+        client_size,
+    )?;
+
+    dump_graph2_param_block(
+        process,
+        graph2,
+        0x108,
+        "m_flLookPitch",
+        client_base,
+        client_size,
+    )?;
+
+    dump_graph2_param_block(
+        process,
+        graph2,
+        0x180,
+        "m_vLocomotionFacing",
+        client_base,
+        client_size,
+    )?;
+
+    dump_graph2_param_block(
+        process,
+        graph2,
+        0x198,
+        "m_vLookTarget",
+        client_base,
+        client_size,
+    )?;
+
+    println!("==========================================");
+    println!();
+
+    Ok(())
+}
+
+fn find_graph2_context_in_anim_controller(
+    process: HANDLE,
+    prediction: usize,
+    client_base: usize,
+    client_size: usize,
+) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    /*
+     * D'abord on retrouve GraphController2,
+     * exactement comme dans notre probe précédent.
+     */
+    let manager = pawn + GRAPH_CONTROLLER_MANAGER;
+
+    let count = read_value::<u64>(process, manager + 0x00)?;
+    let data = read_value::<usize>(process, manager + 0x08)?;
+
+    if count == 0 || count > 64 || data < 0x10000 {
+        return Err("Graph controllers vector invalide".to_string());
+    }
+
+    let mut graph2 = None;
+
+    for index in 0..count as usize {
+        let controller = read_value::<usize>(process, data + index * size_of::<usize>())?;
+
+        let name = rtti_name_from_object(process, client_base, client_size, controller);
+
+        if name.contains("CCitadelPlayerPawn_GraphController2") {
+            graph2 = Some(controller);
+            break;
+        }
+    }
+
+    let graph2 =
+        graph2.ok_or_else(|| "CCitadelPlayerPawn_GraphController2 introuvable".to_string())?;
+
+    /*
+     * q1 du ParamRef look_heading.
+     */
+    let q1 = read_value::<usize>(process, graph2 + 0xF0 + 0x08)?;
+
+    /*
+     * Pawn -> CBodyComponent*
+     */
+    let body = read_value::<usize>(process, pawn + BODY_COMPONENT)?;
+
+    if body < 0x10000 {
+        return Err("CBodyComponent invalide".to_string());
+    }
+
+    /*
+     * CBodyComponentBaseAnimGraph::m_animationController
+     * est embedded, donc pas de dereference ici.
+     */
+    let anim_controller = body + BODY_ANIM_CONTROLLER;
+
+    println!();
+    println!("========== GRAPH2 CONTEXT SEARCH ==========");
+    println!("[CTX] pawn            = 0x{pawn:X}");
+    println!("[CTX] graph2          = 0x{graph2:X}");
+    println!("[CTX] q1              = 0x{q1:X}");
+    println!("[CTX] body            = 0x{body:X}");
+    println!("[CTX] anim controller = 0x{anim_controller:X}");
+
+    /*
+     * CBaseAnimGraphController client est assez gros.
+     * On limite volontairement à 0x2000 octets.
+     */
+    let bytes = read_bytes(process, anim_controller, 0x2000)?;
+
+    let needle = (q1 as u64).to_le_bytes();
+
+    let mut matches = Vec::new();
+
+    for offset in 0..=bytes.len().saturating_sub(8) {
+        if bytes[offset..offset + 8] == needle {
+            matches.push(offset);
+        }
+    }
+
+    println!(
+        "[CTX] q1 trouvé {} fois dans CBaseAnimGraphController",
+        matches.len()
+    );
+
+    for offset in matches {
+        println!();
+        println!("[CTX] MATCH à controller+0x{offset:X}");
+
+        /*
+         * Affiche 0x20 octets avant/après pour avoir
+         * le contexte structurel, sans rien écrire.
+         */
+        let start = offset.saturating_sub(0x20);
+        let end = (offset + 0x28).min(bytes.len());
+
+        let mut cursor = start & !7usize;
+
+        while cursor + 8 <= end {
+            let value = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap());
+
+            let marker = if cursor == offset { " <== q1" } else { "" };
+
+            println!("      +0x{cursor:04X} = 0x{value:016X}{marker}");
+
+            cursor += 8;
+        }
+    }
+
+    println!("===========================================");
+    println!();
+
+    Ok(())
+}
+
+fn wrap_angle(mut value: f32) -> f32 {
+    while value > 180.0 {
+        value -= 360.0;
+    }
+
+    while value < -180.0 {
+        value += 360.0;
+    }
+
+    value
+}
+
+fn angle_distance(a: f32, b: f32) -> f32 {
+    wrap_angle(a - b).abs()
+}
+
+fn compare_graph_instance_once(
+    process: HANDLE,
+    prediction: usize,
+    baseline: &mut Option<GraphInstanceBaseline>,
+) -> Result<(), String> {
+    let pawn = read_value::<usize>(process, prediction + LOCAL_PAWN_IN_PREDICTION)?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let body = read_value::<usize>(process, pawn + BODY_COMPONENT)?;
+
+    if body < 0x10000 {
+        return Err("CBodyComponent invalide".to_string());
+    }
+
+    let anim_controller = body + BODY_ANIM_CONTROLLER;
+
+    /*
+     * CBaseAnimGraphController::m_pGraphInstanceAG2
+     * runtime actuel.
+     */
+    let instance = read_value::<usize>(process, anim_controller + 0x18E0)?;
+
+    if instance < 0x10000 {
+        return Err("m_pGraphInstanceAG2 invalide".to_string());
+    }
+
+    let scene_node = read_value::<usize>(process, pawn + SCENE_NODE)?;
+
+    if scene_node < 0x10000 {
+        return Err("SceneNode invalide".to_string());
+    }
+
+    let scene = read_value::<Vec3>(process, scene_node + SCENE_LOCAL_ANGLES)?;
+
+    let camera = read_value::<Vec3>(process, pawn + CLIENT_CAMERA_ANGLES)?;
+
+    /*
+     * Taille connue de CNmGraphInstance :
+     * 976 = 0x3D0 octets.
+     */
+    let bytes = read_bytes(process, instance, 0x3D0)?;
+
+    let relative_yaw = wrap_angle(camera.y - scene.y);
+
+    if baseline.is_none() {
+        println!();
+        println!("========== GRAPH INSTANCE BASELINE ==========");
+        println!("[AG2] instance   = 0x{instance:X}");
+        println!("[AG2] scene yaw  = {:.3}", scene.y);
+        println!("[AG2] camera yaw = {:.3}", camera.y);
+        println!("[AG2] relative   = {:.3}", relative_yaw);
+        println!("[AG2] Tourne rapidement la caméra de ~90° puis F11 immédiatement.");
+        println!("=============================================");
+        println!();
+
+        *baseline = Some(GraphInstanceBaseline {
+            instance,
+            scene_yaw: scene.y,
+            camera_yaw: camera.y,
+            bytes,
+        });
+
+        return Ok(());
+    }
+
+    let first = baseline
+        .take()
+        .ok_or_else(|| "Baseline AG2 absente".to_string())?;
+
+    if first.instance != instance {
+        return Err("CNmGraphInstance a changé entre les deux captures".to_string());
+    }
+
+    let first_relative = wrap_angle(first.camera_yaw - first.scene_yaw);
+
+    let camera_delta = wrap_angle(camera.y - first.camera_yaw);
+
+    let scene_delta = wrap_angle(scene.y - first.scene_yaw);
+
+    println!();
+    println!("========== GRAPH INSTANCE COMPARE ==========");
+    println!("[AG2] instance = 0x{instance:X}");
+    println!();
+    println!(
+        "[AG2] Scene  : {:.3} -> {:.3} | delta={:.3}",
+        first.scene_yaw, scene.y, scene_delta,
+    );
+    println!(
+        "[AG2] Camera : {:.3} -> {:.3} | delta={:.3}",
+        first.camera_yaw, camera.y, camera_delta,
+    );
+    println!(
+        "[AG2] Relative: {:.3} -> {:.3}",
+        first_relative, relative_yaw,
+    );
+
+    println!();
+    println!("[AG2] candidats angle-like :");
+
+    let mut found = 0usize;
+
+    for offset in (0..0x3D0 - 4).step_by(4) {
+        let before = f32::from_le_bytes(first.bytes[offset..offset + 4].try_into().unwrap());
+
+        let after = f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+
+        if !before.is_finite() || !after.is_finite() {
+            continue;
+        }
+
+        /*
+         * On limite volontairement aux valeurs
+         * plausibles pour un angle.
+         */
+        if before.abs() > 720.0 || after.abs() > 720.0 {
+            continue;
+        }
+
+        let matches_camera = angle_distance(before, first.camera_yaw) <= 3.0
+            && angle_distance(after, camera.y) <= 3.0;
+
+        let matches_scene =
+            angle_distance(before, first.scene_yaw) <= 3.0 && angle_distance(after, scene.y) <= 3.0;
+
+        let matches_relative = angle_distance(before, first_relative) <= 3.0
+            && angle_distance(after, relative_yaw) <= 3.0;
+
+        /*
+         * On teste aussi l'hypothèse radians.
+         */
+        let matches_camera_rad = (before - first.camera_yaw.to_radians()).abs() <= 0.05
+            && (after - camera.y.to_radians()).abs() <= 0.05;
+
+        let matches_scene_rad = (before - first.scene_yaw.to_radians()).abs() <= 0.05
+            && (after - scene.y.to_radians()).abs() <= 0.05;
+
+        let matches_relative_rad = (before - first_relative.to_radians()).abs() <= 0.05
+            && (after - relative_yaw.to_radians()).abs() <= 0.05;
+
+        if !matches_camera
+            && !matches_scene
+            && !matches_relative
+            && !matches_camera_rad
+            && !matches_scene_rad
+            && !matches_relative_rad
+        {
+            continue;
+        }
+
+        let mut tags = Vec::new();
+
+        if matches_camera {
+            tags.push("CAM_DEG");
+        }
+
+        if matches_scene {
+            tags.push("SCENE_DEG");
+        }
+
+        if matches_relative {
+            tags.push("REL_DEG");
+        }
+
+        if matches_camera_rad {
+            tags.push("CAM_RAD");
+        }
+
+        if matches_scene_rad {
+            tags.push("SCENE_RAD");
+        }
+
+        if matches_relative_rad {
+            tags.push("REL_RAD");
+        }
+
+        println!(
+            "[AG2 CANDIDATE] +0x{offset:03X} : \
+             {before:.6} -> {after:.6} | {}",
+            tags.join(","),
+        );
+
+        found += 1;
+    }
+
+    println!();
+    println!("[AG2] {found} candidat(s)");
+    println!("============================================");
+    println!();
+
+    Ok(())
+}
+
+fn capture(
+    process: HANDLE,
+    prediction: usize,
+    entity_list: usize,
+    client_base: usize,
+    client_size: usize,
+) {
     println!();
     println!("========== CAPTURE START ==========");
     println!("F11 puis ENTER sur load_slot_4.");
@@ -1653,6 +2353,8 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
     let mut f11_was_down = false;
 
     let mut yaw_scan_baseline: Option<YawScanBaseline> = None;
+
+    let mut graph_instance_baseline: Option<GraphInstanceBaseline> = None;
 
     let mut clear_ground_active = false;
     let mut clear_ground_started: Option<Instant> = None;
@@ -1673,8 +2375,10 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
          * (le TP), on arrête immédiatement de forcer ces valeurs.
          */
         if f11_down && !f11_was_down {
-            if let Err(error) = force_client_camera_yaw_once(process, prediction) {
-                eprintln!("[CLIENTCAM TEST] ERROR: {error}");
+            if let Err(error) =
+                compare_graph_instance_once(process, prediction, &mut graph_instance_baseline)
+            {
+                eprintln!("[AG2] ERROR: {error}");
             }
         }
 
@@ -1797,6 +2501,7 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
             println!(
                 "{:>4}ms | \
                 XYZ={:.3},{:.3},{:.3} | \
+                yaw={:>8.3} cam={:>8.3} rel={:>8.3} | \
                 ground={} hGround=0x{:08X} | \
                 absV={:.2},{:.2},{:.2} | \
                 srvV={:.2},{:.2},{:.2} | \
@@ -1810,6 +2515,9 @@ fn capture(process: HANDLE, prediction: usize, entity_list: usize) {
                 sample.position.x,
                 sample.position.y,
                 sample.position.z,
+                sample.scene_yaw,
+                sample.camera_yaw,
+                wrap_angle(sample.camera_yaw - sample.scene_yaw),
                 sample.on_ground as u8,
                 sample.ground_entity,
                 sample.velocity.x,
@@ -1880,7 +2588,7 @@ fn run() -> Result<(), String> {
         let down = (unsafe { GetAsyncKeyState(VK_F12 as i32) } as u16 & 0x8000) != 0;
 
         if down && !was_down {
-            capture(process.0, prediction, entity_list);
+            capture(process.0, prediction, entity_list, client_base, client_size);
         }
 
         was_down = down;
