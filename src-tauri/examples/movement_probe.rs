@@ -2467,6 +2467,133 @@ fn dump_live_look_heading_once(
     Ok(())
 }
 
+fn resolve_live_look_heading_address(
+    process: HANDLE,
+    prediction: usize,
+    client_base: usize,
+    client_size: usize,
+) -> Result<usize, String> {
+    let pawn =
+        read_value::<usize>(
+            process,
+            prediction + LOCAL_PAWN_IN_PREDICTION,
+        )?;
+
+    if pawn < 0x10000 {
+        return Err("Local pawn nul".to_string());
+    }
+
+    let manager = pawn + GRAPH_CONTROLLER_MANAGER;
+
+    let count =
+        read_value::<u64>(
+            process,
+            manager + 0x00,
+        )?;
+
+    let data =
+        read_value::<usize>(
+            process,
+            manager + 0x08,
+        )?;
+
+    if count == 0
+        || count > 64
+        || data < 0x10000
+    {
+        return Err(
+            "GraphControllerManager suspect".to_string(),
+        );
+    }
+
+    let mut graph2 = None;
+
+    for index in 0..count as usize {
+        let controller =
+            read_value::<usize>(
+                process,
+                data + index * size_of::<usize>(),
+            )?;
+
+        if controller < 0x10000 {
+            continue;
+        }
+
+        let name =
+            rtti_name_from_object(
+                process,
+                client_base,
+                client_size,
+                controller,
+            );
+
+        if name.contains(
+            "CCitadelPlayerPawn_GraphController2",
+        ) {
+            graph2 = Some(controller);
+            break;
+        }
+    }
+
+    let graph2 =
+        graph2.ok_or_else(|| {
+            "CCitadelPlayerPawn_GraphController2 introuvable"
+                .to_string()
+        })?;
+
+    let graph =
+        read_value::<usize>(
+            process,
+            graph2 + 0xF8,
+        )?;
+
+    let parameter_index =
+        read_value::<i16>(
+            process,
+            graph2 + 0x100,
+        )?;
+
+    if graph < 0x10000 {
+        return Err(
+            "look_heading graph invalide".to_string(),
+        );
+    }
+
+    if parameter_index < 0 {
+        return Err(format!(
+            "look_heading non bindé : index={parameter_index}"
+        ));
+    }
+
+    let parameter_table =
+        read_value::<usize>(
+            process,
+            graph + 0x10,
+        )?;
+
+    if parameter_table < 0x10000 {
+        return Err(
+            "table paramètres AG2 invalide".to_string(),
+        );
+    }
+
+    let parameter_object =
+        read_value::<usize>(
+            process,
+            parameter_table
+                + parameter_index as usize
+                    * size_of::<usize>(),
+        )?;
+
+    if parameter_object < 0x10000 {
+        return Err(
+            "objet look_heading invalide".to_string(),
+        );
+    }
+
+    Ok(parameter_object + 0x18)
+}
+
 fn capture(
     process: HANDLE,
     prediction: usize,
@@ -2477,6 +2604,28 @@ fn capture(
     println!();
     println!("========== CAPTURE START ==========");
     println!("F11 puis ENTER sur load_slot_4.");
+
+    let look_heading_address =
+        match resolve_live_look_heading_address(
+            process,
+            prediction,
+            client_base,
+            client_size,
+        ) {
+            Ok(address) => {
+                println!(
+                    "[LOOK] sampling address = 0x{address:X}"
+                );
+                address
+            }
+
+            Err(error) => {
+                eprintln!(
+                    "[LOOK] resolve error: {error}"
+                );
+                return;
+            }
+        };
 
     let started = Instant::now();
 
@@ -2532,7 +2681,12 @@ fn capture(
             }
         }
 
-        match read_sample(process, prediction, started) {
+        match read_sample(
+            process,
+            prediction,
+            started,
+            look_heading_address,
+        ) {
             Ok(sample) => {
                 if clear_ground_active {
                     if let Some(initial) = clear_ground_start_position {
