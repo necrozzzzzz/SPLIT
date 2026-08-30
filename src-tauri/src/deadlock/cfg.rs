@@ -59,18 +59,6 @@ pub fn write_savestate_cfg(
 
     let mut prepare_output = String::from("// SPLIT 2 - prepared teleport points\n\n");
 
-    /*
-     * Commande utilisée uniquement après un vrai Load.
-     *
-     * Le Prime automatique après Save ne l'exécute pas,
-     * afin de ne pas modifier le mouvement du joueur
-     * juste après avoir créé un savestate.
-     */
-    let velocity_cfg_path = parent.join("savestate_velocity.cfg");
-
-    let velocity_output =
-        "ent_fire !player RunScriptCode \"self.Teleport(null, null, Vector(0, 0, 0))\"\n";
-
     output.push_str("// SPLIT 2 - auto-generated, do not edit manually\n\n");
 
     /*
@@ -95,8 +83,7 @@ pub fn write_savestate_cfg(
      */
     output.push_str(
         "bind \"F13\" \"exec savestate_prepare\"\n\
-        bind \"F10\" \"r_force_no_present 0\"\n\
-        bind \"F9\" \"exec savestate_velocity\"\n\n",
+        bind \"F10\" \"r_force_no_present 0\"\n\n",
     );
 
     for index in 0..8 {
@@ -179,9 +166,6 @@ pub fn write_savestate_cfg(
 
     atomic_write(&prepare_cfg_path, prepare_output)
         .map_err(|error| format!("Could not write {}: {error}", prepare_cfg_path.display(),))?;
-
-    atomic_write(&velocity_cfg_path, velocity_output)
-        .map_err(|error| format!("Could not write {}: {error}", velocity_cfg_path.display(),))?;
 
     atomic_write(cfg_file, output)
         .map_err(|error| format!("Could not write savestate.cfg: {error}"))?;
