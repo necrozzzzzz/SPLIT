@@ -353,6 +353,15 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
 
                         super::hotkeys::prepare_teleports_after_cfg_update();
 
+                        /*
+                         * Le premier TeleportEntity après la création
+                         * d'un nouveau point présente le défaut visuel.
+                         *
+                         * On le consomme immédiatement pendant que le joueur
+                         * est encore à la position qu'il vient de sauvegarder.
+                         */
+                        super::hotkeys::queue_prime_after_save(slot);
+
                         crate::notifications::show(crate::notifications::Notification::SlotSaved {
                             slot,
                             favorite: super::favorite_mode_for_bank(saved.bank),

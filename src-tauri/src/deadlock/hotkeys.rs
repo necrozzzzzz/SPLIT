@@ -46,6 +46,7 @@ use super::watcher;
 enum HotkeyAction {
     Save(u8),
     Load(u8),
+    Prime(u8),
     CyclePreset,
     Undo,
     Redo,
@@ -454,14 +455,27 @@ fn send_load_key(slot: u8) -> Result<(), String> {
     send_virtual_key(vk)
 }
 
-fn load_active_slot(slot: u8) -> Result<bool, String> {
+pub(crate) fn queue_prime_after_save(slot: u8) {
+    let Some(sender) = HOTKEY_SENDER.get() else {
+        eprintln!("[SPLIT] Could not queue prime for slot {slot}: hotkey worker unavailable");
+        return;
+    };
+
+    if let Err(error) = sender.send(HotkeyAction::Prime(slot)) {
+        eprintln!("[SPLIT] Could not queue prime for slot {slot}: {error}");
+    }
+}
+
+fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
     let (favorite, snapshot) = super::active_slot_state(slot)?;
 
     let Some(snapshot) = snapshot else {
-        crate::notifications::show(crate::notifications::Notification::SlotEmpty {
-            slot,
-            favorite,
-        });
+        if show_notification {
+            crate::notifications::show(crate::notifications::Notification::SlotEmpty {
+                slot,
+                favorite,
+            });
+        }
 
         return Ok(false);
     };
@@ -473,10 +487,8 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
     ensure_teleports_prepared()?;
 
     /*
-     * ÉTAT VALIDÉ :
-     *
-     * on remet d'abord la caméra sauvegardée
-     * AVANT d'envoyer le Load.
+     * État validé :
+     * restore caméra AVANT le Load.
      */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
@@ -493,24 +505,14 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         }
     }
 
-    /*
-     * À partir de maintenant, si quelque chose
-     * bloque l'affichage, F10 physique peut servir
-     * d'unfreeze de secours.
-     */
     PRESENTATION_MASK_ACTIVE.store(true, Ordering::SeqCst);
 
     /*
-     * Le transport U/I/O/J/K/L/N/M exécute :
+     * savestate_slot_X.cfg fait :
      *
-     *     exec savestate;
-     *     load_slot_X
-     *
-     * Et savestate_slot_X.cfg contient :
-     *
-     *     r_force_no_present 1
-     *     ent_fire <point> TeleportEntity !player
-     *     setang_exact ...
+     * r_force_no_present 1
+     * ent_fire <point> TeleportEntity !player
+     * setang_exact ...
      */
     if let Err(error) = send_load_key(slot) {
         return Err(format!(
@@ -519,17 +521,13 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
     }
 
     /*
-     * Le défaut visuel observé dure environ
-     * deux frames à 60 FPS.
+     * Environ deux frames à 60 FPS.
      */
     thread::sleep(Duration::from_millis(35));
 
     /*
-     * Pendant r_force_no_present, Deadlock continue
-     * à traiter les inputs souris.
-     *
-     * On restaure donc une deuxième fois la caméra
-     * juste avant de réafficher le jeu.
+     * Deuxième restore caméra juste avant
+     * de rendre le jeu visible.
      */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
@@ -546,9 +544,6 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         }
     }
 
-    /*
-     * Réactive la présentation.
-     */
     if let Err(error) = send_present_resume_key() {
         return Err(format!(
             "Could not resume Deadlock presentation: {error}. Press F10 to resume manually."
@@ -557,7 +552,16 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
 
     PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
 
-    crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
+    /*
+     * Le Prime automatique après un Save
+     * ne doit afficher aucune notification "Loaded".
+     */
+    if show_notification {
+        crate::notifications::show(crate::notifications::Notification::SlotLoaded {
+            slot,
+            favorite,
+        });
+    }
 
     Ok(true)
 }
@@ -584,7 +588,7 @@ pub fn load_slot_from_ui(slot: u8) -> Result<(), String> {
      */
     thread::sleep(Duration::from_millis(75));
 
-    if load_active_slot(slot)? {
+    if load_active_slot(slot, true)? {
         println!("[SPLIT] UI load injected: slot {slot}");
     } else {
         println!("[SPLIT] UI load skipped: slot {slot} is empty");
@@ -918,8 +922,49 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                             continue;
                         }
 
-                        if let Err(error) = load_active_slot(slot) {
+                        if let Err(error) = load_active_slot(slot, true) {
                             eprintln!("[SPLIT] Could not load slot {slot}: {error}");
+                        }
+                    }
+
+                    HotkeyAction::Prime(slot) => {
+                        println!("[SPLIT] Priming freshly saved teleport: slot {slot}");
+
+                        if !is_deadlock_foreground() {
+                            println!("[SPLIT] Prime {slot} skipped: Deadlock lost focus");
+
+                            continue;
+                        }
+
+                        /*
+                         * savestate_prepare vient juste d'être envoyé.
+                         *
+                         * On laisse à Source 2 le même délai de sécurité
+                         * que notre ancien fallback de préparation.
+                         */
+                        thread::sleep(Duration::from_millis(50));
+
+                        /*
+                         * Premier Load volontairement sacrifié.
+                         *
+                         * Le joueur est normalement encore exactement
+                         * à la position qu'il vient de sauvegarder :
+                         * le défaut d'orientation n'est donc pas visible.
+                         *
+                         * Aucune notification SlotLoaded n'est affichée.
+                         */
+                        match load_active_slot(slot, false) {
+                            Ok(true) => {
+                                println!("[SPLIT] Fresh teleport primed: slot {slot}");
+                            }
+
+                            Ok(false) => {
+                                println!("[SPLIT] Prime {slot} skipped: slot unexpectedly empty");
+                            }
+
+                            Err(error) => {
+                                eprintln!("[SPLIT] Could not prime slot {slot}: {error}");
+                            }
                         }
                     }
 
