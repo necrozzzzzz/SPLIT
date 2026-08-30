@@ -396,6 +396,10 @@ fn send_present_resume_key() -> Result<(), String> {
     send_virtual_key(VK_F10)
 }
 
+fn send_velocity_reset_key() -> Result<(), String> {
+    send_virtual_key(VK_F9)
+}
+
 pub(crate) fn prepare_teleports_after_cfg_update() {
     if !super::cfg::teleports_dirty() {
         return;
@@ -466,6 +470,74 @@ pub(crate) fn queue_prime_after_save(slot: u8) {
     }
 }
 
+fn prime_active_slot(slot: u8) -> Result<bool, String> {
+    let (_favorite, snapshot) = super::active_slot_state(slot)?;
+
+    let Some(_snapshot) = snapshot else {
+        return Ok(false);
+    };
+
+    /*
+     * Le point_teleport doit être créé
+     * avant le Prime exactement comme pour
+     * un Load normal.
+     */
+    ensure_teleports_prepared()?;
+
+    /*
+     * Le CFG du slot commence toujours par :
+     *
+     *     r_force_no_present 1
+     *
+     * puis :
+     *
+     *     TeleportEntity
+     *     setang_exact
+     *
+     * On conserve volontairement ce CFG :
+     * les vrais Loads ne changent donc PAS.
+     */
+    PRESENTATION_MASK_ACTIVE.store(true, Ordering::SeqCst);
+
+    if let Err(error) = send_load_key(slot) {
+        return Err(format!(
+            "Could not prime slot {slot}: {error}. Press F10 if Deadlock is frozen."
+        ));
+    }
+
+    /*
+     * Contrairement à un vrai Load,
+     * on ne garde PAS l'écran figé pendant 35 ms.
+     *
+     * Les inputs sont envoyés dans cet ordre :
+     *
+     *     U/I/O/J...
+     *     puis F10
+     *
+     * Deadlock exécute donc le TP puis reçoit
+     * immédiatement r_force_no_present 0.
+     */
+    if let Err(error) = send_present_resume_key() {
+        return Err(format!(
+            "Could not resume Deadlock presentation after prime: {error}. Press F10 manually."
+        ));
+    }
+
+    PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
+
+    /*
+     * Le modèle a toujours besoin d'environ
+     * deux frames pour terminer son état interne.
+     *
+     * Cette fois les 35 ms passent écran visible,
+     * puisque le joueur vient juste de sauvegarder
+     * exactement cette position/orientation.
+     */
+    thread::sleep(Duration::from_millis(35));
+
+    Ok(true)
+}
+
 fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
     let (favorite, snapshot) = super::active_slot_state(slot)?;
 
@@ -521,8 +593,19 @@ fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
     }
 
     /*
-     * Environ deux frames à 60 FPS.
+     * point_teleport conserve le momentum précédent.
+     *
+     * Le Load vient d'être injecté :
+     * on demande maintenant à Deadlock de remettre
+     * explicitement la vélocité du joueur à zéro.
+     *
+     * Le Prime automatique n'appelle PAS cette fonction,
+     * donc un Save en mouvement ne stoppe pas le joueur.
      */
+    if let Err(error) = send_velocity_reset_key() {
+        eprintln!("[SPLIT] Could not reset velocity after Load: {error}");
+    }
+
     thread::sleep(Duration::from_millis(35));
 
     /*
@@ -937,23 +1020,18 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                         }
 
                         /*
-                         * savestate_prepare vient juste d'être envoyé.
-                         *
-                         * On laisse à Source 2 le même délai de sécurité
-                         * que notre ancien fallback de préparation.
+                         * Laisse savestate_prepare créer/enregistrer
+                         * correctement le nouveau point_teleport.
                          */
                         thread::sleep(Duration::from_millis(50));
 
                         /*
-                         * Premier Load volontairement sacrifié.
+                         * Prime spécial :
                          *
-                         * Le joueur est normalement encore exactement
-                         * à la position qu'il vient de sauvegarder :
-                         * le défaut d'orientation n'est donc pas visible.
-                         *
-                         * Aucune notification SlotLoaded n'est affichée.
+                         * contrairement à un vrai Load,
+                         * l'affichage est réactivé immédiatement.
                          */
-                        match load_active_slot(slot, false) {
+                        match prime_active_slot(slot) {
                             Ok(true) => {
                                 println!("[SPLIT] Fresh teleport primed: slot {slot}");
                             }
