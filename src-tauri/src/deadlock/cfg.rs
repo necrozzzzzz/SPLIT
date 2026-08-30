@@ -68,7 +68,8 @@ pub fn write_savestate_cfg(
      */
     let velocity_cfg_path = parent.join("savestate_velocity.cfg");
 
-    let velocity_output = "ent_fire !player RunScriptCode \"self.SetVelocity(Vector(0, 0, 0))\"\n";
+    let velocity_output =
+        "ent_fire !player RunScriptCode \"self.Teleport(null, null, Vector(0, 0, 0))\"\n";
 
     output.push_str("// SPLIT 2 - auto-generated, do not edit manually\n\n");
 
