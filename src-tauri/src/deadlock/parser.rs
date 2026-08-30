@@ -76,6 +76,7 @@ pub fn parse_angle_triplet(line: &str) -> Option<[f64; 3]> {
     parse_triplet_after(line, &["setang_exact", "setang"])
 }
 
+#[cfg(test)]
 pub fn parse_position(line: &str) -> Option<PositionSnapshot> {
     let position = parse_position_triplet(line)?;
     let angles = parse_angle_triplet(line)?;

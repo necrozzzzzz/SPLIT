@@ -5,8 +5,6 @@ use std::{
     os::windows::ffi::OsStringExt,
     path::PathBuf,
     sync::Mutex,
-    thread,
-    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -45,8 +43,6 @@ const CAMERA_RTTI_NAME: &[u8] = b".?AVCCitadel_ThirdPersonCamera@@";
  */
 const CAMERA_ANGLES_OFFSET: usize = 0x44;
 
-const CAMERA_POSITION_OFFSET: usize = 0x38;
-
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,17 +50,6 @@ pub struct CameraSnapshot {
     pub pitch: f32,
     pub yaw: f32,
     pub roll: f32,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f32; 3]>,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct CameraPosition {
-    x: f32,
-    y: f32,
-    z: f32,
 }
 
 #[repr(C)]
@@ -803,16 +788,6 @@ fn active_camera_object(process: HANDLE, runtime: CameraRuntime) -> Result<usize
     Ok(camera_object)
 }
 
-pub fn warmup() {
-    let Some(pid) = process::deadlock_pid() else {
-        return;
-    };
-
-    if let Err(error) = runtime_for_pid(pid) {
-        eprintln!("[SPLIT] Camera warmup skipped: {error}");
-    }
-}
-
 pub fn capture() -> Result<CameraSnapshot, String> {
     let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
 
@@ -823,15 +798,12 @@ pub fn capture() -> Result<CameraSnapshot, String> {
     let result = (|| {
         let camera_object = active_camera_object(process, runtime)?;
 
-        let position: CameraPosition = read_value(process, camera_object + CAMERA_POSITION_OFFSET)?;
-
         let angles: CameraAngles = read_value(process, camera_object + CAMERA_ANGLES_OFFSET)?;
 
         Ok(CameraSnapshot {
             pitch: angles.pitch,
             yaw: angles.yaw,
             roll: angles.roll,
-            position: Some([position.x, position.y, position.z]),
         })
     })();
 
@@ -861,76 +833,6 @@ pub fn restore(snapshot: CameraSnapshot) -> Result<(), String> {
         };
 
         write_value(process, camera_object + CAMERA_ANGLES_OFFSET, &angles)
-    })();
-
-    let _ = unsafe { CloseHandle(process) };
-
-    if result.is_err() {
-        invalidate_runtime(pid);
-    }
-
-    result
-}
-
-pub fn set_position(snapshot: CameraSnapshot) -> Result<(), String> {
-    let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
-
-    let runtime = runtime_for_pid(pid)?;
-    let process = open_deadlock(pid)?;
-
-    let result = (|| {
-        let camera_object = active_camera_object(process, runtime)?;
-
-        let position = snapshot
-            .position
-            .ok_or_else(|| "Camera snapshot has no position".to_string())?;
-
-        let position = CameraPosition {
-            x: position[0],
-            y: position[1],
-            z: position[2],
-        };
-
-        write_value(process, camera_object + CAMERA_POSITION_OFFSET, &position)
-    })();
-
-    let _ = unsafe { CloseHandle(process) };
-
-    if result.is_err() {
-        invalidate_runtime(pid);
-    }
-
-    result
-}
-
-pub fn hold_position(snapshot: CameraSnapshot, duration: Duration) -> Result<(), String> {
-    let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
-
-    let runtime = runtime_for_pid(pid)?;
-    let process = open_deadlock(pid)?;
-
-    let result = (|| {
-        let camera_object = active_camera_object(process, runtime)?;
-
-        let position = snapshot
-            .position
-            .ok_or_else(|| "Camera snapshot has no position".to_string())?;
-
-        let position = CameraPosition {
-            x: position[0],
-            y: position[1],
-            z: position[2],
-        };
-
-        let started = Instant::now();
-
-        while started.elapsed() < duration {
-            write_value(process, camera_object + CAMERA_POSITION_OFFSET, &position)?;
-
-            thread::sleep(Duration::from_millis(1));
-        }
-
-        Ok(())
     })();
 
     let _ = unsafe { CloseHandle(process) };

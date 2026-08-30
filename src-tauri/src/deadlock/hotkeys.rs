@@ -20,8 +20,8 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
-                VK_F7, VK_F8, VK_F9, VK_MENU,
+                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
+                VK_F8, VK_F9, VK_MENU,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -67,6 +67,22 @@ static ACTIVE_HOTKEY_KEYS: AtomicU16 = AtomicU16::new(0);
  * la touche reste appuyée.
  */
 static ACTIVE_PRESET_KEY: AtomicBool = AtomicBool::new(false);
+
+/*
+ * Signature placée dans dwExtraInfo pour
+ * reconnaître les inputs créés par SPLIT.
+ */
+const SPLIT_INJECT_TAG: usize = 0x5350_4C54;
+
+/*
+ * Vrai pendant le masque d'affichage d'un Load.
+ *
+ * Si quelque chose échoue pendant cette période,
+ * F10 physique est laissé passer à Deadlock et
+ * exécute "r_force_no_present 0".
+ */
+static PRESENTATION_MASK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
 static ACTIVE_HISTORY_KEYS: AtomicU8 = AtomicU8::new(0);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
@@ -337,7 +353,7 @@ fn make_keyboard_input(vk: u16, flags: u32) -> INPUT {
                 wScan: 0,
                 dwFlags: flags,
                 time: 0,
-                dwExtraInfo: 0,
+                dwExtraInfo: SPLIT_INJECT_TAG,
             },
         },
     }
@@ -372,7 +388,11 @@ fn send_capture_key() -> Result<(), String> {
 }
 
 fn send_prepare_key() -> Result<(), String> {
-    send_virtual_key(VK_F12)
+    send_virtual_key(VK_F11)
+}
+
+fn send_present_resume_key() -> Result<(), String> {
+    send_virtual_key(VK_F10)
 }
 
 pub(crate) fn prepare_teleports_after_cfg_update() {
@@ -448,22 +468,78 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
 
     ensure_teleports_prepared()?;
 
+    /*
+     * À partir de maintenant, si un problème survient,
+     * F10 physique sert d'unfreeze de secours.
+     */
+    PRESENTATION_MASK_ACTIVE.store(true, Ordering::SeqCst);
+
+    /*
+     * Le bind U/I/O/J/... commence lui-même par :
+     *
+     *     r_force_no_present 1
+     *
+     * puis charge le CFG du slot.
+     *
+     * Le freeze arrive donc AVANT le TP.
+     */
+    if let Err(error) = send_load_key(slot) {
+        /*
+         * On garde volontairement le masque marqué actif.
+         *
+         * Si Deadlock a reçu une partie de l'input et
+         * s'est retrouvé figé, F10 physique reste notre
+         * sortie de secours.
+         */
+        return Err(format!(
+            "Could not load slot {slot}: {error}. Press F10 if Deadlock is frozen."
+        ));
+    }
+
+    /*
+     * Le défaut visuel observé dure environ
+     * deux frames.
+     */
+    thread::sleep(Duration::from_millis(35));
+
+    /*
+     * Deadlock continue de traiter la souris pendant
+     * r_force_no_present.
+     *
+     * On remet donc la caméra sauvegardée juste avant
+     * de rendre les nouvelles frames visibles.
+     */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
             Ok(()) => {
                 println!(
-                    "[SPLIT] Camera pre-restored -> P={:.3} Y={:.3} R={:.3}",
+                    "[SPLIT] Camera final restore -> P={:.3} Y={:.3} R={:.3}",
                     camera.pitch, camera.yaw, camera.roll,
                 );
             }
 
             Err(error) => {
-                eprintln!("[SPLIT] Camera restore unavailable: {error}");
+                eprintln!("[SPLIT] Camera final restore unavailable: {error}");
             }
         }
     }
 
-    send_load_key(slot)?;
+    /*
+     * Réactive la présentation.
+     */
+    if let Err(error) = send_present_resume_key() {
+        /*
+         * PRESENTATION_MASK_ACTIVE reste true.
+         *
+         * F10 physique peut donc toujours être utilisé
+         * pour débloquer l'écran.
+         */
+        return Err(format!(
+            "Could not resume Deadlock presentation: {error}. Press F10 to resume manually."
+        ));
+    }
+
+    PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
 
     crate::notifications::show(crate::notifications::Notification::SlotLoaded { slot, favorite });
 
@@ -554,6 +630,36 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
     let key_down = wparam as u32 == WM_KEYDOWN || wparam as u32 == WM_SYSKEYDOWN;
 
     let key_up = wparam as u32 == WM_KEYUP || wparam as u32 == WM_SYSKEYUP;
+
+    /*
+     * Un input injecté volontairement par SPLIT
+     * doit atteindre Deadlock sans être interprété
+     * une deuxième fois par notre propre hook.
+     */
+    if keyboard.dwExtraInfo == SPLIT_INJECT_TAG {
+        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+    }
+
+    /*
+     * Touche de secours.
+     *
+     * Normalement F10 = Redo.
+     *
+     * Mais si Deadlock est actuellement bloqué par
+     * r_force_no_present, F10 physique est envoyé
+     * directement au jeu pour exécuter :
+     *
+     *     r_force_no_present 0
+     */
+    if PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst) && keyboard.vkCode as u16 == VK_F10 {
+        if key_down {
+            PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
+
+            println!("[SPLIT] Emergency presentation resume via F10");
+        }
+
+        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+    }
 
     /*
      * V = preset suivant.

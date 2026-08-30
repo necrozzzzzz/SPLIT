@@ -69,12 +69,30 @@ pub fn write_savestate_cfg(
     output.push_str("bind \"h\" \"savestate_getpos\"\n\n");
 
     /*
-     * F12 est un transport interne SPLIT.
+     * Transports internes SPLIT.
      *
-     * Il prépare les point_teleport après
-     * qu'un slot/preset a été modifié.
+     * F9 physique reste Undo : SPLIT l'intercepte.
+     * Seul un F9 injecté par SPLIT atteint Deadlock.
+     *
+     * F10 physique reste Redo, sauf si un masque
+     * d'affichage est coincé : il devient alors
+     * notre touche de secours pour réafficher le jeu.
+     *
+     * F12 reste entièrement libre.
      */
-    output.push_str("bind \"F12\" \"exec savestate_prepare\"\n\n");
+    /*
+    * Transports internes SPLIT.
+    *
+    * F12 prépare les point_teleport après
+    * un Save / changement de preset.
+    *
+    * F10 sert à réactiver la présentation
+    * après le masque d'un Load.
+    */
+    output.push_str(
+        "bind \"F11\" \"exec savestate_prepare\"\n\
+        bind \"F10\" \"r_force_no_present 0\"\n\n",
+    );
 
     for index in 0..8 {
         let slot_number = index + 1;
@@ -123,7 +141,8 @@ pub fn write_savestate_cfg(
                 })?;
 
                 output.push_str(&format!(
-                    "alias \"load_slot_{slot_number}\" \"exec {slot_cfg_name}\"\n",
+                    "bind \"{transport_key}\" \
+                    \"r_force_no_present 1; exec savestate; load_slot_{slot_number}\"\n\n",
                 ));
             }
 

@@ -7,7 +7,6 @@ mod paths;
 mod process;
 mod slots;
 mod watcher;
-pub use camera::CameraSnapshot;
 pub use history::HistoryState;
 pub use parser::PositionSnapshot;
 
