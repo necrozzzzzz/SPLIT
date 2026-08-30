@@ -81,14 +81,14 @@ pub fn write_savestate_cfg(
      * F12 reste entièrement libre.
      */
     /*
-    * Transports internes SPLIT.
-    *
-    * F12 prépare les point_teleport après
-    * un Save / changement de preset.
-    *
-    * F10 sert à réactiver la présentation
-    * après le masque d'un Load.
-    */
+     * Transports internes SPLIT.
+     *
+     * F12 prépare les point_teleport après
+     * un Save / changement de preset.
+     *
+     * F10 sert à réactiver la présentation
+     * après le masque d'un Load.
+     */
     output.push_str(
         "bind \"F11\" \"exec savestate_prepare\"\n\
         bind \"F10\" \"r_force_no_present 0\"\n\n",
