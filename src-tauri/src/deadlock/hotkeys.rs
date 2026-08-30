@@ -20,8 +20,8 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
-                VK_F8, VK_F9, VK_MENU,
+                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F13, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
+                VK_F7, VK_F8, VK_F9, VK_MENU,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -388,7 +388,7 @@ fn send_capture_key() -> Result<(), String> {
 }
 
 fn send_prepare_key() -> Result<(), String> {
-    send_virtual_key(VK_F11)
+    send_virtual_key(VK_F13)
 }
 
 fn send_present_resume_key() -> Result<(), String> {
@@ -466,31 +466,53 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
         return Ok(false);
     };
 
+    /*
+     * Le point_teleport doit déjà exister
+     * AVANT d'exécuter le CFG du slot.
+     */
     ensure_teleports_prepared()?;
 
     /*
-     * À partir de maintenant, si un problème survient,
-     * F10 physique sert d'unfreeze de secours.
+     * ÉTAT VALIDÉ :
+     *
+     * on remet d'abord la caméra sauvegardée
+     * AVANT d'envoyer le Load.
+     */
+    if let Some(camera) = snapshot.camera {
+        match super::camera::restore(camera) {
+            Ok(()) => {
+                println!(
+                    "[SPLIT] Camera pre-restored -> P={:.3} Y={:.3} R={:.3}",
+                    camera.pitch, camera.yaw, camera.roll,
+                );
+            }
+
+            Err(error) => {
+                eprintln!("[SPLIT] Camera pre-restore unavailable: {error}");
+            }
+        }
+    }
+
+    /*
+     * À partir de maintenant, si quelque chose
+     * bloque l'affichage, F10 physique peut servir
+     * d'unfreeze de secours.
      */
     PRESENTATION_MASK_ACTIVE.store(true, Ordering::SeqCst);
 
     /*
-     * Le bind U/I/O/J/... commence lui-même par :
+     * Le transport U/I/O/J/K/L/N/M exécute :
+     *
+     *     exec savestate;
+     *     load_slot_X
+     *
+     * Et savestate_slot_X.cfg contient :
      *
      *     r_force_no_present 1
-     *
-     * puis charge le CFG du slot.
-     *
-     * Le freeze arrive donc AVANT le TP.
+     *     ent_fire <point> TeleportEntity !player
+     *     setang_exact ...
      */
     if let Err(error) = send_load_key(slot) {
-        /*
-         * On garde volontairement le masque marqué actif.
-         *
-         * Si Deadlock a reçu une partie de l'input et
-         * s'est retrouvé figé, F10 physique reste notre
-         * sortie de secours.
-         */
         return Err(format!(
             "Could not load slot {slot}: {error}. Press F10 if Deadlock is frozen."
         ));
@@ -498,16 +520,16 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
 
     /*
      * Le défaut visuel observé dure environ
-     * deux frames.
+     * deux frames à 60 FPS.
      */
     thread::sleep(Duration::from_millis(35));
 
     /*
-     * Deadlock continue de traiter la souris pendant
-     * r_force_no_present.
+     * Pendant r_force_no_present, Deadlock continue
+     * à traiter les inputs souris.
      *
-     * On remet donc la caméra sauvegardée juste avant
-     * de rendre les nouvelles frames visibles.
+     * On restaure donc une deuxième fois la caméra
+     * juste avant de réafficher le jeu.
      */
     if let Some(camera) = snapshot.camera {
         match super::camera::restore(camera) {
@@ -528,12 +550,6 @@ fn load_active_slot(slot: u8) -> Result<bool, String> {
      * Réactive la présentation.
      */
     if let Err(error) = send_present_resume_key() {
-        /*
-         * PRESENTATION_MASK_ACTIVE reste true.
-         *
-         * F10 physique peut donc toujours être utilisé
-         * pour débloquer l'écran.
-         */
         return Err(format!(
             "Could not resume Deadlock presentation: {error}. Press F10 to resume manually."
         ));

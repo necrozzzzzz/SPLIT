@@ -69,21 +69,20 @@ pub fn write_savestate_cfg(
     output.push_str("bind \"h\" \"savestate_getpos\"\n\n");
 
     /*
-    * Transports internes SPLIT.
-    *
-    * F11 injecté par SPLIT prépare les point_teleport
-    * après un Save / changement de preset.
-    *
-    * F10 injecté par SPLIT réactive la présentation
-    * après le masque d'un Load.
-    *
-    * F11 physique reste Favorite Mode :
-    * le hook SPLIT l'intercepte.
-    *
-    * F12 n'est plus utilisé par SPLIT.
-    */
+     * Transports internes SPLIT.
+     *
+     * F13 est une touche virtuelle interne utilisée
+     * uniquement pour préparer les point_teleport.
+     *
+     * F10 injecté par SPLIT réactive la présentation
+     * après le masque d'un Load.
+     *
+     * F10 physique reste Redo grâce au hook SPLIT.
+     * F11 physique reste Favorite Mode.
+     * F12 reste totalement libre pour Steam.
+     */
     output.push_str(
-        "bind \"F11\" \"exec savestate_prepare\"\n\
+        "bind \"F13\" \"exec savestate_prepare\"\n\
         bind \"F10\" \"r_force_no_present 0\"\n\n",
     );
 
@@ -98,60 +97,45 @@ pub fn write_savestate_cfg(
                 let slot_cfg_name = format!("savestate_slot_{slot_number}");
                 let slot_cfg_path = parent.join(format!("{slot_cfg_name}.cfg"));
 
-                let teleport_name =
-                    format!("split_tp_{}_{}", namespace, slot_number);
+                let teleport_name = format!("split_tp_{}_{}", namespace, slot_number);
 
                 /*
-                * Le point_teleport est créé à l'avance
-                * dans savestate_prepare.cfg.
-                */
-                prepare_output.push_str(
-                    &format!(
-                        "ent_create point_teleport \
+                 * Le point_teleport est créé à l'avance
+                 * dans savestate_prepare.cfg.
+                 */
+                prepare_output.push_str(&format!(
+                    "ent_create point_teleport \
                         {{\"targetname\" \"{}\" \
                         \"origin\" \"{} {} {}\" \
                         \"angles\" \"0 {} 0\"}}\n",
-                        teleport_name,
-                        position.x,
-                        position.y,
-                        position.z,
-                        position.yaw,
-                    ),
-                );
+                    teleport_name, position.x, position.y, position.z, position.yaw,
+                ));
 
                 /*
-                * État qui fonctionnait :
-                *
-                * 1. freeze de la présentation
-                * 2. TP
-                * 3. setang
-                *
-                * Rust attend ensuite 35 ms avant
-                * de réafficher le jeu.
-                */
+                 * État qui fonctionnait :
+                 *
+                 * 1. freeze de la présentation
+                 * 2. TP
+                 * 3. setang
+                 *
+                 * Rust attend ensuite 35 ms avant
+                 * de réafficher le jeu.
+                 */
                 let slot_cfg = format!(
                     "r_force_no_present 1\n\
                     ent_fire {} TeleportEntity !player\n\
                     setang_exact {} {} {}\n",
-                    teleport_name,
-                    position.pitch,
-                    position.yaw,
-                    position.roll,
+                    teleport_name, position.pitch, position.yaw, position.roll,
                 );
 
-                atomic_write(&slot_cfg_path, slot_cfg).map_err(
-                    |error| {
-                        format!(
-                            "Could not write {}: {error}",
-                            slot_cfg_path.display()
-                        )
-                    },
-                )?;
+                atomic_write(&slot_cfg_path, slot_cfg).map_err(|error| {
+                    format!("Could not write {}: {error}", slot_cfg_path.display())
+                })?;
 
                 /*
-                * IMPORTANT :
-                * c'est cette ligne qui avait disparu.
-                */
+                 * IMPORTANT :
+                 * c'est cette ligne qui avait disparu.
+                 */
                 output.push_str(&format!(
                     "alias \"load_slot_{slot_number}\" \
                     \"exec {slot_cfg_name}\"\n",
@@ -159,9 +143,7 @@ pub fn write_savestate_cfg(
             }
 
             None => {
-                output.push_str(&format!(
-                    "// Slot {slot_number}: empty\n"
-                ));
+                output.push_str(&format!("// Slot {slot_number}: empty\n"));
 
                 output.push_str(&format!(
                     "alias \"load_slot_{slot_number}\" \
@@ -171,11 +153,11 @@ pub fn write_savestate_cfg(
         }
 
         /*
-        * Transport normal.
-        *
-        * Le freeze n'est PAS ici.
-        * Il est dans savestate_slot_X.cfg.
-        */
+         * Transport normal.
+         *
+         * Le freeze n'est PAS ici.
+         * Il est dans savestate_slot_X.cfg.
+         */
         output.push_str(&format!(
             "bind \"{transport_key}\" \
             \"exec savestate; load_slot_{slot_number}\"\n\n",
