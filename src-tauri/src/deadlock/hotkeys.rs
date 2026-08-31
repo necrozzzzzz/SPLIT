@@ -396,6 +396,10 @@ fn send_present_resume_key() -> Result<(), String> {
     send_virtual_key(VK_F10)
 }
 
+fn send_momentum_reset_key() -> Result<(), String> {
+    send_virtual_key(VK_F9)
+}
+
 pub(crate) fn prepare_teleports_after_cfg_update() {
     if !super::cfg::teleports_dirty() {
         return;
@@ -586,6 +590,24 @@ fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
         return Err(format!(
             "Could not load slot {slot}: {error}. Press F10 if Deadlock is frozen."
         ));
+    }
+
+    /*
+     * point_teleport conserve le momentum.
+     *
+     * Deadlock applique brièvement son modifier Root :
+     *
+     *     modifier_citadel_root
+     *
+     * Le Root remet la vélocité à zéro immédiatement,
+     * puis il est retiré dans la même commande.
+     *
+     * IMPORTANT :
+     * prime_active_slot() n'exécute pas ce transport.
+     * Un Save en mouvement ne stoppe donc pas le joueur.
+     */
+    if let Err(error) = send_momentum_reset_key() {
+        eprintln!("[SPLIT] Could not reset momentum after Load: {error}");
     }
 
     thread::sleep(Duration::from_millis(35));

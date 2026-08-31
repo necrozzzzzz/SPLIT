@@ -83,7 +83,8 @@ pub fn write_savestate_cfg(
      */
     output.push_str(
         "bind \"F13\" \"exec savestate_prepare\"\n\
-        bind \"F10\" \"r_force_no_present 0\"\n\n",
+        bind \"F10\" \"r_force_no_present 0\"\n\
+        bind \"F9\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"\n\n",
     );
 
     for index in 0..8 {
