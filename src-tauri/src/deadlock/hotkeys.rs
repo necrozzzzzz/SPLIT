@@ -664,24 +664,21 @@ fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
     ensure_teleports_prepared()?;
 
     /*
-     * État validé :
-     * restore caméra AVANT le Load.
+     * IMPORTANT :
+     *
+     * Ne PAS restaurer la caméra avant le Load.
+     *
+     * Une écriture caméra avant que Deadlock exécute
+     * r_force_no_present 1 peut laisser passer quelques
+     * frames avec :
+     *
+     *     ancienne position + caméra sauvegardée
+     *
+     * ce qui provoque un flash visuel aléatoire.
+     *
+     * La caméra sera restaurée plus bas, pendant que
+     * la présentation est déjà masquée.
      */
-    if let Some(camera) = snapshot.camera {
-        match super::camera::restore(camera) {
-            Ok(()) => {
-                println!(
-                    "[SPLIT] Camera pre-restored -> P={:.3} Y={:.3} R={:.3}",
-                    camera.pitch, camera.yaw, camera.roll,
-                );
-            }
-
-            Err(error) => {
-                eprintln!("[SPLIT] Camera pre-restore unavailable: {error}");
-            }
-        }
-    }
-
     PRESENTATION_MASK_ACTIVE.store(true, Ordering::SeqCst);
 
     /*
