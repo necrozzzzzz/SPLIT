@@ -57,8 +57,38 @@ static WATCHER_RUNTIME: Mutex<Option<WatcherRuntime>> = Mutex::new(None);
  */
 static WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/*
+ * Dernière erreur fatale du watcher.
+ *
+ * Les erreurs notify ponctuelles ne sont pas
+ * stockées ici puisqu'elles ne stoppent pas
+ * forcément le watcher.
+ */
+static WATCHER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
 pub fn is_running() -> bool {
     WATCHER_RUNNING.load(Ordering::SeqCst)
+}
+
+fn set_watcher_error(error: impl Into<String>) {
+    if let Ok(mut last_error) = WATCHER_LAST_ERROR.lock() {
+        *last_error = Some(error.into());
+    }
+}
+
+fn clear_watcher_error() {
+    if let Ok(mut last_error) = WATCHER_LAST_ERROR.lock() {
+        *last_error = None;
+    }
+}
+
+pub fn runtime_status() -> (bool, Option<String>) {
+    let error = WATCHER_LAST_ERROR
+        .lock()
+        .ok()
+        .and_then(|last_error| last_error.clone());
+
+    (is_running(), error)
 }
 
 pub fn stop() -> Result<(), String> {
@@ -403,7 +433,7 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
     }
 }
 
-pub fn start(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
+fn start_inner(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
     let watch_root = console_log
         .parent()
         .ok_or_else(|| "console.log has no parent directory".to_string())?
@@ -503,7 +533,11 @@ pub fn start(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
                      * Le watcher natif a disparu.
                      */
                     Err(RecvTimeoutError::Disconnected) => {
-                        eprintln!("[SPLIT] Console watcher disconnected");
+                        let error = "Console watcher disconnected";
+
+                        eprintln!("[SPLIT] {error}");
+
+                        set_watcher_error(error);
 
                         break;
                     }
@@ -528,6 +562,24 @@ pub fn start(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
     });
 
     Ok(())
+}
+
+pub fn start(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
+    /*
+     * Un nouveau démarrage constitue
+     * une nouvelle tentative propre.
+     */
+    clear_watcher_error();
+
+    match start_inner(app, console_log) {
+        Ok(()) => Ok(()),
+
+        Err(error) => {
+            set_watcher_error(error.clone());
+
+            Err(error)
+        }
+    }
 }
 
 #[cfg(test)]

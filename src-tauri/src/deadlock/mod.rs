@@ -74,7 +74,10 @@ pub struct DeadlockStatus {
     integration_healthy: bool,
 
     hotkeys_running: bool,
+    hotkeys_error: Option<String>,
+
     console_watcher_running: bool,
+    console_watcher_error: Option<String>,
 
     teleports_ready: bool,
     presentation_mask_active: bool,
@@ -500,6 +503,57 @@ pub fn retry_camera_runtime() -> DeadlockStatus {
     get_status()
 }
 
+pub fn retry_console_watcher(app: AppHandle) -> DeadlockStatus {
+    let Some(deadlock) = paths::configured_deadlock_paths() else {
+        return get_status();
+    };
+
+    /*
+     * watcher::start() sait déjà arrêter proprement
+     * l'ancien watcher avant d'en créer un nouveau.
+     */
+    if let Err(error) = watcher::start(app, deadlock.console_log) {
+        eprintln!("[SPLIT] Console watcher retry failed: {error}");
+    }
+
+    /*
+     * Le thread positionne WATCHER_RUNNING
+     * juste après son démarrage.
+     *
+     * On lui laisse au maximum 300 ms afin
+     * que l'UI reçoive directement le bon état.
+     */
+    for _ in 0..30 {
+        if watcher::is_running() {
+            break;
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    get_status()
+}
+
+pub fn prepare_teleports_now() -> Result<DeadlockStatus, String> {
+    if !process::is_deadlock_running() {
+        return Err("Deadlock must be running before teleport points can be prepared.".to_string());
+    }
+
+    hotkeys::prepare_teleports_from_ui()?;
+
+    Ok(get_status())
+}
+
+pub fn resume_presentation_now() -> Result<DeadlockStatus, String> {
+    if !process::is_deadlock_running() {
+        return Err("Deadlock must be running before presentation can be resumed.".to_string());
+    }
+
+    hotkeys::resume_presentation_from_ui()?;
+
+    Ok(get_status())
+}
+
 fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
     let prepare_cfg = found.cfg_dir.join("savestate_prepare.cfg");
 
@@ -551,6 +605,10 @@ fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
     let (camera_runtime_checked, camera_runtime_ready, camera_runtime_error) =
         camera::runtime_status();
 
+    let (hotkeys_running, hotkeys_error) = hotkeys::runtime_status();
+
+    let (console_watcher_running, console_watcher_error) = watcher::runtime_status();
+
     DeadlockStatus {
         deadlock_running: process::is_deadlock_running(),
 
@@ -572,8 +630,11 @@ fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
 
         integration_healthy,
 
-        hotkeys_running: hotkeys::is_running(),
-        console_watcher_running: watcher::is_running(),
+        hotkeys_running,
+        hotkeys_error,
+
+        console_watcher_running,
+        console_watcher_error,
 
         teleports_ready: !cfg::teleports_dirty(),
         presentation_mask_active: hotkeys::presentation_mask_active(),
@@ -659,7 +720,10 @@ pub fn get_status() -> DeadlockStatus {
             integration_healthy: false,
 
             hotkeys_running: hotkeys::is_running(),
+            hotkeys_error: hotkeys::runtime_status().1,
+
             console_watcher_running: watcher::is_running(),
+            console_watcher_error: watcher::runtime_status().1,
 
             teleports_ready: false,
             presentation_mask_active: hotkeys::presentation_mask_active(),
@@ -671,6 +735,145 @@ pub fn get_status() -> DeadlockStatus {
             source: "not-found",
         },
     }
+}
+
+pub fn diagnostic_report() -> String {
+    let status = get_status();
+
+    let deadlock_process = if status.deadlock_running {
+        "Running"
+    } else {
+        "Not running"
+    };
+
+    let integration = if status.integration_healthy {
+        "Healthy"
+    } else {
+        "Needs attention"
+    };
+
+    let cfg_directory = if status.cfg_dir_exists {
+        "Ready"
+    } else {
+        "Missing"
+    };
+
+    let savestate_cfg = if status.savestate_cfg_valid {
+        "Valid"
+    } else if status.savestate_cfg_exists {
+        "Invalid"
+    } else {
+        "Missing"
+    };
+
+    let prepare_cfg = if status.prepare_cfg_valid {
+        "Valid"
+    } else if status.prepare_cfg_exists {
+        "Invalid"
+    } else {
+        "Missing"
+    };
+
+    let autoexec = if status.autoexec_valid {
+        "Configured"
+    } else if status.autoexec_exists {
+        "Missing SPLIT entry"
+    } else {
+        "Missing"
+    };
+
+    let hotkeys = if status.hotkeys_running {
+        "Running"
+    } else {
+        "Down"
+    };
+
+    let watcher = if status.console_watcher_running {
+        "Running"
+    } else {
+        "Down"
+    };
+
+    let teleports = if status.teleports_ready {
+        "Ready"
+    } else {
+        "Pending"
+    };
+
+    let presentation = if status.presentation_mask_active {
+        "Active"
+    } else {
+        "Normal"
+    };
+
+    let camera = if !status.camera_runtime_checked {
+        "Not tested"
+    } else if status.camera_runtime_ready {
+        "Ready"
+    } else {
+        "Unavailable"
+    };
+
+    let preset = slots::get_active_preset()
+        .map(|preset| preset.to_string())
+        .unwrap_or_else(|error| format!("Unavailable ({error})"));
+
+    let active_bank = if favorite_mode_active() {
+        "Favorites".to_string()
+    } else {
+        format!("Preset {preset}")
+    };
+
+    let deadlock_path = status.deadlock_path.as_deref().unwrap_or("Not configured");
+
+    let console_log_path = status.console_log_path.as_deref().unwrap_or("Unavailable");
+
+    let hotkey_error = status.hotkeys_error.as_deref().unwrap_or("None");
+
+    let watcher_error = status.console_watcher_error.as_deref().unwrap_or("None");
+
+    let camera_error = status.camera_runtime_error.as_deref().unwrap_or("None");
+
+    format!(
+        "SPLIT 2 Diagnostic Report\n\
+         =========================\n\
+         SPLIT version: {}\n\
+         Platform: {} / {}\n\
+         \n\
+         Deadlock\n\
+         --------\n\
+         Process: {deadlock_process}\n\
+         Detection source: {}\n\
+         Game folder: {deadlock_path}\n\
+         Console log: {console_log_path}\n\
+         Active bank: {active_bank}\n\
+         \n\
+         Integration\n\
+         -----------\n\
+         Overall: {integration}\n\
+         CFG directory: {cfg_directory}\n\
+         savestate.cfg: {savestate_cfg}\n\
+         savestate_prepare.cfg: {prepare_cfg}\n\
+         autoexec.cfg: {autoexec}\n\
+         \n\
+         Runtime\n\
+         -------\n\
+         Hotkey hook: {hotkeys}\n\
+         Console watcher: {watcher}\n\
+         Teleport preparation: {teleports}\n\
+         Presentation mask: {presentation}\n\
+         Camera runtime: {camera}\n\
+         \n\
+         Errors\n\
+         ------\n\
+         Hotkey hook: {hotkey_error}\n\
+         Console watcher: {watcher_error}\n\
+         Camera runtime: {camera_error}\n",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        status.source,
+    )
 }
 
 pub fn load_slot(slot: u8) -> Result<(), String> {

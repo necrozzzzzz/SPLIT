@@ -875,7 +875,7 @@ pub fn capture() -> Result<CameraSnapshot, String> {
         }
     };
 
-    let result = (|| {
+    let result: Result<CameraSnapshot, String> = (|| {
         let camera_object = active_camera_object(process, runtime)?;
 
         let angles: CameraAngles = read_value(process, camera_object + CAMERA_ANGLES_OFFSET)?;
@@ -927,7 +927,7 @@ pub fn restore(snapshot: CameraSnapshot) -> Result<(), String> {
         }
     };
 
-    let result = (|| {
+    let result: Result<(), String> = (|| {
         let camera_object = active_camera_object(process, runtime)?;
 
         let angles = CameraAngles {

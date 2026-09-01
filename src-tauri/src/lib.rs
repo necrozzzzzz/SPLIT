@@ -13,6 +13,11 @@ fn get_deadlock_status() -> deadlock::DeadlockStatus {
 }
 
 #[tauri::command]
+fn get_diagnostic_report() -> String {
+    deadlock::diagnostic_report()
+}
+
+#[tauri::command]
 fn get_deadlock_setup() -> deadlock::DeadlockSetupState {
     deadlock::get_setup_state()
 }
@@ -107,6 +112,21 @@ fn repair_deadlock_integration() -> Result<deadlock::DeadlockStatus, String> {
 #[tauri::command]
 fn retry_camera_runtime() -> deadlock::DeadlockStatus {
     deadlock::retry_camera_runtime()
+}
+
+#[tauri::command]
+fn retry_console_watcher(app: tauri::AppHandle) -> deadlock::DeadlockStatus {
+    deadlock::retry_console_watcher(app)
+}
+
+#[tauri::command]
+fn prepare_teleports_now() -> Result<deadlock::DeadlockStatus, String> {
+    deadlock::prepare_teleports_now()
+}
+
+#[tauri::command]
+fn resume_deadlock_presentation() -> Result<deadlock::DeadlockStatus, String> {
+    deadlock::resume_presentation_now()
 }
 
 #[tauri::command]
@@ -220,6 +240,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_deadlock_status,
+            get_diagnostic_report,
             get_deadlock_setup,
             scan_deadlock_path,
             confirm_deadlock_path,
@@ -240,6 +261,9 @@ pub fn run() {
             sync_slots_to_deadlock,
             repair_deadlock_integration,
             retry_camera_runtime,
+            retry_console_watcher,
+            prepare_teleports_now,
+            resume_deadlock_presentation,
         ])
         .build(tauri::generate_context!())
         .expect("error while building SPLIT");

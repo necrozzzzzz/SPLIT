@@ -90,8 +90,37 @@ static PRESENTATION_MASK_ACTIVE: AtomicBool = AtomicBool::new(false);
  */
 static HOTKEYS_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/*
+ * Dernière erreur fatale du système de hotkeys.
+ *
+ * Principalement utile si Windows refuse
+ * l'installation du WH_KEYBOARD_LL hook.
+ */
+static HOTKEY_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
 pub fn is_running() -> bool {
     HOTKEYS_RUNNING.load(Ordering::SeqCst)
+}
+
+fn set_hotkey_error(error: impl Into<String>) {
+    if let Ok(mut last_error) = HOTKEY_LAST_ERROR.lock() {
+        *last_error = Some(error.into());
+    }
+}
+
+fn clear_hotkey_error() {
+    if let Ok(mut last_error) = HOTKEY_LAST_ERROR.lock() {
+        *last_error = None;
+    }
+}
+
+pub fn runtime_status() -> (bool, Option<String>) {
+    let error = HOTKEY_LAST_ERROR
+        .lock()
+        .ok()
+        .and_then(|last_error| last_error.clone());
+
+    (is_running(), error)
 }
 
 pub fn presentation_mask_active() -> bool {
@@ -463,6 +492,68 @@ fn ensure_teleports_prepared() -> Result<(), String> {
     thread::sleep(Duration::from_millis(50));
 
     super::cfg::mark_teleports_prepared();
+
+    Ok(())
+}
+
+pub fn prepare_teleports_from_ui() -> Result<(), String> {
+    /*
+     * Rien à préparer :
+     * l'action est déjà terminée.
+     */
+    if !super::cfg::teleports_dirty() {
+        return Ok(());
+    }
+
+    /*
+     * Le clic vient de SPLIT.
+     * F13 doit impérativement être reçu
+     * par Deadlock et non par l'UI.
+     */
+    focus_deadlock_window()?;
+
+    /*
+     * Petit délai pour laisser Windows
+     * terminer le changement de focus.
+     */
+    thread::sleep(Duration::from_millis(75));
+
+    ensure_teleports_prepared()?;
+
+    println!("[SPLIT] Teleport preparation requested from UI");
+
+    Ok(())
+}
+
+pub fn resume_presentation_from_ui() -> Result<(), String> {
+    /*
+     * Le bouton n'est normalement visible
+     * que lorsque le masque est actif.
+     *
+     * Si l'état a déjà été corrigé entre-temps,
+     * inutile d'envoyer quoi que ce soit.
+     */
+    if !PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    /*
+     * Le F10 interne doit arriver dans Deadlock.
+     */
+    focus_deadlock_window()?;
+
+    thread::sleep(Duration::from_millis(75));
+
+    /*
+     * F10 est bindé dans savestate.cfg à :
+     *
+     *     r_force_no_present 0
+     */
+    send_present_resume_key()?;
+
+    PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
+
+    println!("[SPLIT] Presentation resumed from diagnostic UI");
 
     Ok(())
 }
@@ -975,7 +1066,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
     1
 }
 
-pub fn start(app: AppHandle) -> Result<(), String> {
+fn start_inner(app: AppHandle) -> Result<(), String> {
     let (tx, rx) = mpsc::channel::<HotkeyAction>();
 
     HOTKEY_SENDER
@@ -1205,7 +1296,14 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                 SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), std::ptr::null_mut(), 0);
 
             if hook.is_null() {
-                eprintln!("[SPLIT] Failed to install keyboard hook");
+                let error = format!(
+                    "Windows failed to install the WH_KEYBOARD_LL hook: {}",
+                    std::io::Error::last_os_error(),
+                );
+
+                eprintln!("[SPLIT] {error}");
+
+                set_hotkey_error(error);
 
                 HOTKEYS_RUNNING.store(false, Ordering::SeqCst);
                 HOOK_THREAD_ID.store(0, Ordering::SeqCst);
@@ -1213,6 +1311,11 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                 return;
             }
 
+            /*
+             * Le hook est réellement installé :
+             * l'ancienne erreur n'est plus pertinente.
+             */
+            clear_hotkey_error();
             HOTKEYS_RUNNING.store(true, Ordering::SeqCst);
 
             println!("[SPLIT] Deadlock hotkeys active:");
@@ -1242,4 +1345,22 @@ pub fn start(app: AppHandle) -> Result<(), String> {
         Some(HotkeyRuntime { worker, hook });
 
     Ok(())
+}
+
+pub fn start(app: AppHandle) -> Result<(), String> {
+    /*
+     * Nouvelle tentative de démarrage :
+     * on efface une éventuelle erreur ancienne.
+     */
+    clear_hotkey_error();
+
+    match start_inner(app) {
+        Ok(()) => Ok(()),
+
+        Err(error) => {
+            set_hotkey_error(error.clone());
+
+            Err(error)
+        }
+    }
 }

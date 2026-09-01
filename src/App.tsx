@@ -34,7 +34,10 @@ type DeadlockStatus = {
   integrationHealthy: boolean;
 
   hotkeysRunning: boolean;
+  hotkeysError: string | null;
+
   consoleWatcherRunning: boolean;
+  consoleWatcherError: string | null;
 
   teleportsReady: boolean;
   presentationMaskActive: boolean;
@@ -124,7 +127,10 @@ const EMPTY_STATUS: DeadlockStatus = {
   integrationHealthy: false,
 
   hotkeysRunning: false,
+  hotkeysError: null,
+
   consoleWatcherRunning: false,
+  consoleWatcherError: null,
 
   teleportsReady: false,
   presentationMaskActive: false,
@@ -272,6 +278,31 @@ function App() {
   ] = useState(false);
 
   const [
+    watcherRetrying,
+    setWatcherRetrying,
+  ] = useState(false);
+
+  const [
+    teleportPreparing,
+    setTeleportPreparing,
+  ] = useState(false);
+
+  const [
+    presentationResuming,
+    setPresentationResuming,
+  ] = useState(false);
+
+  const [
+    diagnosticCopying,
+    setDiagnosticCopying,
+  ] = useState(false);
+
+  const [
+    diagnosticCopied,
+    setDiagnosticCopied,
+  ] = useState(false);
+
+  const [
     error,
     setError,
   ] =
@@ -346,8 +377,100 @@ function App() {
       } finally {
         setCameraRetrying(false);
       }
+    }, []);
+    
+  const retryConsoleWatcher =
+    useCallback(async () => {
+      setWatcherRetrying(true);
+      setError(null);
+
+      try {
+        const next =
+          await invoke<DeadlockStatus>(
+            "retry_console_watcher",
+          );
+
+        setStatus(next);
+      } catch (reason) {
+        setError(String(reason));
+      } finally {
+        setWatcherRetrying(false);
+      }
+    }, []);
+    
+  const copyDiagnosticReport =
+    useCallback(async () => {
+      setDiagnosticCopying(true);
+      setDiagnosticCopied(false);
+      setError(null);
+
+      try {
+        const report =
+          await invoke<string>(
+            "get_diagnostic_report",
+          );
+
+        await navigator.clipboard.writeText(
+          report,
+        );
+
+        setDiagnosticCopied(true);
+
+        window.setTimeout(() => {
+          setDiagnosticCopied(false);
+        }, 2000);
+      } catch (reason) {
+        setError(
+          `Could not copy diagnostic report: ${String(reason)}`,
+        );
+      } finally {
+        setDiagnosticCopying(false);
+      }
     }, []);  
 
+
+
+  const prepareTeleportsNow =
+    useCallback(async () => {
+      setTeleportPreparing(true);
+      setError(null);
+
+      try {
+        const next =
+          await invoke<DeadlockStatus>(
+            "prepare_teleports_now",
+          );
+
+        setStatus(next);
+      } catch (reason) {
+        setError(
+          `Could not prepare teleport points: ${String(reason)}`,
+        );
+      } finally {
+        setTeleportPreparing(false);
+      }
+    }, []);  
+
+  const resumePresentation =
+    useCallback(async () => {
+      setPresentationResuming(true);
+      setError(null);
+
+      try {
+        const next =
+          await invoke<DeadlockStatus>(
+            "resume_deadlock_presentation",
+          );
+
+        setStatus(next);
+      } catch (reason) {
+        setError(
+          `Could not resume Deadlock presentation: ${String(reason)}`,
+        );
+      } finally {
+        setPresentationResuming(false);
+      }
+    }, []);  
 
   useEffect(() => {
     let disposed = false;
@@ -1123,9 +1246,80 @@ function App() {
   }
 
   /*
-   * Installation configurée :
-   * écran diagnostic actuel.
-   */
+  * Résumé global du Health Check.
+  *
+  * ERROR =
+  * fonctionnalité SPLIT réellement cassée.
+  *
+  * WARNING =
+  * état temporaire / action utilisateur
+  * potentiellement nécessaire.
+  */
+  const healthIssueCount = [
+    !status.integrationHealthy,
+    !status.hotkeysRunning,
+    !status.consoleWatcherRunning,
+    status.presentationMaskActive,
+    status.cameraRuntimeChecked &&
+      !status.cameraRuntimeReady,
+  ].filter(Boolean).length;
+
+  const healthWarningCount = [
+    !status.deadlockRunning,
+
+    status.deadlockRunning &&
+      !status.teleportsReady,
+
+    status.deadlockRunning &&
+      !status.cameraRuntimeChecked,
+
+    status.deadlockRunning &&
+      !status.consoleLogExists,
+  ].filter(Boolean).length;
+
+  const healthTone: StatusTone =
+    healthIssueCount > 0
+      ? "error"
+      : healthWarningCount > 0
+        ? "warning"
+        : "ok";
+
+  const healthHeadline =
+    healthIssueCount > 0
+      ? "Attention required"
+      : healthWarningCount > 0
+        ? "Operational with warnings"
+        : "All systems operational";
+
+  const issueText =
+    `${healthIssueCount} ${
+      healthIssueCount === 1
+        ? "issue"
+        : "issues"
+    }`;
+
+  const warningText =
+    `${healthWarningCount} ${
+      healthWarningCount === 1
+        ? "warning"
+        : "warnings"
+    }`;
+
+  const healthDescription =
+    healthIssueCount > 0
+      ? `${issueText} ${
+          healthIssueCount === 1
+            ? "requires"
+            : "require"
+        } attention${
+          healthWarningCount > 0
+            ? ` · ${warningText}`
+            : ""
+        }.`
+      : healthWarningCount > 0
+        ? `No critical issues · ${warningText}.`
+        : "All monitored SPLIT systems are ready.";
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -1144,44 +1338,80 @@ function App() {
           </p>
         </div>
 
-        <button
-          className="refresh-button"
-          type="button"
-          onClick={() =>
-            void refresh()
-          }
-          disabled={loading}
-        >
-          {loading
-            ? "Checking…"
-            : "Refresh"}
-        </button>
+        <div className="topbar-actions">
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() =>
+              void copyDiagnosticReport()
+            }
+            disabled={diagnosticCopying}
+          >
+            {diagnosticCopying
+              ? "Copying…"
+              : diagnosticCopied
+                ? "Copied!"
+                : "Copy diagnostic"}
+          </button>
+
+          <button
+            className="refresh-button"
+            type="button"
+            onClick={() =>
+              void refresh()
+            }
+            disabled={loading}
+          >
+            {loading
+              ? "Checking…"
+              : "Refresh"}
+          </button>
+        </div>
       </header>
 
-      <section className="hero-card">
+      <section
+        className={`hero-card health-summary ${healthTone}`}
+      >
         <div className="hero-status">
           <StatusDot
-            ok={
-              status.deadlockRunning
-            }
+            tone={healthTone}
           />
 
           <div>
             <span className="label">
-              DEADLOCK
+              SYSTEM HEALTH
             </span>
 
             <strong>
-              {status.deadlockRunning
-                ? "Running"
-                : "Not running"}
+              {healthHeadline}
             </strong>
+
+            <p className="health-summary-description">
+              {healthDescription}
+            </p>
           </div>
         </div>
 
-        <span className="source-pill">
-          {status.source}
-        </span>
+        <div className="health-summary-counts">
+          {healthIssueCount > 0 && (
+            <span className="health-count error">
+              {issueText}
+            </span>
+          )}
+
+          {healthWarningCount > 0 && (
+            <span className="health-count warning">
+              {warningText}
+            </span>
+          )}
+
+          {healthIssueCount === 0 &&
+            healthWarningCount === 0 && (
+              <span className="health-count ok">
+                All clear
+              </span>
+            )}
+        </div>
       </section>
 
 
@@ -1529,10 +1759,20 @@ function App() {
           </strong>
         </article>
 
-        <article className="status-card">
+        <article
+          className={`status-card ${
+            status.hotkeysRunning
+              ? ""
+              : "wide diagnostic-card"
+          }`}
+        >
           <div className="status-heading">
             <StatusDot
-              ok={status.hotkeysRunning}
+              tone={
+                status.hotkeysRunning
+                  ? "ok"
+                  : "error"
+              }
             />
 
             <span>
@@ -1545,12 +1785,78 @@ function App() {
               ? "Running"
               : "Down"}
           </strong>
+
+          {!status.hotkeysRunning && (
+            <div className="diagnostic-details">
+              <div className="diagnostic-reason">
+                <span>
+                  REASON
+                </span>
+
+                <code>
+                  {status.hotkeysError ??
+                    "The Windows keyboard hook is not running."}
+                </code>
+              </div>
+
+              <div className="diagnostic-fix">
+                <span>
+                  HOW TO FIX
+                </span>
+
+                <ol>
+                  <li>
+                    Close every other running
+                    instance of SPLIT.
+                  </li>
+
+                  <li>
+                    Completely restart SPLIT.
+                  </li>
+
+                  <li>
+                    If Deadlock is running as
+                    administrator, run SPLIT with
+                    the same privilege level.
+                  </li>
+
+                  <li>
+                    Temporarily disable software
+                    that intercepts global keyboard
+                    input and test again.
+                  </li>
+
+                  <li>
+                    If the issue persists, copy the
+                    diagnostic report before
+                    reporting the problem.
+                  </li>
+                </ol>
+              </div>
+
+              <p className="diagnostic-description">
+                Hotkeys cannot currently be restarted
+                safely inside the same SPLIT process.
+                Restarting SPLIT is required.
+              </p>
+            </div>
+          )}
         </article>
 
-        <article className="status-card">
+        <article
+          className={`status-card ${
+            status.consoleWatcherRunning
+              ? ""
+              : "wide diagnostic-card"
+          }`}
+        >
           <div className="status-heading">
             <StatusDot
-              ok={status.consoleWatcherRunning}
+              tone={
+                status.consoleWatcherRunning
+                  ? "ok"
+                  : "error"
+              }
             />
 
             <span>
@@ -1563,12 +1869,88 @@ function App() {
               ? "Running"
               : "Down"}
           </strong>
+
+          {!status.consoleWatcherRunning && (
+            <div className="diagnostic-details">
+              <div className="diagnostic-reason">
+                <span>
+                  REASON
+                </span>
+
+                <code>
+                  {status.consoleWatcherError ??
+                    "The console watcher is not running."}
+                </code>
+              </div>
+
+              <div className="diagnostic-fix">
+                <span>
+                  HOW TO FIX
+                </span>
+
+                <ol>
+                  <li>
+                    Make sure SPLIT points to the
+                    correct Deadlock installation.
+                  </li>
+
+                  <li>
+                    Check that the
+                    {" "}
+                    <code>game\citadel</code>
+                    {" "}
+                    folder still exists.
+                  </li>
+
+                  <li>
+                    If console.log is missing,
+                    launch Deadlock once.
+                  </li>
+
+                  <li>
+                    Click Retry watcher below.
+                  </li>
+
+                  <li>
+                    If it still fails, check Windows
+                    permissions or antivirus software
+                    blocking SPLIT.
+                  </li>
+                </ol>
+              </div>
+
+              <div className="diagnostic-actions">
+                <button
+                  className="refresh-button"
+                  type="button"
+                  disabled={watcherRetrying}
+                  onClick={() =>
+                    void retryConsoleWatcher()
+                  }
+                >
+                  {watcherRetrying
+                    ? "Restarting…"
+                    : "Retry watcher"}
+                </button>
+              </div>
+            </div>
+          )}
         </article>
 
-        <article className="status-card">
+        <article
+          className={`status-card ${
+            status.teleportsReady
+              ? ""
+              : "wide diagnostic-card"
+          }`}
+        >
           <div className="status-heading">
             <StatusDot
-              ok={status.teleportsReady}
+              tone={
+                status.teleportsReady
+                  ? "ok"
+                  : "warning"
+              }
             />
 
             <span>
@@ -1581,12 +1963,89 @@ function App() {
               ? "Ready"
               : "Pending"}
           </strong>
+
+          {!status.teleportsReady && (
+            <div className="diagnostic-details">
+              <p className="diagnostic-description">
+                SPLIT generated a new set of
+                teleport points, but Deadlock has
+                not prepared them yet.
+              </p>
+
+              <p className="diagnostic-description">
+                This is usually normal after
+                startup repair, saving a slot,
+                switching preset, or changing the
+                active slot bank.
+              </p>
+
+              <div className="diagnostic-fix">
+                <span>
+                  HOW TO FIX
+                </span>
+
+                <ol>
+                  <li>
+                    Make sure Deadlock is running.
+                  </li>
+
+                  <li>
+                    Enter Sandbox or Practice mode.
+                  </li>
+
+                  <li>
+                    Click Prepare now below.
+                  </li>
+
+                  <li>
+                    Alternatively, loading any
+                    populated slot will prepare the
+                    teleport points automatically.
+                  </li>
+                </ol>
+              </div>
+
+              <div className="diagnostic-actions">
+                <button
+                  className="refresh-button"
+                  type="button"
+                  disabled={
+                    teleportPreparing ||
+                    !status.deadlockRunning
+                  }
+                  onClick={() =>
+                    void prepareTeleportsNow()
+                  }
+                >
+                  {teleportPreparing
+                    ? "Preparing…"
+                    : "Prepare now"}
+                </button>
+
+                {!status.deadlockRunning && (
+                  <span className="diagnostic-action-hint">
+                    Start Deadlock first.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </article>
 
-        <article className="status-card">
+        <article
+          className={`status-card ${
+            status.presentationMaskActive
+              ? "wide diagnostic-card"
+              : ""
+          }`}
+        >
           <div className="status-heading">
             <StatusDot
-              ok={!status.presentationMaskActive}
+              tone={
+                status.presentationMaskActive
+                  ? "error"
+                  : "ok"
+              }
             />
 
             <span>
@@ -1599,6 +2058,75 @@ function App() {
               ? "Active"
               : "Normal"}
           </strong>
+
+          {status.presentationMaskActive && (
+            <div className="diagnostic-details">
+              <p className="diagnostic-description">
+                SPLIT believes Deadlock presentation
+                is still paused by
+                r_force_no_present.
+              </p>
+
+              <p className="diagnostic-description">
+                Deadlock may appear frozen even
+                though the game process is still
+                running normally.
+              </p>
+
+              <div className="diagnostic-fix">
+                <span>
+                  HOW TO FIX
+                </span>
+
+                <ol>
+                  <li>
+                    Click Resume presentation below.
+                  </li>
+
+                  <li>
+                    If automatic recovery fails,
+                    bring Deadlock to the foreground.
+                  </li>
+
+                  <li>
+                    Press F10 manually. During an
+                    active presentation mask, F10 is
+                    SPLIT's emergency recovery key.
+                  </li>
+
+                  <li>
+                    If this happens repeatedly, copy
+                    the diagnostic report and report
+                    the issue.
+                  </li>
+                </ol>
+              </div>
+
+              <div className="diagnostic-actions">
+                <button
+                  className="refresh-button"
+                  type="button"
+                  disabled={
+                    presentationResuming ||
+                    !status.deadlockRunning
+                  }
+                  onClick={() =>
+                    void resumePresentation()
+                  }
+                >
+                  {presentationResuming
+                    ? "Resuming…"
+                    : "Resume presentation"}
+                </button>
+
+                {!status.deadlockRunning && (
+                  <span className="diagnostic-action-hint">
+                    Deadlock is not running.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </article>
 
         

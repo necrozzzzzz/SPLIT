@@ -68,6 +68,13 @@ footer {
   color: #86909d;
 }
 
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .refresh-button {
   border: 1px solid #2b3440;
   border-radius: 10px;
@@ -115,6 +122,75 @@ footer {
   display: block;
   margin-top: 3px;
   font-size: 20px;
+}
+
+.health-summary {
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.health-summary.ok {
+  border-color:
+    rgba(101, 217, 149, 0.28);
+}
+
+.health-summary.warning {
+  border-color:
+    rgba(231, 184, 91, 0.3);
+}
+
+.health-summary.error {
+  border-color:
+    rgba(255, 114, 114, 0.32);
+}
+
+.health-summary-description {
+  margin: 7px 0 0;
+  color: #8f9aa8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.health-summary-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.health-count {
+  border: 1px solid #2c3745;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.health-count.ok {
+  border-color:
+    rgba(101, 217, 149, 0.28);
+  color: #8ee6b1;
+  background:
+    rgba(101, 217, 149, 0.07);
+}
+
+.health-count.warning {
+  border-color:
+    rgba(231, 184, 91, 0.3);
+  color: #edc878;
+  background:
+    rgba(231, 184, 91, 0.07);
+}
+
+.health-count.error {
+  border-color:
+    rgba(255, 114, 114, 0.32);
+  color: #ffaaaa;
+  background:
+    rgba(255, 114, 114, 0.07);
 }
 
 .status-dot {
@@ -267,6 +343,18 @@ footer {
   .hero-card {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .health-summary-counts {
+    justify-content: flex-start;
+  }
+
+  .topbar-actions {
+    width: 100%;
+  }
+
+  .topbar-actions .refresh-button {
+    flex: 1;
   }
 
   .status-grid {
