@@ -3,7 +3,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{self, RecvTimeoutError},
         Mutex,
     },
@@ -50,6 +50,16 @@ struct WatcherRuntime {
 }
 
 static WATCHER_RUNTIME: Mutex<Option<WatcherRuntime>> = Mutex::new(None);
+
+/*
+ * Indique si le thread qui surveille console.log
+ * est réellement en train de tourner.
+ */
+static WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
+
+pub fn is_running() -> bool {
+    WATCHER_RUNNING.load(Ordering::SeqCst)
+}
 
 pub fn stop() -> Result<(), String> {
     let previous = WATCHER_RUNTIME
@@ -434,6 +444,8 @@ pub fn start(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
         .spawn(move || {
             let _watcher = watcher;
 
+            WATCHER_RUNNING.store(true, Ordering::SeqCst);
+
             println!(
                 "[SPLIT] Watching Deadlock console: {}",
                 console_log.display()
@@ -505,6 +517,8 @@ pub fn start(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
                     }
                 }
             }
+
+            WATCHER_RUNNING.store(false, Ordering::SeqCst);
         })
         .map_err(|error| format!("failed to spawn console watcher: {error}"))?;
 

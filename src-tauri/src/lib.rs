@@ -100,6 +100,16 @@ fn sync_slots_to_deadlock() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn repair_deadlock_integration() -> Result<deadlock::DeadlockStatus, String> {
+    deadlock::repair_integration()
+}
+
+#[tauri::command]
+fn retry_camera_runtime() -> deadlock::DeadlockStatus {
+    deadlock::retry_camera_runtime()
+}
+
+#[tauri::command]
 fn confirm_deadlock_path(
     app: tauri::AppHandle,
     path: String,
@@ -138,6 +148,32 @@ pub fn run() {
                 .name("split-background-startup".to_string())
                 .spawn(move || {
                     println!("[SPLIT] Background services starting...");
+
+                    /*
+                     * Avant de démarrer les services,
+                     * vérifier/régénérer l'intégration Deadlock.
+                     *
+                     * Cela permet notamment de récupérer
+                     * automatiquement après :
+                     *
+                     * - suppression accidentelle des CFG,
+                     * - autoexec modifié,
+                     * - fichiers SPLIT manquants,
+                     * - certains changements après une update Deadlock.
+                     */
+                    match deadlock::repair_integration_on_startup() {
+                        Ok(true) => {
+                            println!("[SPLIT] Deadlock integration verified/regenerated");
+                        }
+
+                        Ok(false) => {
+                            println!("[SPLIT] Deadlock integration skipped: path not configured");
+                        }
+
+                        Err(error) => {
+                            eprintln!("[SPLIT] Deadlock integration repair failed: {error}");
+                        }
+                    }
 
                     /*
                      * Le watcher doit être prêt avant
@@ -202,6 +238,8 @@ pub fn run() {
             load_slot,
             capture_slot,
             sync_slots_to_deadlock,
+            repair_deadlock_integration,
+            retry_camera_runtime,
         ])
         .build(tauri::generate_context!())
         .expect("error while building SPLIT");

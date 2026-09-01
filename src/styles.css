@@ -131,6 +131,18 @@ footer {
   box-shadow: 0 0 0 4px rgba(101, 217, 149, 0.12);
 }
 
+.status-dot.warning {
+  background: #e7b85b;
+  box-shadow:
+    0 0 0 4px rgba(231, 184, 91, 0.12);
+}
+
+.status-dot.error {
+  background: #ff7272;
+  box-shadow:
+    0 0 0 4px rgba(255, 114, 114, 0.12);
+}
+
 .source-pill {
   border: 1px solid #2c3745;
   border-radius: 999px;
@@ -169,6 +181,68 @@ footer {
   color: #dfe6ef;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.diagnostic-details {
+  margin-top: 18px;
+  border-top: 1px solid #26303d;
+  padding-top: 18px;
+}
+
+.diagnostic-description {
+  max-width: 680px;
+  margin: 0 0 10px;
+  color: #929dab;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.diagnostic-reason,
+.diagnostic-fix {
+  margin-top: 16px;
+}
+
+.diagnostic-reason > span,
+.diagnostic-fix > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #7f96ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.status-card .diagnostic-reason code {
+  overflow: visible;
+  border: 1px solid #2b3440;
+  border-radius: 9px;
+  padding: 10px 12px;
+  color: #ffb5b5;
+  background: #0d131b;
+  line-height: 1.45;
+  text-overflow: initial;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-fix ol {
+  margin: 0;
+  padding-left: 20px;
+  color: #aab4c2;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.diagnostic-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.diagnostic-action-hint {
+  color: #7f8996;
+  font-size: 12px;
 }
 
 .error-box {

@@ -84,6 +84,20 @@ const SPLIT_INJECT_TAG: usize = 0x5350_4C54;
  */
 static PRESENTATION_MASK_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/*
+ * Vrai uniquement lorsque le hook clavier
+ * Windows est réellement installé et actif.
+ */
+static HOTKEYS_RUNNING: AtomicBool = AtomicBool::new(false);
+
+pub fn is_running() -> bool {
+    HOTKEYS_RUNNING.load(Ordering::SeqCst)
+}
+
+pub fn presentation_mask_active() -> bool {
+    PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst)
+}
+
 static ACTIVE_HISTORY_KEYS: AtomicU8 = AtomicU8::new(0);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
@@ -580,61 +594,100 @@ fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
     PRESENTATION_MASK_ACTIVE.store(true, Ordering::SeqCst);
 
     /*
-     * savestate_slot_X.cfg fait :
+     * Tout ce qui se déroule pendant
+     * r_force_no_present est contenu ici.
      *
-     * r_force_no_present 1
-     * ent_fire <point> TeleportEntity !player
-     * setang_exact ...
+     * Si une opération Rust devient fatale,
+     * on sort du bloc puis on tente
+     * automatiquement de réactiver l'affichage.
      */
-    if let Err(error) = send_load_key(slot) {
-        return Err(format!(
-            "Could not load slot {slot}: {error}. Press F10 if Deadlock is frozen."
-        ));
-    }
+    let masked_result = (|| -> Result<(), String> {
+        /*
+         * savestate_slot_X.cfg fait :
+         *
+         * r_force_no_present 1
+         * ent_fire <point> TeleportEntity !player
+         * setang_exact ...
+         */
+        send_load_key(slot).map_err(|error| format!("Could not load slot {slot}: {error}"))?;
 
-    /*
-     * point_teleport conserve le momentum.
-     *
-     * Deadlock applique brièvement son modifier Root :
-     *
-     *     modifier_citadel_root
-     *
-     * Le Root remet la vélocité à zéro immédiatement,
-     * puis il est retiré dans la même commande.
-     *
-     * IMPORTANT :
-     * prime_active_slot() n'exécute pas ce transport.
-     * Un Save en mouvement ne stoppe donc pas le joueur.
-     */
-    if let Err(error) = send_momentum_reset_key() {
-        eprintln!("[SPLIT] Could not reset momentum after Load: {error}");
-    }
+        /*
+         * point_teleport conserve le momentum.
+         *
+         * Deadlock applique brièvement son modifier Root :
+         *
+         *     modifier_citadel_root
+         *
+         * Le Root remet la vélocité à zéro immédiatement,
+         * puis il est retiré dans la même commande.
+         *
+         * IMPORTANT :
+         * prime_active_slot() n'exécute pas ce transport.
+         * Un Save en mouvement ne stoppe donc pas le joueur.
+         */
+        if let Err(error) = send_momentum_reset_key() {
+            eprintln!("[SPLIT] Could not reset momentum after Load: {error}");
+        }
 
-    thread::sleep(Duration::from_millis(35));
+        thread::sleep(Duration::from_millis(35));
 
-    /*
-     * Deuxième restore caméra juste avant
-     * de rendre le jeu visible.
-     */
-    if let Some(camera) = snapshot.camera {
-        match super::camera::restore(camera) {
-            Ok(()) => {
-                println!(
-                    "[SPLIT] Camera final restore -> P={:.3} Y={:.3} R={:.3}",
-                    camera.pitch, camera.yaw, camera.roll,
-                );
-            }
+        /*
+         * Deuxième restore caméra juste avant
+         * de rendre le jeu visible.
+         */
+        if let Some(camera) = snapshot.camera {
+            match super::camera::restore(camera) {
+                Ok(()) => {
+                    println!(
+                        "[SPLIT] Camera final restore -> P={:.3} Y={:.3} R={:.3}",
+                        camera.pitch, camera.yaw, camera.roll,
+                    );
+                }
 
-            Err(error) => {
-                eprintln!("[SPLIT] Camera final restore unavailable: {error}");
+                Err(error) => {
+                    eprintln!("[SPLIT] Camera final restore unavailable: {error}");
+                }
             }
         }
-    }
 
-    if let Err(error) = send_present_resume_key() {
-        return Err(format!(
-            "Could not resume Deadlock presentation: {error}. Press F10 to resume manually."
-        ));
+        send_present_resume_key()
+            .map_err(|error| format!("Could not resume Deadlock presentation: {error}"))?;
+
+        Ok(())
+    })();
+
+    /*
+     * IMPORTANT :
+     *
+     * Si le bloc masqué a échoué avant son F10 normal,
+     * SPLIT tente immédiatement un F10 de récupération.
+     *
+     * Si ce deuxième envoi échoue lui aussi,
+     * PRESENTATION_MASK_ACTIVE reste à true :
+     * F10 physique conserve donc son rôle
+     * de touche de secours.
+     */
+    if let Err(error) = masked_result {
+        eprintln!("[SPLIT] Load failed while presentation was masked: {error}");
+
+        match send_present_resume_key() {
+            Ok(()) => {
+                PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
+
+                eprintln!("[SPLIT] Presentation automatically recovered after Load failure");
+
+                return Err(format!(
+                    "{error}. Deadlock presentation was automatically restored."
+                ));
+            }
+
+            Err(recovery_error) => {
+                return Err(format!(
+                    "{error}. Automatic presentation recovery failed: \
+                     {recovery_error}. Press F10 manually."
+                ));
+            }
+        }
     }
 
     PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
@@ -1153,10 +1206,14 @@ pub fn start(app: AppHandle) -> Result<(), String> {
 
             if hook.is_null() {
                 eprintln!("[SPLIT] Failed to install keyboard hook");
+
+                HOTKEYS_RUNNING.store(false, Ordering::SeqCst);
                 HOOK_THREAD_ID.store(0, Ordering::SeqCst);
 
                 return;
             }
+
+            HOTKEYS_RUNNING.store(true, Ordering::SeqCst);
 
             println!("[SPLIT] Deadlock hotkeys active:");
 
@@ -1173,6 +1230,8 @@ pub fn start(app: AppHandle) -> Result<(), String> {
             }
 
             let _ = UnhookWindowsHookEx(hook);
+
+            HOTKEYS_RUNNING.store(false, Ordering::SeqCst);
             HOOK_THREAD_ID.store(0, Ordering::SeqCst);
         })
         .map_err(|error| format!("Could not start keyboard hook: {error}"))?;

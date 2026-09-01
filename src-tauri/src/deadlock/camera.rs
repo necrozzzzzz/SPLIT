@@ -85,6 +85,70 @@ struct CameraRuntimeCache {
 
 static CAMERA_RUNTIME: Mutex<Option<CameraRuntime>> = Mutex::new(None);
 
+/*
+ * Etat du dernier vrai accès caméra effectué
+ * pendant le process Deadlock actuel.
+ *
+ * On ne lance volontairement PAS de scan RTTI
+ * juste pour afficher le Health Check.
+ */
+#[derive(Debug, Clone)]
+struct CameraHealth {
+    pid: u32,
+    checked: bool,
+    ready: bool,
+    error: Option<String>,
+}
+
+static CAMERA_HEALTH: Mutex<CameraHealth> = Mutex::new(CameraHealth {
+    pid: 0,
+    checked: false,
+    ready: false,
+    error: None,
+});
+
+fn set_camera_health_ready(pid: u32) {
+    if let Ok(mut health) = CAMERA_HEALTH.lock() {
+        *health = CameraHealth {
+            pid,
+            checked: true,
+            ready: true,
+            error: None,
+        };
+    }
+}
+
+fn set_camera_health_error(pid: u32, error: impl Into<String>) {
+    if let Ok(mut health) = CAMERA_HEALTH.lock() {
+        *health = CameraHealth {
+            pid,
+            checked: true,
+            ready: false,
+            error: Some(error.into()),
+        };
+    }
+}
+
+pub fn runtime_status() -> (bool, bool, Option<String>) {
+    let Some(pid) = process::deadlock_pid() else {
+        return (false, false, None);
+    };
+
+    let Ok(health) = CAMERA_HEALTH.lock() else {
+        return (false, false, None);
+    };
+
+    /*
+     * Un résultat appartenant à un ancien
+     * process Deadlock n'est jamais réutilisé.
+     */
+    if health.pid != pid {
+        return (false, false, None);
+    }
+
+    (health.checked, health.ready, health.error.clone())
+}
+
 fn camera_cache_path() -> Result<PathBuf, String> {
     let app_data =
         std::env::var_os("APPDATA").ok_or_else(|| "APPDATA is unavailable".to_string())?;
@@ -791,9 +855,25 @@ fn active_camera_object(process: HANDLE, runtime: CameraRuntime) -> Result<usize
 pub fn capture() -> Result<CameraSnapshot, String> {
     let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
 
-    let runtime = runtime_for_pid(pid)?;
+    let runtime = match runtime_for_pid(pid) {
+        Ok(runtime) => runtime,
 
-    let process = open_deadlock(pid)?;
+        Err(error) => {
+            set_camera_health_error(pid, error.clone());
+
+            return Err(error);
+        }
+    };
+
+    let process = match open_deadlock(pid) {
+        Ok(process) => process,
+
+        Err(error) => {
+            set_camera_health_error(pid, error.clone());
+
+            return Err(error);
+        }
+    };
 
     let result = (|| {
         let camera_object = active_camera_object(process, runtime)?;
@@ -809,8 +889,16 @@ pub fn capture() -> Result<CameraSnapshot, String> {
 
     let _ = unsafe { CloseHandle(process) };
 
-    if result.is_err() {
-        invalidate_runtime(pid);
+    match &result {
+        Ok(_) => {
+            set_camera_health_ready(pid);
+        }
+
+        Err(error) => {
+            invalidate_runtime(pid);
+
+            set_camera_health_error(pid, error.clone());
+        }
     }
 
     result
@@ -819,9 +907,25 @@ pub fn capture() -> Result<CameraSnapshot, String> {
 pub fn restore(snapshot: CameraSnapshot) -> Result<(), String> {
     let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running".to_string())?;
 
-    let runtime = runtime_for_pid(pid)?;
+    let runtime = match runtime_for_pid(pid) {
+        Ok(runtime) => runtime,
 
-    let process = open_deadlock(pid)?;
+        Err(error) => {
+            set_camera_health_error(pid, error.clone());
+
+            return Err(error);
+        }
+    };
+
+    let process = match open_deadlock(pid) {
+        Ok(process) => process,
+
+        Err(error) => {
+            set_camera_health_error(pid, error.clone());
+
+            return Err(error);
+        }
+    };
 
     let result = (|| {
         let camera_object = active_camera_object(process, runtime)?;
@@ -837,8 +941,16 @@ pub fn restore(snapshot: CameraSnapshot) -> Result<(), String> {
 
     let _ = unsafe { CloseHandle(process) };
 
-    if result.is_err() {
-        invalidate_runtime(pid);
+    match &result {
+        Ok(_) => {
+            set_camera_health_ready(pid);
+        }
+
+        Err(error) => {
+            invalidate_runtime(pid);
+
+            set_camera_health_error(pid, error.clone());
+        }
     }
 
     result

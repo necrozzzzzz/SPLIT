@@ -15,6 +15,7 @@ pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundat
 }
 
 use std::{
+    fs,
     path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -61,6 +62,27 @@ pub struct DeadlockStatus {
     console_log_path: Option<String>,
     console_log_exists: bool,
     cfg_dir_exists: bool,
+
+    savestate_cfg_exists: bool,
+    prepare_cfg_exists: bool,
+    autoexec_exists: bool,
+
+    savestate_cfg_valid: bool,
+    prepare_cfg_valid: bool,
+    autoexec_valid: bool,
+
+    integration_healthy: bool,
+
+    hotkeys_running: bool,
+    console_watcher_running: bool,
+
+    teleports_ready: bool,
+    presentation_mask_active: bool,
+
+    camera_runtime_checked: bool,
+    camera_runtime_ready: bool,
+    camera_runtime_error: Option<String>,
+
     source: &'static str,
 }
 
@@ -410,7 +432,125 @@ pub fn sync_slots_to_deadlock() -> Result<(), String> {
     Ok(())
 }
 
+pub fn repair_integration_on_startup() -> Result<bool, String> {
+    /*
+     * Premier lancement :
+     * aucun chemin Deadlock n'est encore confirmé.
+     * Ce n'est pas une erreur.
+     */
+    let Some(deadlock) = paths::configured_deadlock_paths() else {
+        return Ok(false);
+    };
+
+    /*
+     * On recharge la banque actuellement active
+     * et on régénère toute l'intégration CFG.
+     *
+     * Cela répare notamment :
+     *
+     * - savestate.cfg
+     * - savestate_prepare.cfg
+     * - savestate_slot_X.cfg
+     * - les binds internes SPLIT
+     * - l'entrée "exec savestate" dans autoexec.cfg
+     */
+    let saved = slots::load_bank(current_slot_bank()?)?;
+
+    cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
+    cfg::ensure_autoexec(&deadlock.autoexec)?;
+
+    Ok(true)
+}
+
+pub fn repair_integration() -> Result<DeadlockStatus, String> {
+    /*
+     * Régénère toute l'intégration SPLIT
+     * depuis la banque actuellement active :
+     *
+     * - savestate.cfg
+     * - savestate_prepare.cfg
+     * - savestate_slot_X.cfg
+     * - autoexec.cfg
+     */
+    sync_slots_to_deadlock()?;
+
+    /*
+     * Retourne immédiatement le nouvel état
+     * au frontend pour mettre à jour le Health Check.
+     */
+    Ok(get_status())
+}
+
+pub fn retry_camera_runtime() -> DeadlockStatus {
+    /*
+     * Action volontaire de l'utilisateur.
+     *
+     * Contrairement à Refresh, cette commande
+     * a le droit de résoudre/scanner la caméra.
+     */
+    if process::is_deadlock_running() {
+        if let Err(error) = camera::capture() {
+            eprintln!("[SPLIT] Camera diagnostic retry failed: {error}");
+        }
+    }
+
+    /*
+     * capture() a déjà mis à jour CameraHealth.
+     */
+    get_status()
+}
+
 fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
+    let prepare_cfg = found.cfg_dir.join("savestate_prepare.cfg");
+
+    let savestate_cfg_exists = found.cfg_file.is_file();
+    let prepare_cfg_exists = prepare_cfg.is_file();
+    let autoexec_exists = found.autoexec.is_file();
+
+    /*
+     * savestate.cfg :
+     * vérifie uniquement les éléments critiques
+     * dont SPLIT dépend réellement.
+     *
+     * On ne compare PAS le fichier entier :
+     * les aliases de slots changent selon
+     * la banque et les positions sauvegardées.
+     */
+    let savestate_cfg_valid = fs::read_to_string(&found.cfg_file)
+        .map(|content| {
+            content.contains("alias \"savestate_getpos\"")
+                && content.contains("bind \"F13\" \"exec savestate_prepare\"")
+                && content.contains("bind \"F10\" \"r_force_no_present 0\"")
+                && content.contains("modifier_citadel_root")
+        })
+        .unwrap_or(false);
+
+    /*
+     * savestate_prepare.cfg doit nettoyer
+     * l'ancienne génération de point_teleport.
+     *
+     * On n'exige PAS ent_create ici :
+     * une banque entièrement vide est valide.
+     */
+    let prepare_cfg_valid = fs::read_to_string(&prepare_cfg)
+        .map(|content| content.contains("ent_fire split_tp_* Kill"))
+        .unwrap_or(false);
+
+    /*
+     * L'autoexec peut contenir plein d'autres
+     * commandes utilisateur.
+     *
+     * SPLIT exige uniquement exec savestate.
+     */
+    let autoexec_valid = fs::read_to_string(&found.autoexec)
+        .map(|content| content.to_ascii_lowercase().contains("exec savestate"))
+        .unwrap_or(false);
+
+    let integration_healthy = savestate_cfg_valid && prepare_cfg_valid && autoexec_valid;
+
+    let (camera_runtime_checked, camera_runtime_ready, camera_runtime_error) =
+        camera::runtime_status();
+
     DeadlockStatus {
         deadlock_running: process::is_deadlock_running(),
 
@@ -421,6 +561,26 @@ fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
         console_log_exists: found.console_log.is_file(),
 
         cfg_dir_exists: found.cfg_dir.is_dir(),
+
+        savestate_cfg_exists,
+        prepare_cfg_exists,
+        autoexec_exists,
+
+        savestate_cfg_valid,
+        prepare_cfg_valid,
+        autoexec_valid,
+
+        integration_healthy,
+
+        hotkeys_running: hotkeys::is_running(),
+        console_watcher_running: watcher::is_running(),
+
+        teleports_ready: !cfg::teleports_dirty(),
+        presentation_mask_active: hotkeys::presentation_mask_active(),
+
+        camera_runtime_checked,
+        camera_runtime_ready,
+        camera_runtime_error,
 
         source: found.source.as_str(),
     }
@@ -487,6 +647,27 @@ pub fn get_status() -> DeadlockStatus {
             console_log_path: None,
             console_log_exists: false,
             cfg_dir_exists: false,
+
+            savestate_cfg_exists: false,
+            prepare_cfg_exists: false,
+            autoexec_exists: false,
+
+            savestate_cfg_valid: false,
+            prepare_cfg_valid: false,
+            autoexec_valid: false,
+
+            integration_healthy: false,
+
+            hotkeys_running: hotkeys::is_running(),
+            console_watcher_running: watcher::is_running(),
+
+            teleports_ready: false,
+            presentation_mask_active: hotkeys::presentation_mask_active(),
+
+            camera_runtime_checked: false,
+            camera_runtime_ready: false,
+            camera_runtime_error: None,
+
             source: "not-found",
         },
     }

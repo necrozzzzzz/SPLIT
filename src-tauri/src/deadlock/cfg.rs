@@ -57,7 +57,11 @@ pub fn write_savestate_cfg(
 
     let prepare_cfg_path = parent.join("savestate_prepare.cfg");
 
-    let mut prepare_output = String::from("// SPLIT 2 - prepared teleport points\n\n");
+    let mut prepare_output = String::from(
+        "// SPLIT 2 - prepared teleport points\n\n\
+        // Remove stale SPLIT teleport points before creating the new generation.\n\
+        ent_fire split_tp_* Kill\n\n",
+    );
 
     output.push_str("// SPLIT 2 - auto-generated, do not edit manually\n\n");
 

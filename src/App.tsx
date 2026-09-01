@@ -23,6 +23,26 @@ type DeadlockStatus = {
   consoleLogExists: boolean;
   cfgDirExists: boolean;
 
+  savestateCfgExists: boolean;
+  prepareCfgExists: boolean;
+  autoexecExists: boolean;
+
+  savestateCfgValid: boolean;
+  prepareCfgValid: boolean;
+  autoexecValid: boolean;
+
+  integrationHealthy: boolean;
+
+  hotkeysRunning: boolean;
+  consoleWatcherRunning: boolean;
+
+  teleportsReady: boolean;
+  presentationMaskActive: boolean;
+
+  cameraRuntimeChecked: boolean;
+  cameraRuntimeReady: boolean;
+  cameraRuntimeError: string | null;
+
   source:
     | "user-config"
     | "not-found";
@@ -92,19 +112,49 @@ const EMPTY_STATUS: DeadlockStatus = {
   consoleLogPath: null,
   consoleLogExists: false,
   cfgDirExists: false,
+
+  savestateCfgExists: false,
+  prepareCfgExists: false,
+  autoexecExists: false,
+
+  savestateCfgValid: false,
+  prepareCfgValid: false,
+  autoexecValid: false,
+
+  integrationHealthy: false,
+
+  hotkeysRunning: false,
+  consoleWatcherRunning: false,
+
+  teleportsReady: false,
+  presentationMaskActive: false,
+
+  cameraRuntimeChecked: false,
+  cameraRuntimeReady: false,
+  cameraRuntimeError: null,
+
   source: "not-found",
 };
 
+type StatusTone =
+  | "ok"
+  | "warning"
+  | "error"
+  | "off";
+
 function StatusDot({
-  ok,
+  ok = false,
+  tone,
 }: {
-  ok: boolean;
+  ok?: boolean;
+  tone?: StatusTone;
 }) {
+  const resolvedTone =
+    tone ?? (ok ? "ok" : "off");
+
   return (
     <span
-      className={`status-dot ${
-        ok ? "ok" : "off"
-      }`}
+      className={`status-dot ${resolvedTone}`}
       aria-hidden="true"
     />
   );
@@ -210,6 +260,17 @@ function App() {
     setLoading,
   ] = useState(false);
 
+
+  const [
+    repairingIntegration,
+    setRepairingIntegration,
+  ] = useState(false);
+
+  const [
+    cameraRetrying,
+    setCameraRetrying,
+  ] = useState(false);
+
   const [
     error,
     setError,
@@ -247,7 +308,47 @@ function App() {
         setLoading(false);
       }
     }, []);
+
+
+  const repairIntegration =
+    useCallback(async () => {
+      setRepairingIntegration(true);
+      setError(null);
+
+      try {
+        const next =
+          await invoke<DeadlockStatus>(
+            "repair_deadlock_integration",
+          );
+
+        setStatus(next);
+      } catch (reason) {
+        setError(String(reason));
+      } finally {
+        setRepairingIntegration(false);
+      }
+    }, []);
     
+  const retryCamera =
+    useCallback(async () => {
+      setCameraRetrying(true);
+      setError(null);
+
+      try {
+        const next =
+          await invoke<DeadlockStatus>(
+            "retry_camera_runtime",
+          );
+
+        setStatus(next);
+      } catch (reason) {
+        setError(String(reason));
+      } finally {
+        setCameraRetrying(false);
+      }
+    }, []);  
+
+
   useEffect(() => {
     let disposed = false;
 
@@ -1377,12 +1478,247 @@ function App() {
         className="status-grid"
         aria-label="Deadlock diagnostics"
       >
+        <article className="status-card wide">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.integrationHealthy}
+            />
+
+            <span>
+              SPLIT integration
+            </span>
+          </div>
+
+          <strong>
+            {status.integrationHealthy
+              ? "Healthy"
+              : "Needs attention"}
+          </strong>
+
+          {!status.integrationHealthy && (
+            <button
+              className="refresh-button"
+              type="button"
+              disabled={repairingIntegration}
+              onClick={() =>
+                void repairIntegration()
+              }
+            >
+              {repairingIntegration
+                ? "Repairing…"
+                : "Repair integration"}
+            </button>
+          )}
+        </article>
+
         <article className="status-card">
           <div className="status-heading">
             <StatusDot
-              ok={Boolean(
-                status.deadlockPath,
+              ok={status.deadlockRunning}
+            />
+
+            <span>
+              Deadlock process
+            </span>
+          </div>
+
+          <strong>
+            {status.deadlockRunning
+              ? "Running"
+              : "Not running"}
+          </strong>
+        </article>
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.hotkeysRunning}
+            />
+
+            <span>
+              Hotkey hook
+            </span>
+          </div>
+
+          <strong>
+            {status.hotkeysRunning
+              ? "Running"
+              : "Down"}
+          </strong>
+        </article>
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.consoleWatcherRunning}
+            />
+
+            <span>
+              Console watcher
+            </span>
+          </div>
+
+          <strong>
+            {status.consoleWatcherRunning
+              ? "Running"
+              : "Down"}
+          </strong>
+        </article>
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.teleportsReady}
+            />
+
+            <span>
+              Teleport preparation
+            </span>
+          </div>
+
+          <strong>
+            {status.teleportsReady
+              ? "Ready"
+              : "Pending"}
+          </strong>
+        </article>
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={!status.presentationMaskActive}
+            />
+
+            <span>
+              Presentation mask
+            </span>
+          </div>
+
+          <strong>
+            {status.presentationMaskActive
+              ? "Active"
+              : "Normal"}
+          </strong>
+        </article>
+
+        
+
+        <article className="status-card wide diagnostic-card">
+          <div className="status-heading">
+            <StatusDot
+              tone={
+                !status.cameraRuntimeChecked
+                  ? "warning"
+                  : status.cameraRuntimeReady
+                    ? "ok"
+                    : "error"
+              }
+            />
+
+            <span>
+              Camera runtime
+            </span>
+          </div>
+
+          <strong>
+            {!status.cameraRuntimeChecked
+              ? "Not tested"
+              : status.cameraRuntimeReady
+                ? "Ready"
+                : "Unavailable"}
+          </strong>
+
+          {!status.cameraRuntimeReady && (
+            <div className="diagnostic-details">
+              {!status.cameraRuntimeChecked ? (
+                <>
+                  <p className="diagnostic-description">
+                    The camera runtime has not been
+                    checked during this Deadlock
+                    session yet.
+                  </p>
+
+                  <p className="diagnostic-description">
+                    Start Deadlock and enter
+                    Sandbox / Practice mode, then
+                    test the camera.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="diagnostic-reason">
+                    <span>
+                      REASON
+                    </span>
+
+                    <code>
+                      {status.cameraRuntimeError ??
+                        "Unknown camera runtime error"}
+                    </code>
+                  </div>
+
+                  <div className="diagnostic-fix">
+                    <span>
+                      HOW TO FIX
+                    </span>
+
+                    <ol>
+                      <li>
+                        Make sure Deadlock is running.
+                      </li>
+
+                      <li>
+                        Enter Sandbox or Practice mode
+                        so the in-game camera is active.
+                      </li>
+
+                      <li>
+                        Click Retry camera below.
+                      </li>
+
+                      <li>
+                        If the problem started after a
+                        Deadlock update, update SPLIT
+                        to the latest version.
+                      </li>
+                    </ol>
+                  </div>
+                </>
               )}
+
+              <div className="diagnostic-actions">
+                <button
+                  className="refresh-button"
+                  type="button"
+                  disabled={
+                    cameraRetrying ||
+                    !status.deadlockRunning
+                  }
+                  onClick={() =>
+                    void retryCamera()
+                  }
+                >
+                  {cameraRetrying
+                    ? "Testing…"
+                    : status.cameraRuntimeChecked
+                      ? "Retry camera"
+                      : "Test camera"}
+                </button>
+
+                {!status.deadlockRunning && (
+                  <span className="diagnostic-action-hint">
+                    Start Deadlock first.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </article>    
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={Boolean(status.deadlockPath)}
             />
 
             <span>
@@ -1399,9 +1735,7 @@ function App() {
         <article className="status-card">
           <div className="status-heading">
             <StatusDot
-              ok={
-                status.cfgDirExists
-              }
+              ok={status.cfgDirExists}
             />
 
             <span>
@@ -1416,12 +1750,70 @@ function App() {
           </strong>
         </article>
 
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.savestateCfgValid}
+            />
+
+            <span>
+              savestate.cfg
+            </span>
+          </div>
+
+          <strong>
+            {status.savestateCfgValid
+              ? "Valid"
+              : status.savestateCfgExists
+                ? "Invalid"
+                : "Missing"}
+          </strong>
+        </article>
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.prepareCfgValid}
+            />
+
+            <span>
+              savestate_prepare.cfg
+            </span>
+          </div>
+
+          <strong>
+            {status.prepareCfgValid
+              ? "Valid"
+              : status.prepareCfgExists
+                ? "Invalid"
+                : "Missing"}
+          </strong>
+        </article>
+
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot
+              ok={status.autoexecValid}
+            />
+
+            <span>
+              autoexec.cfg
+            </span>
+          </div>
+
+          <strong>
+            {status.autoexecValid
+              ? "Configured"
+              : status.autoexecExists
+                ? "Missing SPLIT entry"
+                : "Missing"}
+          </strong>
+        </article>
+
         <article className="status-card wide">
           <div className="status-heading">
             <StatusDot
-              ok={
-                status.consoleLogExists
-              }
+              ok={status.consoleLogExists}
             />
 
             <span>
@@ -1438,9 +1830,7 @@ function App() {
         <article className="status-card wide">
           <div className="status-heading">
             <StatusDot
-              ok={Boolean(
-                lastPosition,
-              )}
+              ok={Boolean(lastPosition)}
             />
 
             <span>
@@ -1452,16 +1842,14 @@ function App() {
             <code>
               XYZ {lastPosition.x}{" "}
               {lastPosition.y}{" "}
-              {lastPosition.z} ·
-              ANG{" "}
+              {lastPosition.z} · ANG{" "}
               {lastPosition.pitch}{" "}
               {lastPosition.yaw}{" "}
               {lastPosition.roll}
             </code>
           ) : (
             <strong>
-              Waiting for a new
-              getpos response…
+              Waiting for a new getpos response…
             </strong>
           )}
         </article>
