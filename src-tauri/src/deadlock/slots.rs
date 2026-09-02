@@ -14,17 +14,17 @@ const SLOT_COUNT: usize = 8;
 const PRESET_COUNT: usize = 4;
 
 /*
- * v5 introduit les métadonnées de slot :
+ * v6 ajoute les noms persistants des presets.
+ *
+ * v5 avait introduit les métadonnées de slot :
  *
  * - name
  * - savedAt
  * - color
  *
- * L'API publique continue cependant
- * d'exposer des Option<PositionSnapshot>
- * pour ne casser aucun comportement existant.
+ * L'API historique des snapshots reste inchangée.
  */
-const SLOT_FILE_VERSION: u32 = 5;
+const SLOT_FILE_VERSION: u32 = 6;
 
 static STORAGE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -77,6 +77,9 @@ pub struct SlotMetadata {
 struct SlotsFile {
     version: u32,
     active_preset: u8,
+
+    #[serde(default = "default_preset_names")]
+    preset_names: Vec<String>,
 
     presets: Vec<Vec<SlotEntry>>,
     favorites: Vec<SlotEntry>,
@@ -161,6 +164,26 @@ enum SlotsDisk {
     Legacy(LegacySlotsFile),
 }
 
+fn default_preset_name(preset_index: usize) -> String {
+    format!("Preset {}", preset_index + 1,)
+}
+
+fn default_preset_names() -> Vec<String> {
+    (0..PRESET_COUNT).map(default_preset_name).collect()
+}
+
+fn apply_preset_rename(name: &mut String, new_name: &str) -> Result<(), String> {
+    let new_name = new_name.trim();
+
+    if new_name.is_empty() {
+        return Err("Preset name cannot be empty".to_string());
+    }
+
+    *name = new_name.to_string();
+
+    Ok(())
+}
+
 fn default_slot_name(bank: SlotBank, slot_index: usize) -> String {
     let number = slot_index + 1;
 
@@ -240,6 +263,32 @@ fn apply_clear_to_entry(entry: &mut SlotEntry, bank: SlotBank, slot_index: usize
     *entry = empty_entry(bank, slot_index);
 }
 
+fn apply_color_to_entry(entry: &mut SlotEntry, color: Option<String>) -> Result<(), String> {
+    let color = match color {
+        None => None,
+
+        Some(color) => {
+            let color = color.trim().to_ascii_lowercase();
+
+            match color.as_str() {
+                "#4fd1c5" | "#ffd166" | "#d98c8c" | "#9b8cff" | "#62ff8f" => Some(color),
+
+                _ => {
+                    return Err(format!("Unsupported slot color: {color}"));
+                }
+            }
+        }
+    };
+
+    if entry.snapshot.is_none() && color.is_some() {
+        return Err("Cannot apply a color to an empty slot".to_string());
+    }
+
+    entry.color = color;
+
+    Ok(())
+}
+
 fn empty_entry(bank: SlotBank, slot_index: usize) -> SlotEntry {
     SlotEntry {
         snapshot: None,
@@ -307,6 +356,8 @@ fn default_state() -> SlotsFile {
 
         active_preset: 1,
 
+        preset_names: default_preset_names(),
+
         presets: (1..=PRESET_COUNT)
             .map(|preset| empty_slots(SlotBank::Preset(preset as u8)))
             .collect(),
@@ -350,6 +401,19 @@ fn normalize_entries(entries: &mut Vec<SlotEntry>, bank: SlotBank) {
 
 fn normalize_state(state: &mut SlotsFile) {
     state.version = SLOT_FILE_VERSION;
+    state.preset_names.truncate(PRESET_COUNT);
+
+    while state.preset_names.len() < PRESET_COUNT {
+        let index = state.preset_names.len();
+
+        state.preset_names.push(default_preset_name(index));
+    }
+
+    for (index, name) in state.preset_names.iter_mut().enumerate() {
+        if name.trim().is_empty() {
+            *name = default_preset_name(index);
+        }
+    }
 
     if !(1..=PRESET_COUNT as u8).contains(&state.active_preset) {
         state.active_preset = 1;
@@ -474,12 +538,14 @@ fn read_state_unlocked() -> Result<SlotsFile, String> {
         SlotsDisk::Current(state) => state,
 
         SlotsDisk::PreviousWithFavorites(previous) => {
-            println!("[SPLIT] Migrating slots.json with favorites -> v5 metadata");
+            println!("[SPLIT] Migrating slots.json with favorites -> v6");
 
             SlotsFile {
                 version: SLOT_FILE_VERSION,
 
                 active_preset: previous.active_preset,
+
+                preset_names: default_preset_names(),
 
                 presets: previous
                     .presets
@@ -495,10 +561,12 @@ fn read_state_unlocked() -> Result<SlotsFile, String> {
         }
 
         SlotsDisk::Previous(previous) => {
-            println!("[SPLIT] Migrating previous preset slots.json -> v5 metadata");
+            println!("[SPLIT] Migrating previous preset slots.json -> v6 metadata");
 
             SlotsFile {
                 version: SLOT_FILE_VERSION,
+
+                preset_names: default_preset_names(),
 
                 active_preset: previous.active_preset,
 
@@ -580,12 +648,86 @@ pub(crate) fn load_metadata(bank: SlotBank) -> Result<Vec<SlotMetadata>, String>
     }
 }
 
+pub fn get_preset_names() -> Result<Vec<String>, String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    Ok(read_state_unlocked()?.preset_names)
+}
+
+pub fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let mut state = read_state_unlocked()?;
+
+    let index = usize::from(preset - 1);
+
+    let preset_name = state
+        .preset_names
+        .get_mut(index)
+        .ok_or_else(|| format!("Invalid preset index {index}"))?;
+
+    apply_preset_rename(preset_name, &name)?;
+
+    let names = state.preset_names.clone();
+
+    write_state_unlocked(&state)?;
+
+    println!("[SPLIT] Renamed preset {} to {:?}", preset, names[index],);
+
+    Ok(names)
+}
+
 pub fn get_active_preset() -> Result<u8, String> {
     let _guard = STORAGE_LOCK
         .lock()
         .map_err(|_| "Slots storage lock poisoned".to_string())?;
 
     Ok(read_state_unlocked()?.active_preset)
+}
+
+pub fn clear_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let mut state = read_state_unlocked()?;
+
+    let index = usize::from(preset - 1);
+
+    /*
+     * Clear Preset remet entièrement
+     * le preset à son état par défaut :
+     *
+     * - 8 slots vides
+     * - métadonnées supprimées
+     * - nom remis à "Preset N"
+     */
+    state.presets[index] = empty_slots(SlotBank::Preset(preset));
+
+    state.preset_names[index] = default_preset_name(index);
+
+    let saved = snapshots_from_entries(&state.presets[index]);
+
+    write_state_unlocked(&state)?;
+
+    println!(
+        "[SPLIT] Cleared preset {} ({:?})",
+        preset, state.preset_names[index],
+    );
+
+    Ok(saved)
 }
 
 pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
@@ -750,6 +892,53 @@ pub(crate) fn clear_slot(bank: SlotBank, slot: u8) -> Result<SlotChangeResult, S
     })
 }
 
+pub(crate) fn set_slot_color(
+    bank: SlotBank,
+    slot: u8,
+    color: Option<String>,
+) -> Result<SlotChangeResult, String> {
+    if !(1..=SLOT_COUNT as u8).contains(&slot) {
+        return Err(format!("Invalid slot {slot}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let mut state = read_state_unlocked()?;
+
+    let slot_index = usize::from(slot - 1);
+
+    let entries = bank_entries_mut(&mut state, bank)?;
+
+    let entry = entries
+        .get_mut(slot_index)
+        .ok_or_else(|| format!("Invalid slot index {slot_index}"))?;
+
+    let before = entry.clone();
+
+    apply_color_to_entry(entry, color)?;
+
+    let after = entry.clone();
+
+    let saved_slots = snapshots_from_entries(entries);
+
+    write_state_unlocked(&state)?;
+
+    println!(
+        "[SPLIT] Updated color for {:?} slot {} to {:?}",
+        bank, slot, after.color,
+    );
+
+    Ok(SlotChangeResult {
+        bank,
+        slot,
+        before,
+        after,
+        slots: saved_slots,
+    })
+}
+
 pub(crate) fn restore_slot(
     bank: SlotBank,
     slot: u8,
@@ -882,6 +1071,8 @@ mod tests {
 
             active_preset: previous.active_preset,
 
+            preset_names: default_preset_names(),
+
             presets: previous
                 .presets
                 .into_iter()
@@ -938,6 +1129,8 @@ mod tests {
             version: SLOT_FILE_VERSION,
 
             active_preset: previous.active_preset,
+
+            preset_names: default_preset_names(),
 
             presets: previous
                 .presets
@@ -1110,5 +1303,149 @@ mod tests {
         assert_eq!(entry, empty_entry(SlotBank::Preset(1), 2,),);
 
         assert_eq!(entry.name, "Slot 3",);
+    }
+
+    #[test]
+    fn color_tag_preserves_slot_contents() {
+        let mut entry = SlotEntry {
+            snapshot: Some(position(10.0)),
+            name: "Mid rooftop".to_string(),
+            saved_at: Some(123456),
+            color: None,
+        };
+
+        apply_color_to_entry(&mut entry, Some("#4FD1C5".to_string())).unwrap();
+
+        assert_eq!(entry.color.as_deref(), Some("#4fd1c5"),);
+
+        assert_eq!(entry.snapshot, Some(position(10.0)),);
+
+        assert_eq!(entry.name, "Mid rooftop",);
+
+        assert_eq!(entry.saved_at, Some(123456),);
+    }
+
+    #[test]
+    fn color_tag_rejects_invalid_or_empty_slot() {
+        let mut filled = SlotEntry {
+            snapshot: Some(position(10.0)),
+            name: "Save 1".to_string(),
+            saved_at: Some(123),
+            color: None,
+        };
+
+        assert!(apply_color_to_entry(&mut filled, Some("#123456".to_string(),),).is_err());
+
+        let mut empty = empty_entry(SlotBank::Preset(1), 0);
+
+        assert!(apply_color_to_entry(&mut empty, Some("#ffd166".to_string(),),).is_err());
+
+        filled.color = Some("#62ff8f".to_string());
+
+        apply_color_to_entry(&mut filled, None).unwrap();
+
+        assert_eq!(filled.color, None,);
+    }
+
+    #[test]
+    fn preset_rename_preserves_all_slots() {
+        let mut state = default_state();
+
+        state.presets[1][3] = SlotEntry {
+            snapshot: Some(position(42.0)),
+            name: "Roof".to_string(),
+            saved_at: Some(123456),
+            color: Some("#9b8cff".to_string()),
+        };
+
+        let before = state.presets.clone();
+
+        apply_preset_rename(&mut state.preset_names[1], "  Movement  ").unwrap();
+
+        assert_eq!(state.preset_names[1], "Movement",);
+
+        assert_eq!(state.presets, before,);
+
+        assert!(apply_preset_rename(&mut state.preset_names[1], "   ",).is_err());
+    }
+
+    #[test]
+    fn version_five_defaults_preset_names() {
+        let disk = serde_json::from_str::<SlotsDisk>(
+            r#"{
+                    "version": 5,
+                    "activePreset": 2,
+                    "presets": [
+                        [],
+                        [],
+                        [],
+                        []
+                    ],
+                    "favorites": []
+                }"#,
+        )
+        .unwrap();
+
+        let mut state = match disk {
+            SlotsDisk::Current(state) => state,
+
+            _ => panic!("v5 should deserialize as current structure"),
+        };
+
+        normalize_state(&mut state);
+
+        assert_eq!(state.version, SLOT_FILE_VERSION,);
+
+        assert_eq!(state.active_preset, 2,);
+
+        assert_eq!(
+            state.preset_names,
+            vec![
+                "Preset 1".to_string(),
+                "Preset 2".to_string(),
+                "Preset 3".to_string(),
+                "Preset 4".to_string(),
+            ],
+        );
+
+        assert_eq!(state.presets.len(), PRESET_COUNT,);
+    }
+
+    #[test]
+    fn clear_preset_resets_name_and_preserves_other_banks() {
+        let mut state = default_state();
+
+        state.preset_names[1] = "Movement".to_string();
+
+        state.presets[0][0].snapshot = Some(position(1.0));
+
+        state.presets[1][0] = SlotEntry {
+            snapshot: Some(position(2.0)),
+            name: "Custom Spawn".to_string(),
+            saved_at: Some(123456),
+            color: Some("#9b8cff".to_string()),
+        };
+
+        state.favorites[0].snapshot = Some(position(3.0));
+
+        let preset_one_before = state.presets[0].clone();
+
+        let favorites_before = state.favorites.clone();
+
+        state.presets[1] = empty_slots(SlotBank::Preset(2));
+
+        state.preset_names[1] = default_preset_name(1);
+
+        assert_eq!(state.preset_names[1], "Preset 2",);
+
+        assert_eq!(state.presets[0], preset_one_before,);
+
+        assert_eq!(state.favorites, favorites_before,);
+
+        assert!(state.presets[1].iter().all(|entry| {
+            entry.snapshot.is_none() && entry.saved_at.is_none() && entry.color.is_none()
+        }));
+
+        assert_eq!(state.presets[1][0].name, "Slot 1",);
     }
 }

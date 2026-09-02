@@ -119,6 +119,20 @@ pub fn get_slot_metadata() -> Result<Vec<SlotMetadata>, String> {
     slots::load_metadata(current_slot_bank()?)
 }
 
+pub fn get_preset_names() -> Result<Vec<String>, String> {
+    slots::get_preset_names()
+}
+
+pub fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    slots::rename_preset(preset, name)
+}
+
 pub fn get_active_preset() -> Result<u8, String> {
     slots::get_active_preset()
 }
@@ -161,6 +175,56 @@ pub fn update_notification_settings(
     let saved = paths::save_notification_settings(settings)?;
     crate::notifications::apply_settings(saved.clone());
     Ok(saved)
+}
+
+pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    if favorite_mode_active() {
+        return Err("Cannot clear a preset while Favorite Mode is active".to_string());
+    }
+
+    let active = slots::get_active_preset()?;
+
+    if preset != active {
+        return Err("Only the active preset can be cleared".to_string());
+    }
+
+    let saved = slots::clear_preset(preset)?;
+
+    /*
+     * Le preset actif vient réellement
+     * de changer côté snapshots :
+     * Deadlock doit donc recevoir le
+     * nouveau savestate.cfg vide.
+     */
+    let deadlock = paths::configured_deadlock_paths()
+        .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
+
+    cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
+
+    cfg::ensure_autoexec(&deadlock.autoexec)?;
+
+    /*
+     * Un Clear Preset porte sur 8 slots.
+     *
+     * L'historique actuel ne sait gérer
+     * qu'un SlotAction unique : on le
+     * réinitialise pour empêcher un
+     * Undo/Redo partiel après le Clear.
+     */
+    let history_state = history::clear()?;
+
+    Ok(SlotEditResult {
+        preset,
+        slots: saved,
+        history_state,
+        favorite_active: false,
+    })
 }
 
 pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
@@ -334,6 +398,38 @@ pub fn clear_slot(slot: u8) -> Result<SlotEditResult, String> {
         cfg::ensure_autoexec(&deadlock.autoexec)?;
     }
 
+    let (_, history_state) = history::record(history::SlotAction {
+        bank: changed.bank,
+        slot: changed.slot,
+        before: changed.before,
+        after: changed.after,
+    })?;
+
+    Ok(SlotEditResult {
+        preset: slots::get_active_preset()?,
+        slots: changed.slots,
+        history_state,
+        favorite_active: favorite_mode_for_bank(bank),
+    })
+}
+
+pub fn set_slot_color(slot: u8, color: Option<String>) -> Result<SlotEditResult, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    let bank = current_slot_bank()?;
+
+    let changed = slots::set_slot_color(bank, slot, color)?;
+
+    /*
+     * Couleur = metadata uniquement.
+     *
+     * Aucun write_savestate_cfg ici.
+     * Aucun teleport dirty.
+     */
     let (_, history_state) = history::record(history::SlotAction {
         bank: changed.bank,
         slot: changed.slot,

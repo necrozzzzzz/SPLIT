@@ -556,6 +556,19 @@ footer {
   gap: 3px;
 }
 
+.slot-name-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.slot-color-indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
 
 .slot-number {
   overflow: hidden;
@@ -616,6 +629,21 @@ footer {
   font-weight: 700;
 }
 
+.slot-rename-button {
+  color: #aeb9c7;
+}
+
+.slot-clear-button {
+  border-color: #493039;
+  color: #d98c8c;
+}
+
+.slot-clear-button:hover:not(:disabled) {
+  border-color: #69404d;
+  color: #f0a0ad;
+  background: #24171c;
+}
+
 .slot-save-button:hover:not(:disabled) {
   background: #1c2632;
 }
@@ -641,6 +669,53 @@ footer {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+.slot-color-picker {
+  display: flex;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.slot-color-button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid #293341;
+  border-radius: 7px;
+  padding: 0;
+  background: #151c25;
+  cursor: pointer;
+}
+
+.slot-color-button:hover:not(:disabled) {
+  border-color: #5a6777;
+  background: #1c2632;
+}
+
+.slot-color-button.active {
+  border-color: #d4dde8;
+  box-shadow:
+    0 0 0 1px
+    rgba(255, 255, 255, 0.12);
+}
+
+.slot-color-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.slot-color-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.slot-color-none {
+  color: #778392;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .slot-shortcuts {
@@ -699,6 +774,32 @@ footer {
 .preset-button:disabled {
   cursor: default;
   opacity: 0.45;
+}
+
+.preset-management {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -6px 0 14px;
+}
+
+.preset-management .preset-button {
+  min-width: 120px;
+}
+
+.preset-clear-button {
+  border-color: #493039;
+  color: #d98c8c;
+}
+
+.preset-clear-button:hover:not(:disabled) {
+  border-color: #69404d;
+  color: #f0a0ad;
+  background: #24171c;
+}
+
+.preset-management .preset-button {
+  min-width: 120px;
 }
 
 .history-actions {

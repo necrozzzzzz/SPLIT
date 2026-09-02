@@ -48,6 +48,21 @@ fn get_active_preset() -> Result<u8, String> {
 }
 
 #[tauri::command]
+fn get_preset_names() -> Result<Vec<String>, String> {
+    deadlock::get_preset_names()
+}
+
+#[tauri::command]
+fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
+    deadlock::rename_preset(preset, name)
+}
+
+#[tauri::command]
+fn clear_preset(preset: u8) -> Result<deadlock::SlotEditResult, String> {
+    deadlock::clear_preset(preset)
+}
+
+#[tauri::command]
 fn get_history_state() -> Result<deadlock::HistoryState, String> {
     deadlock::get_history_state()
 }
@@ -92,6 +107,21 @@ fn set_active_preset(preset: u8) -> Result<Vec<Option<deadlock::PositionSnapshot
 #[tauri::command]
 fn save_slot(slot: u8) -> Result<Vec<Option<deadlock::PositionSnapshot>>, String> {
     deadlock::save_slot(slot)
+}
+
+#[tauri::command]
+fn rename_slot(slot: u8, name: String) -> Result<deadlock::SlotEditResult, String> {
+    deadlock::rename_slot(slot, name)
+}
+
+#[tauri::command]
+fn clear_slot(slot: u8) -> Result<deadlock::SlotEditResult, String> {
+    deadlock::clear_slot(slot)
+}
+
+#[tauri::command]
+fn set_slot_color(slot: u8, color: Option<String>) -> Result<deadlock::SlotEditResult, String> {
+    deadlock::set_slot_color(slot, color)
 }
 
 #[tauri::command]
@@ -255,6 +285,9 @@ pub fn run() {
             get_active_preset,
             get_history_state,
             get_favorite_mode,
+            get_preset_names,
+            rename_preset,
+            clear_preset,
             get_notification_settings,
             update_notification_settings,
             toggle_favorite_mode,
@@ -262,6 +295,9 @@ pub fn run() {
             redo_last_action,
             set_active_preset,
             save_slot,
+            rename_slot,
+            clear_slot,
+            set_slot_color,
             load_slot,
             capture_slot,
             sync_slots_to_deadlock,

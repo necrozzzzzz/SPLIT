@@ -97,6 +97,13 @@ type ActiveBankResult = {
   favoriteActive: boolean;
 };
 
+type SlotEditResult = {
+  preset: number;
+  slots: Array<PositionSnapshot | null>;
+  historyState: HistoryState;
+  favoriteActive: boolean;
+};
+
 type NotificationPosition =
   | "topLeft"
   | "topRight"
@@ -108,6 +115,37 @@ type NotificationSettings = {
   position: NotificationPosition;
   durationMs: number;
 };
+
+const SLOT_COLORS = [
+  {
+    label: "None",
+    value: null,
+  },
+  {
+    label: "Cyan",
+    value: "#4fd1c5",
+  },
+  {
+    label: "Yellow",
+    value: "#ffd166",
+  },
+  {
+    label: "Red",
+    value: "#d98c8c",
+  },
+  {
+    label: "Purple",
+    value: "#9b8cff",
+  },
+  {
+    label: "Green",
+    value: "#62ff8f",
+  },
+] as const;
+
+const CLEAR_PRESET_CONFIRMATION_KEY =
+  "split.clearPreset.skipConfirmation";
+
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
@@ -284,6 +322,43 @@ function App() {
     setRelativeTimeNow,
   ] = useState(() => Date.now());
 
+
+
+  const [
+    presetNames,
+    setPresetNames,
+  ] = useState<Array<string>>(
+    () =>
+      Array.from(
+        { length: 4 },
+        (_, index) =>
+          `Preset ${index + 1}`,
+      ),
+  );
+
+  const [
+    renamingPreset,
+    setRenamingPreset,
+  ] = useState(false);
+
+  const [
+    clearingPreset,
+    setClearingPreset,
+  ] = useState(false);
+
+  const [
+    pendingClearPreset,
+    setPendingClearPreset,
+  ] = useState<{
+    preset: number;
+    name: string;
+  } | null>(null);
+
+  const [
+    dontAskClearPresetAgain,
+    setDontAskClearPresetAgain,
+  ] = useState(false);
+
   const [
     activePreset,
     setActivePreset,
@@ -326,6 +401,14 @@ function App() {
   const [
     loadingSlot,
     setLoadingSlot,
+  ] = useState<number | null>(
+    null,
+  );
+
+
+  const [
+    coloringSlot,
+    setColoringSlot,
   ] = useState<number | null>(
     null,
   );
@@ -700,6 +783,7 @@ function App() {
           saved,
           metadata,
           preset,
+          names,
           history,
           favoriteActive,
         ] =
@@ -718,6 +802,10 @@ function App() {
 
             invoke<number>(
               "get_active_preset",
+            ),
+
+            invoke<Array<string>>(
+              "get_preset_names",
             ),
 
             invoke<HistoryState>(
@@ -741,6 +829,10 @@ function App() {
 
           setActivePreset(
             preset,
+          );
+
+          setPresetNames(
+            names,
           );
 
           setHistoryState(
@@ -999,6 +1091,378 @@ function App() {
         },
         [],
       );
+
+
+      const applySlotEditResult =
+        useCallback(
+          async (
+            result: SlotEditResult,
+          ) => {
+            const metadata =
+              await invoke<
+                Array<SlotMetadata>
+              >(
+                "get_slot_metadata",
+              );
+
+            setActivePreset(
+              result.preset,
+            );
+
+            setSlots(
+              result.slots,
+            );
+
+            setSlotMetadata(
+              metadata,
+            );
+
+            setRelativeTimeNow(
+              Date.now(),
+            );
+
+            setHistoryState(
+              result.historyState,
+            );
+
+            setFavoriteMode(
+              result.favoriteActive,
+            );
+          },
+          [],
+        );
+
+      const renameSavedSlot =
+        useCallback(
+          async (
+            slot: number,
+            currentName: string,
+          ) => {
+            const name =
+              window.prompt(
+                `Rename slot ${slot}`,
+                currentName,
+              );
+
+            if (name === null) {
+              return;
+            }
+
+            const trimmed =
+              name.trim();
+
+            if (!trimmed) {
+              setError(
+                "Slot name cannot be empty",
+              );
+
+              return;
+            }
+
+            setError(null);
+
+            try {
+              const result =
+                await invoke<SlotEditResult>(
+                  "rename_slot",
+                  {
+                    slot,
+                    name: trimmed,
+                  },
+                );
+
+              await applySlotEditResult(
+                result,
+              );
+            } catch (reason) {
+              setError(
+                String(reason),
+              );
+            }
+          },
+          [applySlotEditResult],
+        );
+
+      const clearSavedSlot =
+        useCallback(
+          async (
+            slot: number,
+            currentName: string,
+          ) => {
+            const confirmed =
+              window.confirm(
+                `Clear "${currentName}"?\n\n` +
+                "The saved position, name, timestamp and color will be reset.",
+              );
+
+            if (!confirmed) {
+              return;
+            }
+
+            setError(null);
+
+            try {
+              const result =
+                await invoke<SlotEditResult>(
+                  "clear_slot",
+                  {
+                    slot,
+                  },
+                );
+
+              await applySlotEditResult(
+                result,
+              );
+            } catch (reason) {
+              setError(
+                String(reason),
+              );
+            }
+          },
+          [applySlotEditResult],
+        );
+
+
+
+      const updateSlotColor =
+        useCallback(
+          async (
+            slot: number,
+            color: string | null,
+          ) => {
+            setColoringSlot(
+              slot,
+            );
+
+            setError(
+              null,
+            );
+
+            try {
+              const result =
+                await invoke<SlotEditResult>(
+                  "set_slot_color",
+                  {
+                    slot,
+                    color,
+                  },
+                );
+
+              await applySlotEditResult(
+                result,
+              );
+            } catch (reason) {
+              setError(
+                String(reason),
+              );
+            } finally {
+              setColoringSlot(
+                null,
+              );
+            }
+          },
+          [applySlotEditResult],
+        );  
+
+
+      const renameActivePreset =
+        useCallback(
+          async () => {
+            const currentName =
+              presetNames[
+                activePreset - 1
+              ] ??
+              `Preset ${activePreset}`;
+
+            const name =
+              window.prompt(
+                `Rename preset ${activePreset}`,
+                currentName,
+              );
+
+            if (name === null) {
+              return;
+            }
+
+            const trimmed =
+              name.trim();
+
+            if (!trimmed) {
+              setError(
+                "Preset name cannot be empty",
+              );
+
+              return;
+            }
+
+            setRenamingPreset(true);
+            setError(null);
+
+            try {
+              const names =
+                await invoke<
+                  Array<string>
+                >(
+                  "rename_preset",
+                  {
+                    preset:
+                      activePreset,
+                    name:
+                      trimmed,
+                  },
+                );
+
+              setPresetNames(
+                names,
+              );
+            } catch (reason) {
+              setError(
+                String(reason),
+              );
+            } finally {
+              setRenamingPreset(
+                false,
+              );
+            }
+          },
+          [
+            activePreset,
+            presetNames,
+          ],
+        );  
+
+
+      const performClearPreset =
+        useCallback(
+          async (
+            preset: number,
+          ) => {
+            setClearingPreset(true);
+            setError(null);
+
+            try {
+              const result =
+                await invoke<SlotEditResult>(
+                  "clear_preset",
+                  {
+                    preset,
+                  },
+                );
+
+              await applySlotEditResult(
+                result,
+              );
+
+              const names =
+                await invoke<
+                  Array<string>
+                >(
+                  "get_preset_names",
+                );
+
+              setPresetNames(
+                names,
+              );
+            } catch (reason) {
+              setError(
+                String(reason),
+              );
+            } finally {
+              setClearingPreset(
+                false,
+              );
+            }
+          },
+          [applySlotEditResult],
+        );
+
+      const clearActivePreset =
+        useCallback(
+          async () => {
+            const presetName =
+              presetNames[
+                activePreset - 1
+              ] ??
+              `Preset ${activePreset}`;
+
+            const skipConfirmation =
+              localStorage.getItem(
+                CLEAR_PRESET_CONFIRMATION_KEY,
+              ) === "true";
+
+            if (skipConfirmation) {
+              await performClearPreset(
+                activePreset,
+              );
+
+              return;
+            }
+
+            setDontAskClearPresetAgain(
+              false,
+            );
+
+            setPendingClearPreset({
+              preset:
+                activePreset,
+              name:
+                presetName,
+            });
+          },
+          [
+            activePreset,
+            presetNames,
+            performClearPreset,
+          ],
+        );
+
+      const confirmClearPreset =
+        useCallback(
+          async () => {
+            const target =
+              pendingClearPreset;
+
+            if (!target) {
+              return;
+            }
+
+            if (
+              dontAskClearPresetAgain
+            ) {
+              localStorage.setItem(
+                CLEAR_PRESET_CONFIRMATION_KEY,
+                "true",
+              );
+            }
+
+            setPendingClearPreset(
+              null,
+            );
+
+            await performClearPreset(
+              target.preset,
+            );
+          },
+          [
+            pendingClearPreset,
+            dontAskClearPresetAgain,
+            performClearPreset,
+          ],
+        );
+
+      const cancelClearPreset =
+        useCallback(
+          () => {
+            setPendingClearPreset(
+              null,
+            );
+
+            setDontAskClearPresetAgain(
+              false,
+            );
+          },
+          [],
+        );
 
       const switchPreset =
   useCallback(
@@ -1651,10 +2115,55 @@ function App() {
                 )
               }
             >
-              Preset {preset}
+              {presetNames[
+                preset - 1
+              ] ??
+                `Preset ${preset}`}
             </button>
           ),
         )}
+      </div>
+
+      <div className="preset-management">
+        <button
+          className="preset-button"
+          type="button"
+          disabled={
+            favoriteMode ||
+            renamingPreset ||
+            clearingPreset ||
+            savingSlot !== null ||
+            loadingSlot !== null ||
+            coloringSlot !== null
+          }
+          onClick={() =>
+            void renameActivePreset()
+          }
+        >
+          {renamingPreset
+            ? "Renaming…"
+            : "Rename preset"}
+        </button>
+
+        <button
+          className="preset-button preset-clear-button"
+          type="button"
+          disabled={
+            favoriteMode ||
+            renamingPreset ||
+            clearingPreset ||
+            savingSlot !== null ||
+            loadingSlot !== null ||
+            coloringSlot !== null
+          }
+          onClick={() =>
+            void clearActivePreset()
+          }
+        >
+          {clearingPreset
+            ? "Clearing…"
+            : "Clear preset"}
+        </button>
       </div>
 
       <button
@@ -1729,6 +2238,16 @@ function App() {
                   : `Slot ${slot}`
               );
 
+
+            const defaultName =
+              favoriteMode
+                ? `Favorite ${slot}`
+                : `Slot ${slot}`;
+
+            const canClear =
+              position !== null ||
+              displayName !== defaultName;  
+
             const savedAge =
               position
                 ? formatSavedAge(
@@ -1744,9 +2263,21 @@ function App() {
               >
                 <div className="slot-top">
                   <div className="slot-title">
-                    <span className="slot-number">
-                      {displayName}
-                    </span>
+                    <div className="slot-name-row">
+                      {metadata?.color && (
+                        <span
+                          className="slot-color-indicator"
+                          style={{
+                            backgroundColor:
+                              metadata.color,
+                          }}
+                        />
+                      )}
+
+                      <span className="slot-number">
+                        {displayName}
+                      </span>
+                    </div>
 
                     {savedAge && (
                       <span className="slot-saved-age">
@@ -1789,6 +2320,54 @@ function App() {
                 No position saved
               </p>
             )}
+
+            <div className="slot-color-picker">
+              {SLOT_COLORS.map(
+                ({ label, value }) => {
+                  const active =
+                    metadata?.color === value;
+
+                  return (
+                    <button
+                      className={`slot-color-button ${
+                        active ? "active" : ""
+                      }`}
+                      type="button"
+                      key={label}
+                      title={label}
+                      aria-label={`${label} slot color`}
+                      disabled={
+                        !position ||
+                        savingSlot !== null ||
+                        loadingSlot !== null ||
+                        coloringSlot !== null
+                      }
+                      onClick={() =>
+                        void updateSlotColor(
+                          slot,
+                          value,
+                        )
+                      }
+                    >
+                      {value ? (
+                        <span
+                          className="slot-color-swatch"
+                          style={{
+                            backgroundColor:
+                              value,
+                          }}
+                        />
+                      ) : (
+                        <span className="slot-color-none">
+                          ×
+                        </span>
+                      )}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+
 
             <div className="slot-shortcuts">
               <span>
@@ -1838,6 +2417,41 @@ function App() {
                   : position
                     ? "Overwrite"
                     : "Save"}
+              </button>
+
+              <button
+                className="slot-save-button slot-rename-button"
+                type="button"
+                disabled={
+                  savingSlot !== null ||
+                  loadingSlot !== null
+                }
+                onClick={() =>
+                  void renameSavedSlot(
+                    slot,
+                    displayName,
+                  )
+                }
+              >
+                Rename
+              </button>
+
+              <button
+                className="slot-save-button slot-clear-button"
+                type="button"
+                disabled={
+                  !canClear ||
+                  savingSlot !== null ||
+                  loadingSlot !== null
+                }
+                onClick={() =>
+                  void clearSavedSlot(
+                    slot,
+                    displayName,
+                  )
+                }
+              >
+                Clear
               </button>
             </div>
               </article>

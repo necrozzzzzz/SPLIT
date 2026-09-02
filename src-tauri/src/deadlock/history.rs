@@ -87,6 +87,11 @@ impl History {
             Self::push_bounded(&mut self.undo_stack, action);
         }
     }
+
+    fn clear(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+    }
 }
 
 static HISTORY: Mutex<History> = Mutex::new(History {
@@ -142,6 +147,16 @@ pub fn complete_redo() -> Result<HistoryState, String> {
         .map_err(|_| "History lock poisoned".to_string())?;
 
     history.complete_redo();
+
+    Ok(history.state())
+}
+
+pub fn clear() -> Result<HistoryState, String> {
+    let mut history = HISTORY
+        .lock()
+        .map_err(|_| "History lock poisoned".to_string())?;
+
+    history.clear();
 
     Ok(history.state())
 }
@@ -341,8 +356,37 @@ mod tests {
 
         assert!(!rename_action.snapshot_changed());
 
+        let mut colored = before.clone();
+
+        colored.color = Some("#9b8cff".to_string());
+
+        let color_action = action(before.clone(), colored);
+
+        assert!(!color_action.snapshot_changed());
+
         let clear_action = action(before, empty_entry());
 
         assert!(clear_action.snapshot_changed());
+    }
+
+    #[test]
+    fn clear_removes_undo_and_redo() {
+        let mut history = History::default();
+
+        history.record(action(empty_entry(), saved_entry(1.0, 100)));
+
+        history.complete_undo();
+
+        assert!(history.state().can_redo);
+
+        history.clear();
+
+        assert_eq!(
+            history.state(),
+            HistoryState {
+                can_undo: false,
+                can_redo: false,
+            },
+        );
     }
 }
