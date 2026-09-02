@@ -544,17 +544,33 @@ footer {
 
 .slot-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 16px;
 }
 
+.slot-title {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+
 .slot-number {
+  overflow: hidden;
   color: #dce4ee;
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-saved-age {
+  color: #737f8d;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .slot-state {

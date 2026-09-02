@@ -38,6 +38,11 @@ fn get_slots() -> Result<Vec<Option<deadlock::PositionSnapshot>>, String> {
 }
 
 #[tauri::command]
+fn get_slot_metadata() -> Result<Vec<deadlock::SlotMetadata>, String> {
+    deadlock::get_slot_metadata()
+}
+
+#[tauri::command]
 fn get_active_preset() -> Result<u8, String> {
     deadlock::get_active_preset()
 }
@@ -246,6 +251,7 @@ pub fn run() {
             confirm_deadlock_path,
             get_last_position,
             get_slots,
+            get_slot_metadata,
             get_active_preset,
             get_history_state,
             get_favorite_mode,

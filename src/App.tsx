@@ -67,6 +67,12 @@ type PositionSnapshot = {
   roll: number;
 };
 
+type SlotMetadata = {
+  name: string;
+  savedAt: number | null;
+  color: string | null;
+};
+
 type SaveFailedPayload = {
   slot: number;
   reason: string;
@@ -148,6 +154,49 @@ type StatusTone =
   | "error"
   | "off";
 
+function formatSavedAge(
+  savedAt: number | null,
+  nowMs: number,
+): string | null {
+  if (savedAt === null) {
+    return null;
+  }
+
+  const ageSeconds = Math.max(
+    0,
+    Math.floor(nowMs / 1000) - savedAt,
+  );
+
+  if (ageSeconds < 60) {
+    return "Saved just now";
+  }
+
+  const minutes =
+    Math.floor(ageSeconds / 60);
+
+  if (minutes < 60) {
+    return `Saved ${minutes} min ago`;
+  }
+
+  const hours =
+    Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `Saved ${hours} h ago`;
+  }
+
+  const days =
+    Math.floor(hours / 24);
+
+  if (days < 7) {
+    return `Saved ${days} d ago`;
+  }
+
+  return `Saved ${new Date(
+    savedAt * 1000,
+  ).toLocaleDateString()}`;
+}  
+
 function StatusDot({
   ok = false,
   tone,
@@ -214,6 +263,26 @@ function App() {
         () => null,
       ),
   );
+
+  const [
+    slotMetadata,
+    setSlotMetadata,
+  ] = useState<Array<SlotMetadata>>(
+    () =>
+      Array.from(
+        { length: 8 },
+        (_, index) => ({
+          name: `Slot ${index + 1}`,
+          savedAt: null,
+          color: null,
+        }),
+      ),
+  );
+
+  const [
+    relativeTimeNow,
+    setRelativeTimeNow,
+  ] = useState(() => Date.now());
 
   const [
     activePreset,
@@ -308,6 +377,40 @@ function App() {
   ] =
     useState<string | null>(null);
     
+
+
+  useEffect(() => {
+    const hasTimestamp =
+      slotMetadata.some(
+        (entry) =>
+          entry.savedAt !== null,
+      );
+
+    if (!hasTimestamp) {
+      return;
+    }
+
+    setRelativeTimeNow(
+      Date.now(),
+    );
+
+    const timer =
+      window.setInterval(
+        () => {
+          setRelativeTimeNow(
+            Date.now(),
+          );
+        },
+        30_000,
+      );
+
+    return () => {
+      window.clearInterval(
+        timer,
+      );
+    };
+  }, [slotMetadata]);
+
 
   const refresh =
     useCallback(async () => {
@@ -595,15 +698,16 @@ function App() {
       try {
         const [
           saved,
+          metadata,
           preset,
           history,
           favoriteActive,
         ] =
           await Promise.all([
             invoke<
-              Array<PositionSnapshot | null>
+              Array<SlotMetadata>
             >(
-              "get_slots",
+              "get_slot_metadata",
             ),
 
             invoke<number>(
@@ -623,6 +727,10 @@ function App() {
         if (!disposed) {
           setSlots(
             saved,
+          );
+
+          setSlotMetadata(
+            metadata,
           );
 
           setActivePreset(
@@ -741,15 +849,40 @@ function App() {
     >(
       "deadlock-slots",
       (event) => {
-        if (!disposed) {
-          setSlots(
-            event.payload,
-          );
-
-          setSavingSlot(
-            null,
-          );
+        if (disposed) {
+          return;
         }
+
+        setSlots(
+          event.payload,
+        );
+
+        setSavingSlot(
+          null,
+        );
+
+        void invoke<
+          Array<SlotMetadata>
+        >(
+          "get_slot_metadata",
+        )
+          .then((metadata) => {
+            if (!disposed) {
+              setSlotMetadata(
+                metadata,
+              );
+
+              setRelativeTimeNow(
+                Date.now(),
+              );
+            }
+          })
+          .catch((reason) => {
+            console.error(
+              "[SPLIT UI] Failed to refresh slot metadata:",
+              reason,
+            );
+          });
       },
     ).then((cleanup) => {
       if (disposed) {
@@ -890,6 +1023,13 @@ function App() {
             },
           );
 
+        const metadata =
+          await invoke<
+            Array<SlotMetadata>
+          >(
+            "get_slot_metadata",
+          );  
+
 
         setActivePreset(
           preset,
@@ -897,6 +1037,14 @@ function App() {
 
         setSlots(
           saved,
+        );
+
+        setSlotMetadata(
+          metadata,
+        );
+
+        setRelativeTimeNow(
+          Date.now(),
         );
 
         setFavoriteMode(false);
@@ -924,10 +1072,37 @@ function App() {
             await invoke<HistoryOperationResult>(
               command,
             );
-          setActivePreset(result.preset);
-          setSlots(result.slots);
-          setHistoryState(result.historyState);
-          setFavoriteMode(result.favoriteActive);
+
+          const metadata =
+            await invoke<
+              Array<SlotMetadata>
+            >(
+              "get_slot_metadata",
+            );
+
+          setActivePreset(
+            result.preset,
+          );
+
+          setSlots(
+            result.slots,
+          );
+
+          setSlotMetadata(
+            metadata,
+          );
+
+          setRelativeTimeNow(
+            Date.now(),
+          );
+
+          setHistoryState(
+            result.historyState,
+          );
+
+          setFavoriteMode(
+            result.favoriteActive,
+          );
         } catch (reason) {
           setError(String(reason));
         }
@@ -944,8 +1119,23 @@ function App() {
           await invoke<ActiveBankResult>(
             "toggle_favorite_mode",
           );
+
+
+        const metadata =
+          await invoke<
+            Array<SlotMetadata>
+          >(
+            "get_slot_metadata",
+          );  
         setActivePreset(result.preset);
         setSlots(result.slots);
+        setSlotMetadata(
+          metadata,
+        );
+
+        setRelativeTimeNow(
+          Date.now(),
+        );
         setFavoriteMode(result.favoriteActive);
       } catch (reason) {
         setError(String(reason));
@@ -1521,6 +1711,25 @@ function App() {
           ) => {
             const slot =
               index + 1;
+
+            const metadata =
+              slotMetadata[index];
+
+            const displayName =
+              metadata?.name?.trim() ||
+              (
+                favoriteMode
+                  ? `Favorite ${slot}`
+                  : `Slot ${slot}`
+              );
+
+            const savedAge =
+              position
+                ? formatSavedAge(
+                    metadata?.savedAt ?? null,
+                    relativeTimeNow,
+                  )
+                : null;
 
             return (
               <article

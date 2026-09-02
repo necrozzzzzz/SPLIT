@@ -106,16 +106,8 @@ pub fn get_slots() -> Result<Vec<Option<PositionSnapshot>>, String> {
     slots::load_bank(current_slot_bank()?)
 }
 
-
-pub fn get_slot_metadata()
-    -> Result<
-        Vec<SlotMetadata>,
-        String,
-    >
-{
-    slots::load_metadata(
-        current_slot_bank()?,
-    )
+pub fn get_slot_metadata() -> Result<Vec<SlotMetadata>, String> {
+    slots::load_metadata(current_slot_bank()?)
 }
 
 pub fn get_active_preset() -> Result<u8, String> {
