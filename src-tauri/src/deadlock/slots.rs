@@ -34,21 +34,11 @@ pub(crate) enum SlotBank {
     Favorites,
 }
 
-pub(crate) struct SlotSaveResult {
+pub(crate) struct SlotChangeResult {
     pub bank: SlotBank,
     pub slot: u8,
-
-    /*
-     * L'historique doit maintenant conserver
-     * snapshot + nom + timestamp + couleur.
-     */
     pub before: SlotEntry,
     pub after: SlotEntry,
-
-    /*
-     * L'ancien transport snapshots reste inchangé
-     * pour CFG / Load / UI actuelle.
-     */
     pub slots: Vec<Option<PositionSnapshot>>,
 }
 
@@ -234,6 +224,22 @@ fn apply_save_to_entry(
      */
 }
 
+fn apply_rename_to_entry(entry: &mut SlotEntry, name: &str) -> Result<(), String> {
+    let name = name.trim();
+
+    if name.is_empty() {
+        return Err("Slot name cannot be empty".to_string());
+    }
+
+    entry.name = name.to_string();
+
+    Ok(())
+}
+
+fn apply_clear_to_entry(entry: &mut SlotEntry, bank: SlotBank, slot_index: usize) {
+    *entry = empty_entry(bank, slot_index);
+}
+
 fn empty_entry(bank: SlotBank, slot_index: usize) -> SlotEntry {
     SlotEntry {
         snapshot: None,
@@ -380,6 +386,7 @@ fn bank_entries_mut(state: &mut SlotsFile, bank: SlotBank) -> Result<&mut Vec<Sl
     }
 }
 
+#[cfg(test)]
 fn set_slot_in_state(
     state: &mut SlotsFile,
     bank: SlotBank,
@@ -607,7 +614,7 @@ pub fn save_slot(
     bank: SlotBank,
     slot: u8,
     position: PositionSnapshot,
-) -> Result<SlotSaveResult, String> {
+) -> Result<SlotChangeResult, String> {
     if !(1..=SLOT_COUNT as u8).contains(&slot) {
         return Err(format!("Invalid slot {slot}"));
     }
@@ -651,7 +658,90 @@ pub fn save_slot(
         bank, slot, saved_at,
     );
 
-    Ok(SlotSaveResult {
+    Ok(SlotChangeResult {
+        bank,
+        slot,
+        before,
+        after,
+        slots: saved_slots,
+    })
+}
+
+pub(crate) fn rename_slot(
+    bank: SlotBank,
+    slot: u8,
+    name: String,
+) -> Result<SlotChangeResult, String> {
+    if !(1..=SLOT_COUNT as u8).contains(&slot) {
+        return Err(format!("Invalid slot {slot}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let mut state = read_state_unlocked()?;
+    let slot_index = usize::from(slot - 1);
+
+    let entries = bank_entries_mut(&mut state, bank)?;
+
+    let entry = entries
+        .get_mut(slot_index)
+        .ok_or_else(|| format!("Invalid slot index {slot_index}"))?;
+
+    let before = entry.clone();
+
+    apply_rename_to_entry(entry, &name)?;
+
+    let after = entry.clone();
+    let saved_slots = snapshots_from_entries(entries);
+
+    write_state_unlocked(&state)?;
+
+    println!(
+        "[SPLIT] Renamed {:?} slot {} to {:?}",
+        bank, slot, after.name,
+    );
+
+    Ok(SlotChangeResult {
+        bank,
+        slot,
+        before,
+        after,
+        slots: saved_slots,
+    })
+}
+
+pub(crate) fn clear_slot(bank: SlotBank, slot: u8) -> Result<SlotChangeResult, String> {
+    if !(1..=SLOT_COUNT as u8).contains(&slot) {
+        return Err(format!("Invalid slot {slot}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let mut state = read_state_unlocked()?;
+    let slot_index = usize::from(slot - 1);
+
+    let entries = bank_entries_mut(&mut state, bank)?;
+
+    let entry = entries
+        .get_mut(slot_index)
+        .ok_or_else(|| format!("Invalid slot index {slot_index}"))?;
+
+    let before = entry.clone();
+
+    apply_clear_to_entry(entry, bank, slot_index);
+
+    let after = entry.clone();
+    let saved_slots = snapshots_from_entries(entries);
+
+    write_state_unlocked(&state)?;
+
+    println!("[SPLIT] Cleared {:?} slot {}", bank, slot,);
+
+    Ok(SlotChangeResult {
         bank,
         slot,
         before,

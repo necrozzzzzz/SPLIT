@@ -19,6 +19,12 @@ pub struct SlotAction {
     pub after: SlotEntry,
 }
 
+impl SlotAction {
+    pub fn snapshot_changed(&self) -> bool {
+        self.before.snapshot != self.after.snapshot
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryState {
@@ -321,5 +327,22 @@ mod tests {
         });
 
         assert_eq!(history.peek_undo().unwrap().bank, SlotBank::Preset(2),);
+    }
+
+    #[test]
+    fn snapshot_changed_ignores_metadata_only_edits() {
+        let before = saved_entry(1.0, 100);
+
+        let mut renamed = before.clone();
+
+        renamed.name = "Custom Spawn".to_string();
+
+        let rename_action = action(before.clone(), renamed);
+
+        assert!(!rename_action.snapshot_changed());
+
+        let clear_action = action(before, empty_entry());
+
+        assert!(clear_action.snapshot_changed());
     }
 }

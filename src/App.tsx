@@ -705,6 +705,12 @@ function App() {
         ] =
           await Promise.all([
             invoke<
+              Array<PositionSnapshot | null>
+            >(
+              "get_slots",
+            ),
+
+            invoke<
               Array<SlotMetadata>
             >(
               "get_slot_metadata",
@@ -1737,12 +1743,17 @@ function App() {
                 key={slot}
               >
                 <div className="slot-top">
-                  <span className="slot-number">
-                    {favoriteMode
-                      ? "FAVORITE"
-                      : "SLOT"}{" "}
-                    {slot}
-                  </span>
+                  <div className="slot-title">
+                    <span className="slot-number">
+                      {displayName}
+                    </span>
+
+                    {savedAge && (
+                      <span className="slot-saved-age">
+                        {savedAge}
+                      </span>
+                    )}
+                  </div>
 
                   <span
                     className={`slot-state ${

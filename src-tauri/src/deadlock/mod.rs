@@ -48,6 +48,15 @@ pub struct ActiveBankResult {
     favorite_active: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotEditResult {
+    preset: u8,
+    slots: Vec<Option<PositionSnapshot>>,
+    history_state: HistoryState,
+    favorite_active: bool,
+}
+
 pub(crate) struct PersistSlotResult {
     pub bank: slots::SlotBank,
     pub slots: Vec<Option<PositionSnapshot>>,
@@ -274,6 +283,72 @@ pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
     persist_slot_position(slot, position).map(|result| result.slots)
 }
 
+pub fn rename_slot(slot: u8, name: String) -> Result<SlotEditResult, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    let bank = current_slot_bank()?;
+
+    let changed = slots::rename_slot(bank, slot, name)?;
+
+    let (_, history_state) = history::record(history::SlotAction {
+        bank: changed.bank,
+        slot: changed.slot,
+        before: changed.before,
+        after: changed.after,
+    })?;
+
+    Ok(SlotEditResult {
+        preset: slots::get_active_preset()?,
+        slots: changed.slots,
+        history_state,
+        favorite_active: favorite_mode_for_bank(bank),
+    })
+}
+
+pub fn clear_slot(slot: u8) -> Result<SlotEditResult, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    let bank = current_slot_bank()?;
+
+    let changed = slots::clear_slot(bank, slot)?;
+
+    /*
+     * Clear modifie réellement les slots
+     * utilisés par Deadlock uniquement si
+     * une position existait auparavant.
+     */
+    if changed.before.snapshot != changed.after.snapshot {
+        let deadlock = paths::configured_deadlock_paths()
+            .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
+
+        cfg::write_savestate_cfg(&deadlock.cfg_file, &changed.slots)?;
+
+        cfg::ensure_autoexec(&deadlock.autoexec)?;
+    }
+
+    let (_, history_state) = history::record(history::SlotAction {
+        bank: changed.bank,
+        slot: changed.slot,
+        before: changed.before,
+        after: changed.after,
+    })?;
+
+    Ok(SlotEditResult {
+        preset: slots::get_active_preset()?,
+        slots: changed.slots,
+        history_state,
+        favorite_active: favorite_mode_for_bank(bank),
+    })
+}
+
 pub fn get_history_state() -> Result<HistoryState, String> {
     history::state()
 }
@@ -301,17 +376,24 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
         });
     };
 
+    let snapshot_changed = action.snapshot_changed();
+
     let value = if undo {
         action.before.clone()
     } else {
         action.after.clone()
     };
+
     let saved = slots::restore_slot(action.bank, action.slot, value)?;
 
-    let deadlock = paths::configured_deadlock_paths()
-        .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
-    cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
-    cfg::ensure_autoexec(&deadlock.autoexec)?;
+    if snapshot_changed {
+        let deadlock = paths::configured_deadlock_paths()
+            .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
+
+        cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
+
+        cfg::ensure_autoexec(&deadlock.autoexec)?;
+    }
 
     let history_state = if undo {
         history::complete_undo()?
@@ -953,5 +1035,41 @@ mod tests {
             history_notification(false, false),
             crate::notifications::Notification::NothingToRedo
         );
+    }
+
+    #[test]
+    fn rename_preserves_slot_contents() {
+        let mut entry = SlotEntry {
+            snapshot: Some(position(10.0)),
+            name: "Save 1".to_string(),
+            saved_at: Some(123456),
+            color: Some("#abcdef".to_string()),
+        };
+
+        apply_rename_to_entry(&mut entry, "  Mid rooftop  ").unwrap();
+
+        assert_eq!(entry.name, "Mid rooftop",);
+
+        assert_eq!(entry.snapshot, Some(position(10.0)),);
+
+        assert_eq!(entry.saved_at, Some(123456),);
+
+        assert_eq!(entry.color.as_deref(), Some("#abcdef"),);
+    }
+
+    #[test]
+    fn clear_resets_complete_slot_entry() {
+        let mut entry = SlotEntry {
+            snapshot: Some(position(10.0)),
+            name: "Mid rooftop".to_string(),
+            saved_at: Some(123456),
+            color: Some("#abcdef".to_string()),
+        };
+
+        apply_clear_to_entry(&mut entry, SlotBank::Preset(1), 2);
+
+        assert_eq!(entry, empty_entry(SlotBank::Preset(1), 2,),);
+
+        assert_eq!(entry.name, "Slot 3",);
     }
 }
