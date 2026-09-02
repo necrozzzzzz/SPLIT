@@ -1,4 +1,13 @@
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{
+    env,
+    fs,
+    path::PathBuf,
+    sync::Mutex,
+    time::{
+        SystemTime,
+        UNIX_EPOCH,
+    },
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -32,9 +41,20 @@ pub(crate) enum SlotBank {
 pub(crate) struct SlotSaveResult {
     pub bank: SlotBank,
     pub slot: u8,
-    pub before: Option<PositionSnapshot>,
-    pub after: Option<PositionSnapshot>,
-    pub slots: Vec<Option<PositionSnapshot>>,
+
+    /*
+     * L'historique doit maintenant conserver
+     * snapshot + nom + timestamp + couleur.
+     */
+    pub before: SlotEntry,
+    pub after: SlotEntry,
+
+    /*
+     * L'ancien transport snapshots reste inchangé
+     * pour CFG / Load / UI actuelle.
+     */
+    pub slots:
+        Vec<Option<PositionSnapshot>>,
 }
 
 /*
@@ -44,20 +64,45 @@ pub(crate) struct SlotSaveResult {
  * puisse quand même posséder une structure
  * stable et, plus tard, des métadonnées.
  */
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SlotEntry {
-    snapshot: Option<PositionSnapshot>,
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    PartialEq,
+)]
+#[serde(
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) struct SlotEntry {
+    pub(crate) snapshot:
+        Option<PositionSnapshot>,
 
     #[serde(default)]
-    name: String,
+    pub(crate) name: String,
 
     #[serde(default)]
-    saved_at: Option<u64>,
+    pub(crate) saved_at: Option<u64>,
 
     #[serde(default)]
-    color: Option<String>,
+    pub(crate) color:
+        Option<String>,
 }
+
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotMetadata {
+    pub name: String,
+    pub saved_at: Option<u64>,
+    pub color: Option<String>,
+}
+
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +207,84 @@ fn default_slot_name(bank: SlotBank, slot_index: usize) -> String {
     }
 }
 
+fn automatic_saved_name(
+    bank: SlotBank,
+    slot_index: usize,
+) -> String {
+    let number =
+        slot_index + 1;
+
+    match bank {
+        SlotBank::Favorites => {
+            format!(
+                "Favorite Save {number}"
+            )
+        }
+
+        SlotBank::Preset(_) => {
+            format!(
+                "Save {number}"
+            )
+        }
+    }
+}
+
+fn unix_timestamp_now()
+    -> Result<u64, String>
+{
+    SystemTime::now()
+        .duration_since(
+            UNIX_EPOCH,
+        )
+        .map(|duration| {
+            duration.as_secs()
+        })
+        .map_err(|error| {
+            format!(
+                "System clock is before UNIX epoch: {error}"
+            )
+        })
+}
+
+fn apply_save_to_entry(
+    entry: &mut SlotEntry,
+    bank: SlotBank,
+    slot_index: usize,
+    position: PositionSnapshot,
+    saved_at: u64,
+) {
+    /*
+     * SPLIT 1 renommait automatiquement
+     * uniquement les noms encore par défaut.
+     *
+     * Un futur nom personnalisé devra donc
+     * survivre aux Overwrite.
+     */
+    if entry.name
+        == default_slot_name(
+            bank,
+            slot_index,
+        )
+    {
+        entry.name =
+            automatic_saved_name(
+                bank,
+                slot_index,
+            );
+    }
+
+    entry.snapshot =
+        Some(position);
+
+    entry.saved_at =
+        Some(saved_at);
+
+    /*
+     * color n'est volontairement PAS touché.
+     * Un Overwrite conservera donc son tag.
+     */
+}
+
 fn empty_entry(bank: SlotBank, slot_index: usize) -> SlotEntry {
     SlotEntry {
         snapshot: None,
@@ -208,6 +331,26 @@ fn entries_from_snapshots(
 
 fn snapshots_from_entries(entries: &[SlotEntry]) -> Vec<Option<PositionSnapshot>> {
     entries.iter().map(|entry| entry.snapshot.clone()).collect()
+}
+
+fn metadata_from_entries(
+    entries: &[SlotEntry],
+) -> Vec<SlotMetadata> {
+    entries
+        .iter()
+        .map(|entry| {
+            SlotMetadata {
+                name:
+                    entry.name.clone(),
+
+                saved_at:
+                    entry.saved_at,
+
+                color:
+                    entry.color.clone(),
+            }
+        })
+        .collect()
 }
 
 fn default_state() -> SlotsFile {
@@ -470,6 +613,60 @@ pub(crate) fn load_bank(bank: SlotBank) -> Result<Vec<Option<PositionSnapshot>>,
     }
 }
 
+pub(crate) fn load_metadata(
+    bank: SlotBank,
+) -> Result<
+    Vec<SlotMetadata>,
+    String,
+> {
+    let _guard =
+        STORAGE_LOCK
+            .lock()
+            .map_err(|_| {
+                "Slots storage lock poisoned"
+                    .to_string()
+            })?;
+
+    let state =
+        read_state_unlocked()?;
+
+    match bank {
+        SlotBank::Preset(preset)
+            if (1
+                ..=PRESET_COUNT as u8)
+                .contains(
+                    &preset,
+                ) =>
+        {
+            Ok(
+                metadata_from_entries(
+                    &state.presets[
+                        usize::from(
+                            preset - 1,
+                        )
+                    ],
+                ),
+            )
+        }
+
+        SlotBank::Favorites => {
+            Ok(
+                metadata_from_entries(
+                    &state.favorites,
+                ),
+            )
+        }
+
+        SlotBank::Preset(preset) => {
+            Err(
+                format!(
+                    "Invalid preset {preset}"
+                ),
+            )
+        }
+    }
+}
+
 pub fn get_active_preset() -> Result<u8, String> {
     let _guard = STORAGE_LOCK
         .lock()
@@ -504,59 +701,172 @@ pub fn save_slot(
     bank: SlotBank,
     slot: u8,
     position: PositionSnapshot,
-) -> Result<SlotSaveResult, String> {
-    if !(1..=SLOT_COUNT as u8).contains(&slot) {
-        return Err(format!("Invalid slot {slot}"));
+) -> Result<
+    SlotSaveResult,
+    String,
+> {
+    if !(1..=SLOT_COUNT as u8)
+        .contains(&slot)
+    {
+        return Err(
+            format!(
+                "Invalid slot {slot}"
+            ),
+        );
     }
 
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+    let _guard =
+        STORAGE_LOCK
+            .lock()
+            .map_err(|_| {
+                "Slots storage lock poisoned"
+                    .to_string()
+            })?;
 
-    let mut state = read_state_unlocked()?;
+    let mut state =
+        read_state_unlocked()?;
 
-    let slot_index = usize::from(slot - 1);
+    let slot_index =
+        usize::from(
+            slot - 1,
+        );
 
-    let (before, saved_slots) =
-        set_slot_in_state(&mut state, bank, slot_index, Some(position.clone()))?;
+    let saved_at =
+        unix_timestamp_now()?;
 
-    write_state_unlocked(&state)?;
+    let entries =
+        bank_entries_mut(
+            &mut state,
+            bank,
+        )?;
 
-    println!("[SPLIT] Saved position to {:?} slot {}", bank, slot,);
+    let entry = entries
+        .get_mut(slot_index)
+        .ok_or_else(|| {
+            format!(
+                "Invalid slot index {slot_index}"
+            )
+        })?;
 
-    Ok(SlotSaveResult {
+    /*
+     * Snapshot COMPLET avant Save :
+     *
+     * position
+     * nom
+     * timestamp
+     * couleur
+     */
+    let before =
+        entry.clone();
+
+    apply_save_to_entry(
+        entry,
+        bank,
+        slot_index,
+        position,
+        saved_at,
+    );
+
+    let after =
+        entry.clone();
+
+    let saved_slots =
+        snapshots_from_entries(
+            entries,
+        );
+
+    write_state_unlocked(
+        &state,
+    )?;
+
+    println!(
+        "[SPLIT] Saved position to {:?} slot {} at {}",
         bank,
         slot,
-        before,
-        after: Some(position),
-        slots: saved_slots,
-    })
+        saved_at,
+    );
+
+    Ok(
+        SlotSaveResult {
+            bank,
+            slot,
+            before,
+            after,
+            slots: saved_slots,
+        },
+    )
 }
 
 pub(crate) fn restore_slot(
     bank: SlotBank,
     slot: u8,
-    value: Option<PositionSnapshot>,
-) -> Result<Vec<Option<PositionSnapshot>>, String> {
-    if !(1..=SLOT_COUNT as u8).contains(&slot) {
-        return Err(format!("Invalid slot {slot}"));
+    value: SlotEntry,
+) -> Result<
+    Vec<Option<PositionSnapshot>>,
+    String,
+> {
+    if !(1..=SLOT_COUNT as u8)
+        .contains(&slot)
+    {
+        return Err(
+            format!(
+                "Invalid slot {slot}"
+            ),
+        );
     }
 
-    let _guard = STORAGE_LOCK
-        .lock()
-        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+    let _guard =
+        STORAGE_LOCK
+            .lock()
+            .map_err(|_| {
+                "Slots storage lock poisoned"
+                    .to_string()
+            })?;
 
-    let mut state = read_state_unlocked()?;
+    let mut state =
+        read_state_unlocked()?;
 
-    let slot_index = usize::from(slot - 1);
+    let slot_index =
+        usize::from(
+            slot - 1,
+        );
 
-    if let SlotBank::Preset(preset) = bank {
-        state.active_preset = preset;
+    if let SlotBank::Preset(
+        preset,
+    ) = bank
+    {
+        state.active_preset =
+            preset;
     }
 
-    let (_, saved) = set_slot_in_state(&mut state, bank, slot_index, value)?;
+    let entries =
+        bank_entries_mut(
+            &mut state,
+            bank,
+        )?;
 
-    write_state_unlocked(&state)?;
+    let entry = entries
+        .get_mut(slot_index)
+        .ok_or_else(|| {
+            format!(
+                "Invalid slot index {slot_index}"
+            )
+        })?;
+
+    /*
+     * Undo / Redo restaure maintenant
+     * l'entrée ENTIÈRE.
+     */
+    *entry = value;
+
+    let saved =
+        snapshots_from_entries(
+            entries,
+        );
+
+    write_state_unlocked(
+        &state,
+    )?;
 
     Ok(saved)
 }
@@ -810,4 +1120,102 @@ mod tests {
 
         assert_eq!(state.presets[2][1].snapshot, Some(position(2.0),),);
     }
+
+    #[test]
+fn save_metadata_uses_automatic_name_and_timestamp()
+{
+    let mut entry =
+        empty_entry(
+            SlotBank::Preset(1),
+            0,
+        );
+
+    apply_save_to_entry(
+        &mut entry,
+        SlotBank::Preset(1),
+        0,
+        position(10.0),
+        123456,
+    );
+
+    assert_eq!(
+        entry.name,
+        "Save 1",
+    );
+
+    assert_eq!(
+        entry.saved_at,
+        Some(123456),
+    );
+
+    assert_eq!(
+        entry
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .x,
+        10.0,
+    );
+}
+
+#[test]
+fn overwrite_preserves_custom_name_and_color()
+{
+    let mut entry =
+        SlotEntry {
+            snapshot:
+                Some(
+                    position(
+                        1.0,
+                    ),
+                ),
+
+            name:
+                "Mid rooftop"
+                    .to_string(),
+
+            saved_at:
+                Some(100),
+
+            color:
+                Some(
+                    "#abcdef"
+                        .to_string(),
+                ),
+        };
+
+    apply_save_to_entry(
+        &mut entry,
+        SlotBank::Preset(1),
+        0,
+        position(2.0),
+        200,
+    );
+
+    assert_eq!(
+        entry.name,
+        "Mid rooftop",
+    );
+
+    assert_eq!(
+        entry.color.as_deref(),
+        Some("#abcdef"),
+    );
+
+    assert_eq!(
+        entry.saved_at,
+        Some(200),
+    );
+
+    assert_eq!(
+        entry
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .x,
+        2.0,
+    );
+}
+
+
 }

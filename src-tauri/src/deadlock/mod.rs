@@ -9,6 +9,7 @@ mod slots;
 mod watcher;
 pub use history::HistoryState;
 pub use parser::PositionSnapshot;
+pub use slots::SlotMetadata;
 
 pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     hotkeys::foreground_deadlock_window()
@@ -103,6 +104,18 @@ pub fn get_last_position() -> Option<PositionSnapshot> {
 
 pub fn get_slots() -> Result<Vec<Option<PositionSnapshot>>, String> {
     slots::load_bank(current_slot_bank()?)
+}
+
+
+pub fn get_slot_metadata()
+    -> Result<
+        Vec<SlotMetadata>,
+        String,
+    >
+{
+    slots::load_metadata(
+        current_slot_bank()?,
+    )
 }
 
 pub fn get_active_preset() -> Result<u8, String> {
