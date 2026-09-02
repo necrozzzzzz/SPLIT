@@ -1982,6 +1982,90 @@ function App() {
 
   return (
     <main className="shell">
+      {pendingClearPreset && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-preset-title"
+          >
+            <div className="confirmation-content">
+              <span
+                className="confirmation-warning"
+                aria-hidden="true"
+              >
+                !
+              </span>
+
+              <div>
+                <h3
+                  id="clear-preset-title"
+                  className="confirmation-title"
+                >
+                  Clear preset
+                </h3>
+
+                <p className="confirmation-message">
+                  Are you sure you want to clear{" "}
+                  <strong>
+                    &quot;
+                    {pendingClearPreset.name}
+                    &quot;
+                  </strong>
+                  ?
+                </p>
+
+                <p className="confirmation-description">
+                  This will erase all 8 slots
+                  and reset the preset name.
+                </p>
+              </div>
+            </div>
+
+            <label className="confirmation-checkbox">
+              <input
+                type="checkbox"
+                checked={
+                  dontAskClearPresetAgain
+                }
+                onChange={(event) =>
+                  setDontAskClearPresetAgain(
+                    event.target.checked,
+                  )
+                }
+              />
+
+              <span>
+                Don't ask me again
+              </span>
+            </label>
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                onClick={
+                  cancelClearPreset
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                className="preset-button preset-clear-button"
+                type="button"
+                onClick={() =>
+                  void confirmClearPreset()
+                }
+              >
+                Clear preset
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <header className="topbar">
         <div>
           <p className="eyebrow">
