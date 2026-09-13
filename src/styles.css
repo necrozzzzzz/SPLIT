@@ -836,12 +836,108 @@ footer {
   opacity: 0.45;
 }
 
+.hotkey-settings-section,
 .notification-settings-section {
   margin: 28px 0;
   border: 1px solid #202936;
   border-radius: 14px;
   padding: 20px;
   background: rgba(16, 22, 30, 0.9);
+}
+
+.hotkey-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hotkey-settings-heading h2,
+.notification-settings-heading h2 {
+  margin: 5px 0 18px;
+  font-size: 22px;
+}
+
+.hotkey-settings-note {
+  margin: -7px 0 18px;
+  color: #7f8b9a;
+  font-size: 12px;
+}
+
+.hotkey-categories {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.hotkey-category {
+  min-width: 0;
+}
+
+.hotkey-category h3 {
+  margin: 0 0 8px;
+  color: #7f96ff;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+.hotkey-actions-category {
+  grid-column: 1 / -1;
+}
+
+.hotkey-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(120px, auto) 68px;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border-top: 1px solid #222c38;
+  color: #aab4c2;
+  font-size: 12px;
+}
+
+.hotkey-row kbd {
+  overflow: hidden;
+  color: #e0e7f0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotkey-row button {
+  min-height: 28px;
+  border: 1px solid #303b49;
+  border-radius: 7px;
+  color: #aeb9c7;
+  background: #151c25;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.hotkey-row button:hover:not(:disabled),
+.hotkey-row.capturing button {
+  border-color: #617082;
+  color: #fff;
+}
+
+.hotkey-row button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.hotkey-row.capturing kbd {
+  color: #ffd166;
+}
+
+.hotkey-message {
+  margin: 14px 0 0;
+  color: #f0a0ad;
+  font-size: 12px;
 }
 
 .notification-settings-heading h2 {
@@ -902,6 +998,14 @@ footer {
 }
 
 @media (max-width: 720px) {
+  .hotkey-categories {
+    grid-template-columns: 1fr;
+  }
+
+  .hotkey-actions-category {
+    grid-column: auto;
+  }
+
   .notification-settings-grid {
     grid-template-columns: 1fr;
   }

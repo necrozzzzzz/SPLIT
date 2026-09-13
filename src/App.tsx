@@ -14,7 +14,13 @@ import {
 
 import {
   open,
+  save,
 } from "@tauri-apps/plugin-dialog";
+
+import {
+  readTextFile,
+  writeTextFile,
+} from "@tauri-apps/plugin-fs";
 
 type DeadlockStatus = {
   deadlockRunning: boolean;
@@ -73,6 +79,17 @@ type SlotMetadata = {
   color: string | null;
 };
 
+type SlotMetadataExport = SlotMetadata & {
+  snapshot: PositionSnapshot | null;
+};
+
+type PresetExport = {
+  format: "split-preset";
+  version: number;
+  name: string;
+  slots: Array<SlotMetadataExport>;
+};
+
 type SaveFailedPayload = {
   slot: number;
   reason: string;
@@ -116,6 +133,26 @@ type NotificationSettings = {
   durationMs: number;
 };
 
+type Hotkey = {
+  key: string;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+};
+
+type HotkeySettings = {
+  loadSlots: Array<Hotkey>;
+  saveSlots: Array<Hotkey>;
+  undo: Hotkey;
+  redo: Hotkey;
+  cyclePreset: Hotkey;
+  favoriteMode: Hotkey;
+};
+
+type HotkeyTarget =
+  | { group: "loadSlots" | "saveSlots"; index: number }
+  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" };
+
 const SLOT_COLORS = [
   {
     label: "None",
@@ -152,6 +189,51 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   position: "topRight",
   durationMs: 1500,
 };
+
+const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
+  loadSlots: Array.from({ length: 8 }, (_, index) => ({
+    key: `F${index + 1}`,
+    ctrl: false,
+    alt: false,
+    shift: false,
+  })),
+  saveSlots: Array.from({ length: 8 }, (_, index) => ({
+    key: `F${index + 1}`,
+    ctrl: false,
+    alt: true,
+    shift: false,
+  })),
+  undo: { key: "F9", ctrl: false, alt: false, shift: false },
+  redo: { key: "F10", ctrl: false, alt: false, shift: false },
+  cyclePreset: { key: "V", ctrl: false, alt: false, shift: false },
+  favoriteMode: { key: "F11", ctrl: false, alt: false, shift: false },
+};
+
+function formatHotkey(hotkey: Hotkey): string {
+  return [
+    hotkey.ctrl ? "Ctrl" : null,
+    hotkey.alt ? "Alt" : null,
+    hotkey.shift ? "Shift" : null,
+    hotkey.key,
+  ].filter(Boolean).join(" + ");
+}
+
+function capturedKey(event: KeyboardEvent): string | null {
+  if (/^[a-z0-9]$/i.test(event.key)) return event.key.toUpperCase();
+  if (/^F(?:[1-9]|1[0-2])$/i.test(event.key)) return event.key.toUpperCase();
+  const supported: Record<string, string> = {
+    ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft",
+    ArrowRight: "ArrowRight", Home: "Home", End: "End", Insert: "Insert",
+    Delete: "Delete", PageUp: "PageUp", PageDown: "PageDown", " ": "Space",
+    Spacebar: "Space",
+  };
+  return supported[event.key] ?? null;
+}
+
+function isHotkeyTarget(active: HotkeyTarget | null, target: HotkeyTarget): boolean {
+  return active?.group === target.group
+    && (!("index" in target) || ("index" in active && active.index === target.index));
+}
 
 const EMPTY_STATUS: DeadlockStatus = {
   deadlockRunning: false,
@@ -347,6 +429,26 @@ function App() {
   ] = useState(false);
 
   const [
+    exportingPreset,
+    setExportingPreset,
+  ] = useState(false);
+
+  const [
+    importingPreset,
+    setImportingPreset,
+  ] = useState(false);
+
+  const [
+    pendingImportPreset,
+    setPendingImportPreset,
+  ] = useState<{
+    preset: number;
+    currentName: string;
+    importedName: string;
+    imported: unknown;
+  } | null>(null);
+
+  const [
     pendingClearPreset,
     setPendingClearPreset,
   ] = useState<{
@@ -389,6 +491,22 @@ function App() {
   const [
     notificationSettingsSaving,
     setNotificationSettingsSaving,
+  ] = useState(false);
+
+  const [hotkeySettings, setHotkeySettings] =
+    useState<HotkeySettings>(DEFAULT_HOTKEY_SETTINGS);
+  const [hotkeySettingsSaving, setHotkeySettingsSaving] =
+    useState(false);
+  const [capturingHotkey, setCapturingHotkey] =
+    useState<HotkeyTarget | null>(null);
+  const [hotkeyMessage, setHotkeyMessage] =
+    useState<string | null>(null);
+  const [hotkeysRestored, setHotkeysRestored] =
+    useState(false);
+
+  const [
+    clearPresetConfirmationRestored,
+    setClearPresetConfirmationRestored,
   ] = useState(false);
 
   const [
@@ -1376,6 +1494,173 @@ function App() {
           [applySlotEditResult],
         );
 
+      const exportActivePreset =
+        useCallback(
+          async () => {
+            setExportingPreset(true);
+            setError(null);
+
+            try {
+              const exported =
+                await invoke<PresetExport>(
+                  "export_preset",
+                  {
+                    preset:
+                      activePreset,
+                  },
+                );
+              const sanitizedName =
+                exported.name
+                  .replace(
+                    /[<>:"/\\|?*\u0000-\u001f]/g,
+                    "_",
+                  )
+                  .replace(/[. ]+$/g, "");
+              const safeName =
+                /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(
+                  sanitizedName,
+                )
+                  ? `_${sanitizedName}`
+                  : sanitizedName ||
+                    `Preset ${activePreset}`;
+              const filePath =
+                await save({
+                  defaultPath:
+                    `${safeName}.split-preset.json`,
+                  filters: [
+                    {
+                      name: "SPLIT preset",
+                      extensions: ["json"],
+                    },
+                  ],
+                });
+
+              if (filePath === null) {
+                return;
+              }
+
+              await writeTextFile(
+                filePath,
+                `${JSON.stringify(exported, null, 2)}\n`,
+              );
+            } catch (reason) {
+              setError(String(reason));
+            } finally {
+              setExportingPreset(false);
+            }
+          },
+          [activePreset],
+        );
+
+      const selectPresetImport =
+        useCallback(
+          async () => {
+            setImportingPreset(true);
+            setError(null);
+
+            try {
+              const filePath =
+                await open({
+                  multiple: false,
+                  directory: false,
+                  filters: [
+                    {
+                      name: "SPLIT preset",
+                      extensions: [
+                        "split-preset.json",
+                        "json",
+                      ],
+                    },
+                  ],
+                });
+
+              if (
+                filePath === null ||
+                Array.isArray(filePath)
+              ) {
+                return;
+              }
+
+              const imported: unknown =
+                JSON.parse(
+                  await readTextFile(filePath),
+                );
+              const importedName =
+                typeof imported === "object" &&
+                imported !== null &&
+                "name" in imported &&
+                typeof imported.name === "string"
+                  ? imported.name
+                  : "Invalid preset";
+              const currentName =
+                presetNames[
+                  activePreset - 1
+                ] ??
+                `Preset ${activePreset}`;
+
+              setPendingImportPreset({
+                preset: activePreset,
+                currentName,
+                importedName,
+                imported,
+              });
+            } catch (reason) {
+              setError(String(reason));
+            } finally {
+              setImportingPreset(false);
+            }
+          },
+          [activePreset, presetNames],
+        );
+
+      const confirmPresetImport =
+        useCallback(
+          async () => {
+            const target =
+              pendingImportPreset;
+
+            if (!target) {
+              return;
+            }
+
+            setPendingImportPreset(null);
+            setImportingPreset(true);
+            setError(null);
+
+            try {
+              const result =
+                await invoke<SlotEditResult>(
+                  "import_preset",
+                  {
+                    preset: target.preset,
+                    imported: target.imported,
+                  },
+                );
+
+              await applySlotEditResult(result);
+
+              const names =
+                await invoke<Array<string>>(
+                  "get_preset_names",
+                );
+              setPresetNames(names);
+            } catch (reason) {
+              setError(String(reason));
+            } finally {
+              setImportingPreset(false);
+            }
+          },
+          [
+            applySlotEditResult,
+            pendingImportPreset,
+          ],
+        );
+
+      const cancelPresetImport =
+        useCallback(() => {
+          setPendingImportPreset(null);
+        }, []);
+
       const clearActivePreset =
         useCallback(
           async () => {
@@ -1665,6 +1950,109 @@ function App() {
       },
       [notificationSettings],
     );
+
+  useEffect(() => {
+    let disposed = false;
+    invoke<HotkeySettings>("get_hotkey_settings")
+      .then((saved) => {
+        if (!disposed) setHotkeySettings(saved);
+      })
+      .catch((reason) => {
+        if (!disposed) setError(String(reason));
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const saveCapturedHotkey = useCallback(
+    async (target: HotkeyTarget, hotkey: Hotkey) => {
+      const next: HotkeySettings = {
+        ...hotkeySettings,
+        loadSlots: [...hotkeySettings.loadSlots],
+        saveSlots: [...hotkeySettings.saveSlots],
+      };
+      if (target.group === "loadSlots" || target.group === "saveSlots") {
+        next[target.group][target.index] = hotkey;
+      } else {
+        next[target.group] = hotkey;
+      }
+      setHotkeySettingsSaving(true);
+      setHotkeyMessage(null);
+      try {
+        const saved = await invoke<HotkeySettings>("update_hotkey_settings", {
+          settings: next,
+        });
+        setHotkeySettings(saved);
+        setCapturingHotkey(null);
+      } catch (reason) {
+        setHotkeyMessage(String(reason));
+      } finally {
+        setHotkeySettingsSaving(false);
+      }
+    },
+    [hotkeySettings],
+  );
+
+  useEffect(() => {
+    if (!capturingHotkey) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat || hotkeySettingsSaving) return;
+      if (event.key === "Escape") {
+        setCapturingHotkey(null);
+        setHotkeyMessage(null);
+        return;
+      }
+      if (event.metaKey) {
+        setHotkeyMessage("Win/Meta hotkeys are not supported.");
+        return;
+      }
+      if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return;
+      const key = capturedKey(event);
+      if (!key) {
+        setHotkeyMessage(`${event.key} is not a supported hotkey.`);
+        return;
+      }
+      void saveCapturedHotkey(capturingHotkey, {
+        key,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+      });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [capturingHotkey, hotkeySettingsSaving, saveCapturedHotkey]);
+
+  const resetHotkeys = useCallback(async () => {
+    setHotkeySettingsSaving(true);
+    setHotkeyMessage(null);
+    setCapturingHotkey(null);
+    try {
+      const saved = await invoke<HotkeySettings>("reset_hotkey_settings");
+      setHotkeySettings(saved);
+      setHotkeysRestored(true);
+      window.setTimeout(() => setHotkeysRestored(false), 1500);
+    } catch (reason) {
+      setHotkeyMessage(String(reason));
+    } finally {
+      setHotkeySettingsSaving(false);
+    }
+  }, []);
+
+  const restoreClearPresetConfirmation =
+    useCallback(() => {
+      localStorage.removeItem(
+        CLEAR_PRESET_CONFIRMATION_KEY,
+      );
+      setClearPresetConfirmationRestored(true);
+
+      window.setTimeout(() => {
+        setClearPresetConfirmationRestored(false);
+      }, 1500);
+    }, []);
 
   const confirmPath =
     useCallback(
@@ -1982,6 +2370,76 @@ function App() {
 
   return (
     <main className="shell">
+      {pendingImportPreset && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-preset-title"
+          >
+            <div className="confirmation-content">
+              <span
+                className="confirmation-warning"
+                aria-hidden="true"
+              >
+                !
+              </span>
+
+              <div>
+                <h3
+                  id="import-preset-title"
+                  className="confirmation-title"
+                >
+                  Import preset
+                </h3>
+
+                <p className="confirmation-message">
+                  Import{" "}
+                  <strong>
+                    &quot;
+                    {pendingImportPreset.importedName}
+                    &quot;
+                  </strong>{" "}
+                  into{" "}
+                  <strong>
+                    &quot;
+                    {pendingImportPreset.currentName}
+                    &quot;
+                  </strong>
+                  ?
+                </p>
+
+                <p className="confirmation-description">
+                  This will replace all 8 slots
+                  and the current preset name.
+                </p>
+              </div>
+            </div>
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                onClick={cancelPresetImport}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="preset-button preset-clear-button"
+                type="button"
+                onClick={() =>
+                  void confirmPresetImport()
+                }
+              >
+                Import preset
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {pendingClearPreset && (
         <div className="confirmation-backdrop">
           <section
@@ -2216,6 +2674,8 @@ function App() {
             favoriteMode ||
             renamingPreset ||
             clearingPreset ||
+            exportingPreset ||
+            importingPreset ||
             savingSlot !== null ||
             loadingSlot !== null ||
             coloringSlot !== null
@@ -2230,12 +2690,58 @@ function App() {
         </button>
 
         <button
+          className="preset-button"
+          type="button"
+          disabled={
+            favoriteMode ||
+            renamingPreset ||
+            clearingPreset ||
+            exportingPreset ||
+            importingPreset ||
+            savingSlot !== null ||
+            loadingSlot !== null ||
+            coloringSlot !== null
+          }
+          onClick={() =>
+            void exportActivePreset()
+          }
+        >
+          {exportingPreset
+            ? "Exporting…"
+            : "Export preset"}
+        </button>
+
+        <button
+          className="preset-button"
+          type="button"
+          disabled={
+            favoriteMode ||
+            renamingPreset ||
+            clearingPreset ||
+            exportingPreset ||
+            importingPreset ||
+            savingSlot !== null ||
+            loadingSlot !== null ||
+            coloringSlot !== null
+          }
+          onClick={() =>
+            void selectPresetImport()
+          }
+        >
+          {importingPreset
+            ? "Importing…"
+            : "Import preset"}
+        </button>
+
+        <button
           className="preset-button preset-clear-button"
           type="button"
           disabled={
             favoriteMode ||
             renamingPreset ||
             clearingPreset ||
+            exportingPreset ||
+            importingPreset ||
             savingSlot !== null ||
             loadingSlot !== null ||
             coloringSlot !== null
@@ -2455,11 +2961,11 @@ function App() {
 
             <div className="slot-shortcuts">
               <span>
-                Load F{slot}
+                Load {formatHotkey(hotkeySettings.loadSlots[slot - 1])}
               </span>
 
               <span>
-                Save Alt+F{slot}
+                Save {formatHotkey(hotkeySettings.saveSlots[slot - 1])}
               </span>
             </div>
 
@@ -2545,6 +3051,89 @@ function App() {
       </div>
     </section>
 
+      <section className="hotkey-settings-section">
+        <div className="hotkey-settings-heading">
+          <div>
+            <p className="label">HOTKEYS</p>
+            <h2>Keyboard shortcuts</h2>
+          </div>
+          <button
+            className="preset-button"
+            type="button"
+            disabled={hotkeySettingsSaving}
+            onClick={() => void resetHotkeys()}
+          >
+            {hotkeysRestored ? "Restored" : "Reset to defaults"}
+          </button>
+        </div>
+
+        <p className="hotkey-settings-note">
+          Assigned hotkeys are captured by SPLIT while Deadlock is focused.
+        </p>
+
+        <div className="hotkey-categories">
+          {([
+            ["LOAD", "loadSlots", hotkeySettings.loadSlots],
+            ["SAVE", "saveSlots", hotkeySettings.saveSlots],
+          ] as const).map(([label, group, bindings]) => (
+            <div className="hotkey-category" key={group}>
+              <h3>{label}</h3>
+              {bindings.map((hotkey, index) => {
+                const target: HotkeyTarget = { group, index };
+                const capturing = isHotkeyTarget(capturingHotkey, target);
+                return (
+                  <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={`${group}-${index}`}>
+                    <span>{label === "LOAD" ? "Load" : "Save"} Slot {index + 1}</span>
+                    <kbd>{capturing ? "Press a shortcut…" : formatHotkey(hotkey)}</kbd>
+                    <button
+                      type="button"
+                      disabled={hotkeySettingsSaving}
+                      onClick={() => {
+                        setHotkeyMessage(null);
+                        setCapturingHotkey(capturing ? null : target);
+                      }}
+                    >
+                      {capturing ? "Cancel" : "Change"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+
+          <div className="hotkey-category hotkey-actions-category">
+            <h3>ACTIONS</h3>
+            {([
+              ["Undo", "undo", hotkeySettings.undo],
+              ["Redo", "redo", hotkeySettings.redo],
+              ["Cycle Preset", "cyclePreset", hotkeySettings.cyclePreset],
+              ["Favorite Mode", "favoriteMode", hotkeySettings.favoriteMode],
+            ] as const).map(([label, group, hotkey]) => {
+              const target: HotkeyTarget = { group };
+              const capturing = isHotkeyTarget(capturingHotkey, target);
+              return (
+                <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={group}>
+                  <span>{label}</span>
+                  <kbd>{capturing ? "Press a shortcut…" : formatHotkey(hotkey)}</kbd>
+                  <button
+                    type="button"
+                    disabled={hotkeySettingsSaving}
+                    onClick={() => {
+                      setHotkeyMessage(null);
+                      setCapturingHotkey(capturing ? null : target);
+                    }}
+                  >
+                    {capturing ? "Cancel" : "Change"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {hotkeyMessage && <p className="hotkey-message" role="alert">{hotkeyMessage}</p>}
+      </section>
+
       <section className="notification-settings-section">
         <div className="notification-settings-heading">
           <div>
@@ -2619,6 +3208,19 @@ function App() {
               <option value={3000}>3.0 s</option>
             </select>
           </label>
+
+          <div className="notification-setting-row">
+            <span>Clear preset confirmation</span>
+            <button
+              className="notification-toggle"
+              type="button"
+              onClick={restoreClearPresetConfirmation}
+            >
+              {clearPresetConfirmationRestored
+                ? "Restored"
+                : "Restore"}
+            </button>
+          </div>
         </div>
       </section>
 

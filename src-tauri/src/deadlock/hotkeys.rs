@@ -1,8 +1,9 @@
 use std::{
+    collections::HashSet,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU8, Ordering},
-        mpsc, Mutex, OnceLock,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, LazyLock, Mutex, OnceLock, RwLock,
     },
     thread,
     thread::JoinHandle,
@@ -20,20 +21,23 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_F1, VK_F10, VK_F11, VK_F13, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
-                VK_F7, VK_F8, VK_F9, VK_MENU,
+                KEYEVENTF_KEYUP, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_F1, VK_F10, VK_F11,
+                VK_F12, VK_F13, VK_F14, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9,
+                VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT,
+                VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE, VK_UP,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
                 GetWindowThreadProcessId, IsIconic, IsWindowVisible, PostThreadMessageW,
                 SetForegroundWindow, SetWindowsHookExW, ShowWindow, TranslateMessage,
-                UnhookWindowsHookEx, KBDLLHOOKSTRUCT, LLKHF_ALTDOWN, MSG, SW_RESTORE,
-                WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+                UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, SW_RESTORE, WH_KEYBOARD_LL, WM_KEYDOWN,
+                WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
             },
         },
     },
 };
 
+use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use super::watcher;
@@ -42,32 +46,286 @@ use super::watcher;
  * Action envoyée par le hook clavier
  * au worker SPLIT.
  */
-#[derive(Debug, Clone, Copy)]
-enum HotkeyAction {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UserHotkeyAction {
     Save(u8),
     Load(u8),
-    Prime(u8),
     CyclePreset,
     Undo,
     Redo,
     ToggleFavorites,
+}
+
+#[derive(Debug, Clone)]
+enum HotkeyAction {
+    User {
+        action: UserHotkeyAction,
+        hotkey: Hotkey,
+    },
+    Prime(u8),
     Shutdown,
 }
 
 static HOTKEY_SENDER: OnceLock<mpsc::Sender<HotkeyAction>> = OnceLock::new();
 
-/*
- * Empêche l'auto-repeat Windows.
- *
- * Un bit par touche F1-F8.
- */
-static ACTIVE_HOTKEY_KEYS: AtomicU16 = AtomicU16::new(0);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hotkey {
+    pub key: String,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+}
 
-/*
- * Empêche le repeat de V si
- * la touche reste appuyée.
- */
-static ACTIVE_PRESET_KEY: AtomicBool = AtomicBool::new(false);
+impl Hotkey {
+    fn new(key: impl Into<String>, ctrl: bool, alt: bool, shift: bool) -> Self {
+        Self {
+            key: key.into(),
+            ctrl,
+            alt,
+            shift,
+        }
+    }
+
+    fn display(&self) -> String {
+        let mut parts = Vec::new();
+        if self.ctrl {
+            parts.push("Ctrl");
+        }
+        if self.alt {
+            parts.push("Alt");
+        }
+        if self.shift {
+            parts.push("Shift");
+        }
+        parts.push(&self.key);
+        parts.join("+")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeySettings {
+    pub load_slots: [Hotkey; 8],
+    pub save_slots: [Hotkey; 8],
+    pub undo: Hotkey,
+    pub redo: Hotkey,
+    pub cycle_preset: Hotkey,
+    pub favorite_mode: Hotkey,
+}
+
+impl Default for HotkeySettings {
+    fn default() -> Self {
+        Self {
+            load_slots: std::array::from_fn(|index| {
+                Hotkey::new(format!("F{}", index + 1), false, false, false)
+            }),
+            save_slots: std::array::from_fn(|index| {
+                Hotkey::new(format!("F{}", index + 1), false, true, false)
+            }),
+            undo: Hotkey::new("F9", false, false, false),
+            redo: Hotkey::new("F10", false, false, false),
+            cycle_preset: Hotkey::new("V", false, false, false),
+            favorite_mode: Hotkey::new("F11", false, false, false),
+        }
+    }
+}
+
+const LOAD_LABELS: [&str; 8] = [
+    "Load Slot 1",
+    "Load Slot 2",
+    "Load Slot 3",
+    "Load Slot 4",
+    "Load Slot 5",
+    "Load Slot 6",
+    "Load Slot 7",
+    "Load Slot 8",
+];
+const SAVE_LABELS: [&str; 8] = [
+    "Save Slot 1",
+    "Save Slot 2",
+    "Save Slot 3",
+    "Save Slot 4",
+    "Save Slot 5",
+    "Save Slot 6",
+    "Save Slot 7",
+    "Save Slot 8",
+];
+
+impl HotkeySettings {
+    pub fn normalized(mut self) -> Result<Self, String> {
+        for hotkey in self.all_mut() {
+            hotkey.key = normalize_key(&hotkey.key)?;
+        }
+        for hotkey in &self.load_slots {
+            validate_hotkey(hotkey, false)?;
+        }
+        for (index, hotkey) in self.save_slots.iter().enumerate() {
+            // Alt+F4 is the historical Save Slot 4 default. It remains valid
+            // only in that exact default position; new assignments reject it.
+            validate_hotkey(hotkey, index == 3)?;
+        }
+        for hotkey in [
+            &self.undo,
+            &self.redo,
+            &self.cycle_preset,
+            &self.favorite_mode,
+        ] {
+            validate_hotkey(hotkey, false)?;
+        }
+        self.validate_conflicts()?;
+        Ok(self)
+    }
+
+    pub fn validate_update_from(&self, previous: &Self) -> Result<(), String> {
+        let historical = Hotkey::new("F4", false, true, false);
+        if self.save_slots[3] == historical && previous.save_slots[3] != historical {
+            return Err("Alt+F4 is reserved by Windows.".to_string());
+        }
+        Ok(())
+    }
+
+    fn all(&self) -> Vec<(&'static str, &Hotkey)> {
+        let mut bindings = Vec::with_capacity(20);
+        for (index, hotkey) in self.load_slots.iter().enumerate() {
+            bindings.push((LOAD_LABELS[index], hotkey));
+        }
+        for (index, hotkey) in self.save_slots.iter().enumerate() {
+            bindings.push((SAVE_LABELS[index], hotkey));
+        }
+        bindings.extend([
+            ("Undo", &self.undo),
+            ("Redo", &self.redo),
+            ("Cycle Preset", &self.cycle_preset),
+            ("Favorite Mode", &self.favorite_mode),
+        ]);
+        bindings
+    }
+
+    fn all_mut(&mut self) -> Vec<&mut Hotkey> {
+        let mut bindings = Vec::with_capacity(20);
+        bindings.extend(self.load_slots.iter_mut());
+        bindings.extend(self.save_slots.iter_mut());
+        bindings.extend([
+            &mut self.undo,
+            &mut self.redo,
+            &mut self.cycle_preset,
+            &mut self.favorite_mode,
+        ]);
+        bindings
+    }
+
+    fn validate_conflicts(&self) -> Result<(), String> {
+        let bindings = self.all();
+        for (index, (_, hotkey)) in bindings.iter().enumerate() {
+            if let Some((other_label, _)) = bindings[..index]
+                .iter()
+                .find(|(_, other)| *other == *hotkey)
+            {
+                return Err(format!(
+                    "{} is already assigned to {other_label}.",
+                    hotkey.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn action_for(&self, hotkey: &Hotkey) -> Option<UserHotkeyAction> {
+        self.load_slots
+            .iter()
+            .position(|item| item == hotkey)
+            .map(|index| UserHotkeyAction::Load(index as u8 + 1))
+            .or_else(|| {
+                self.save_slots
+                    .iter()
+                    .position(|item| item == hotkey)
+                    .map(|index| UserHotkeyAction::Save(index as u8 + 1))
+            })
+            .or_else(|| (self.undo == *hotkey).then_some(UserHotkeyAction::Undo))
+            .or_else(|| (self.redo == *hotkey).then_some(UserHotkeyAction::Redo))
+            .or_else(|| (self.cycle_preset == *hotkey).then_some(UserHotkeyAction::CyclePreset))
+            .or_else(|| {
+                (self.favorite_mode == *hotkey).then_some(UserHotkeyAction::ToggleFavorites)
+            })
+    }
+}
+
+fn normalize_key(key: &str) -> Result<String, String> {
+    let compact = key.trim().replace([' ', '_', '-'], "").to_ascii_uppercase();
+    let canonical = match compact.as_str() {
+        "ARROWUP" | "UP" => "ArrowUp",
+        "ARROWDOWN" | "DOWN" => "ArrowDown",
+        "ARROWLEFT" | "LEFT" => "ArrowLeft",
+        "ARROWRIGHT" | "RIGHT" => "ArrowRight",
+        "PAGEUP" => "PageUp",
+        "PAGEDOWN" => "PageDown",
+        "HOME" => "Home",
+        "END" => "End",
+        "INSERT" => "Insert",
+        "DELETE" | "DEL" => "Delete",
+        "SPACE" | "SPACEBAR" => "Space",
+        value if value.len() == 1 && value.as_bytes()[0].is_ascii_alphanumeric() => value,
+        value
+            if value
+                .strip_prefix('F')
+                .and_then(|number| number.parse::<u8>().ok())
+                .is_some_and(|number| (1..=12).contains(&number)) =>
+        {
+            value
+        }
+        "CONTROL" | "CTRL" | "ALT" | "SHIFT" => {
+            return Err("A modifier alone cannot be assigned.".to_string())
+        }
+        "META" | "WIN" | "WINDOWS" => return Err("Win/Meta hotkeys are not supported.".to_string()),
+        _ => return Err(format!("{key} is not a supported hotkey.")),
+    };
+    Ok(canonical.to_string())
+}
+
+fn validate_hotkey(hotkey: &Hotkey, allow_historical_alt_f4: bool) -> Result<(), String> {
+    let display = hotkey.display();
+    if (hotkey.alt
+        && !hotkey.ctrl
+        && !hotkey.shift
+        && (matches!(hotkey.key.as_str(), "Tab" | "Escape")
+            || (hotkey.key == "F4" && !allow_historical_alt_f4)))
+        || (hotkey.ctrl && !hotkey.alt && !hotkey.shift && hotkey.key == "Escape")
+        || (hotkey.ctrl && hotkey.alt && hotkey.key == "Delete")
+    {
+        return Err(format!("{display} is reserved by Windows."));
+    }
+    if !hotkey.ctrl
+        && !hotkey.alt
+        && !hotkey.shift
+        && matches!(
+            hotkey.key.as_str(),
+            "H" | "U" | "I" | "O" | "J" | "K" | "L" | "N" | "M"
+        )
+    {
+        return Err(format!("{} is reserved by SPLIT.", hotkey.key));
+    }
+    Ok(())
+}
+
+static HOTKEY_SETTINGS: OnceLock<RwLock<HotkeySettings>> = OnceLock::new();
+
+fn runtime_settings() -> &'static RwLock<HotkeySettings> {
+    HOTKEY_SETTINGS.get_or_init(|| RwLock::new(super::paths::load_hotkey_settings()))
+}
+
+pub fn current_settings() -> HotkeySettings {
+    runtime_settings()
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
+pub fn apply_settings(settings: HotkeySettings) {
+    *runtime_settings()
+        .write()
+        .unwrap_or_else(|error| error.into_inner()) = settings;
+}
 
 /*
  * Signature placée dans dwExtraInfo pour
@@ -127,7 +385,6 @@ pub fn presentation_mask_active() -> bool {
     PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst)
 }
 
-static ACTIVE_HISTORY_KEYS: AtomicU8 = AtomicU8::new(0);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 
 struct HotkeyRuntime {
@@ -172,20 +429,194 @@ pub fn stop() -> Result<(), String> {
     Ok(())
 }
 
-fn slot_from_vk(vk: u32) -> Option<u8> {
-    match vk as u16 {
-        VK_F1 => Some(1),
-        VK_F2 => Some(2),
-        VK_F3 => Some(3),
-        VK_F4 => Some(4),
-        VK_F5 => Some(5),
-        VK_F6 => Some(6),
-        VK_F7 => Some(7),
-        VK_F8 => Some(8),
-
+fn key_to_vk(key: &str) -> Option<u16> {
+    match key {
+        value if value.len() == 1 && value.as_bytes()[0].is_ascii_alphanumeric() => {
+            Some(value.as_bytes()[0] as u16)
+        }
+        "F1" => Some(VK_F1),
+        "F2" => Some(VK_F2),
+        "F3" => Some(VK_F3),
+        "F4" => Some(VK_F4),
+        "F5" => Some(VK_F5),
+        "F6" => Some(VK_F6),
+        "F7" => Some(VK_F7),
+        "F8" => Some(VK_F8),
+        "F9" => Some(VK_F9),
+        "F10" => Some(VK_F10),
+        "F11" => Some(VK_F11),
+        "F12" => Some(VK_F12),
+        "ArrowUp" => Some(VK_UP),
+        "ArrowDown" => Some(VK_DOWN),
+        "ArrowLeft" => Some(VK_LEFT),
+        "ArrowRight" => Some(VK_RIGHT),
+        "Home" => Some(VK_HOME),
+        "End" => Some(VK_END),
+        "Insert" => Some(VK_INSERT),
+        "Delete" => Some(VK_DELETE),
+        "PageUp" => Some(VK_PRIOR),
+        "PageDown" => Some(VK_NEXT),
+        "Space" => Some(VK_SPACE),
         _ => None,
     }
 }
+
+fn vk_to_key(vk: u16) -> Option<String> {
+    if (b'A' as u16..=b'Z' as u16).contains(&vk) || (b'0' as u16..=b'9' as u16).contains(&vk) {
+        return char::from_u32(vk as u32).map(|value| value.to_string());
+    }
+    let key = match vk {
+        VK_F1 => "F1",
+        VK_F2 => "F2",
+        VK_F3 => "F3",
+        VK_F4 => "F4",
+        VK_F5 => "F5",
+        VK_F6 => "F6",
+        VK_F7 => "F7",
+        VK_F8 => "F8",
+        VK_F9 => "F9",
+        VK_F10 => "F10",
+        VK_F11 => "F11",
+        VK_F12 => "F12",
+        VK_UP => "ArrowUp",
+        VK_DOWN => "ArrowDown",
+        VK_LEFT => "ArrowLeft",
+        VK_RIGHT => "ArrowRight",
+        VK_HOME => "Home",
+        VK_END => "End",
+        VK_INSERT => "Insert",
+        VK_DELETE => "Delete",
+        VK_PRIOR => "PageUp",
+        VK_NEXT => "PageDown",
+        VK_SPACE => "Space",
+        _ => return None,
+    };
+    Some(key.to_string())
+}
+
+fn modifier_for_vk(vk: u16) -> Option<Modifier> {
+    match vk {
+        VK_CONTROL | VK_LCONTROL | VK_RCONTROL => Some(Modifier::Ctrl),
+        VK_MENU | VK_LMENU | VK_RMENU => Some(Modifier::Alt),
+        VK_SHIFT | VK_LSHIFT | VK_RSHIFT => Some(Modifier::Shift),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Modifier {
+    Ctrl,
+    Alt,
+    Shift,
+}
+
+#[derive(Debug, Default)]
+struct HookEngine {
+    ctrl_keys: HashSet<u16>,
+    alt_keys: HashSet<u16>,
+    shift_keys: HashSet<u16>,
+    down_keys: HashSet<u16>,
+    consumed_keys: HashSet<u16>,
+    emergency_f10: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum HookDecision {
+    Pass,
+    Consume,
+    Trigger(UserHotkeyAction, Hotkey),
+    EmergencyF10,
+}
+
+impl HookEngine {
+    fn classify(
+        &mut self,
+        vk: u16,
+        key_down: bool,
+        key_up: bool,
+        injected_by_split: bool,
+        deadlock_foreground: bool,
+        presentation_mask_active: bool,
+        settings: &HotkeySettings,
+    ) -> HookDecision {
+        if injected_by_split {
+            return HookDecision::Pass;
+        }
+
+        if let Some(modifier) = modifier_for_vk(vk) {
+            if key_down {
+                self.modifier_keys_mut(modifier).insert(vk);
+            } else if key_up {
+                self.modifier_keys_mut(modifier).remove(&vk);
+            }
+            return HookDecision::Pass;
+        }
+
+        if key_up {
+            self.down_keys.remove(&vk);
+            if vk == VK_F10 && self.emergency_f10 {
+                self.emergency_f10 = false;
+                return HookDecision::Pass;
+            }
+            return if self.consumed_keys.remove(&vk) {
+                HookDecision::Consume
+            } else {
+                HookDecision::Pass
+            };
+        }
+
+        if !key_down {
+            return HookDecision::Pass;
+        }
+
+        let newly_pressed = self.down_keys.insert(vk);
+        if !newly_pressed {
+            if vk == VK_F10 && self.emergency_f10 {
+                return HookDecision::Pass;
+            }
+            return if self.consumed_keys.contains(&vk) {
+                HookDecision::Consume
+            } else {
+                HookDecision::Pass
+            };
+        }
+
+        if vk == VK_F10 && presentation_mask_active {
+            self.emergency_f10 = true;
+            return HookDecision::EmergencyF10;
+        }
+
+        if !deadlock_foreground {
+            return HookDecision::Pass;
+        }
+
+        let Some(key) = vk_to_key(vk) else {
+            return HookDecision::Pass;
+        };
+        let hotkey = Hotkey::new(
+            key,
+            !self.ctrl_keys.is_empty(),
+            !self.alt_keys.is_empty(),
+            !self.shift_keys.is_empty(),
+        );
+        let Some(action) = settings.action_for(&hotkey) else {
+            return HookDecision::Pass;
+        };
+        self.consumed_keys.insert(vk);
+        HookDecision::Trigger(action, hotkey)
+    }
+
+    fn modifier_keys_mut(&mut self, modifier: Modifier) -> &mut HashSet<u16> {
+        match modifier {
+            Modifier::Ctrl => &mut self.ctrl_keys,
+            Modifier::Alt => &mut self.alt_keys,
+            Modifier::Shift => &mut self.shift_keys,
+        }
+    }
+}
+
+static HOOK_ENGINE: LazyLock<Mutex<HookEngine>> =
+    LazyLock::new(|| Mutex::new(HookEngine::default()));
 
 /*
  * Touches internes utilisées par
@@ -222,26 +653,25 @@ fn load_transport_vk(slot: u8) -> Option<u16> {
     }
 }
 
-fn alt_is_down() -> bool {
-    let state = unsafe { GetAsyncKeyState(VK_MENU as i32) };
-
+fn physical_key_is_down(vk: u16) -> bool {
+    let state = unsafe { GetAsyncKeyState(vk as i32) };
     (state as u16 & 0x8000) != 0
 }
 
-fn wait_for_alt_release() -> bool {
-    /*
-     * Pour le Save :
-     * ne pas injecter H pendant
-     * qu'Alt est encore enfoncé.
-     */
+fn wait_for_hotkey_release(hotkey: &Hotkey) -> bool {
+    let Some(main_key) = key_to_vk(&hotkey.key) else {
+        return false;
+    };
     for _ in 0..200 {
-        if !alt_is_down() {
+        let released = !physical_key_is_down(main_key)
+            && !physical_key_is_down(VK_CONTROL)
+            && !physical_key_is_down(VK_MENU)
+            && !physical_key_is_down(VK_SHIFT);
+        if released {
             return true;
         }
-
         thread::sleep(Duration::from_millis(10));
     }
-
     false
 }
 
@@ -440,7 +870,7 @@ fn send_present_resume_key() -> Result<(), String> {
 }
 
 fn send_momentum_reset_key() -> Result<(), String> {
-    send_virtual_key(VK_F9)
+    send_virtual_key(VK_F14)
 }
 
 pub(crate) fn prepare_teleports_after_cfg_update() {
@@ -879,191 +1309,51 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
 
     let key_up = wparam as u32 == WM_KEYUP || wparam as u32 == WM_SYSKEYUP;
 
-    /*
-     * Un input injecté volontairement par SPLIT
-     * doit atteindre Deadlock sans être interprété
-     * une deuxième fois par notre propre hook.
-     */
-    if keyboard.dwExtraInfo == SPLIT_INJECT_TAG {
+    /* Keep this classification before every user-hotkey dispatch. */
+    let injected_by_split = keyboard.dwExtraInfo == SPLIT_INJECT_TAG;
+    if injected_by_split {
         return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
     }
 
-    /*
-     * Touche de secours.
-     *
-     * Normalement F10 = Redo.
-     *
-     * Mais si Deadlock est actuellement bloqué par
-     * r_force_no_present, F10 physique est envoyé
-     * directement au jeu pour exécuter :
-     *
-     *     r_force_no_present 0
-     */
-    if PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst) && keyboard.vkCode as u16 == VK_F10 {
-        if key_down {
+    let should_check_foreground = key_down
+        && modifier_for_vk(keyboard.vkCode as u16).is_none()
+        && vk_to_key(keyboard.vkCode as u16).is_some();
+    let deadlock_foreground = should_check_foreground && is_deadlock_foreground();
+    let settings = runtime_settings()
+        .read()
+        .unwrap_or_else(|error| error.into_inner());
+    let decision = HOOK_ENGINE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .classify(
+            keyboard.vkCode as u16,
+            key_down,
+            key_up,
+            false,
+            deadlock_foreground,
+            PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst),
+            &settings,
+        );
+
+    match decision {
+        HookDecision::Pass => CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam),
+        HookDecision::Consume => 1,
+        HookDecision::EmergencyF10 => {
             PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
-
             println!("[SPLIT] Emergency presentation resume via F10");
+            CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
         }
-
-        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-    }
-
-    /*
-     * V = preset suivant.
-     *
-     * On le traite séparément des
-     * touches F1-F8.
-     */
-    if keyboard.vkCode == b'V' as u32 {
-        /*
-         * Si SPLIT avait intercepté
-         * le keydown, il intercepte
-         * aussi le keyup.
-         */
-        if key_up {
-            let was_active = ACTIVE_PRESET_KEY.swap(false, Ordering::SeqCst);
-
-            if was_active {
-                return 1;
-            }
-
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        if !key_down {
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        /*
-         * Dans Brave, VS Code, etc.,
-         * V reste une touche normale.
-         */
-        if !is_deadlock_foreground() {
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        let was_active = ACTIVE_PRESET_KEY.swap(true, Ordering::SeqCst);
-
-        /*
-         * Ignorer l'auto-repeat.
-         */
-        if !was_active {
+        HookDecision::Trigger(action, hotkey) => {
             if let Some(sender) = HOTKEY_SENDER.get() {
-                let _ = sender.send(HotkeyAction::CyclePreset);
+                let _ = sender.send(HotkeyAction::User { action, hotkey });
             }
-        }
-
-        /*
-         * Deadlock ne reçoit pas
-         * directement le V physique.
-         */
-        return 1;
-    }
-
-    let history_action = match keyboard.vkCode as u16 {
-        VK_F9 => Some((1u8, HotkeyAction::Undo)),
-        VK_F10 => Some((2u8, HotkeyAction::Redo)),
-        VK_F11 => Some((4u8, HotkeyAction::ToggleFavorites)),
-        _ => None,
-    };
-
-    if let Some((bit, action)) = history_action {
-        if key_up {
-            let previous = ACTIVE_HISTORY_KEYS.fetch_and(!bit, Ordering::SeqCst);
-            if previous & bit != 0 {
-                return 1;
-            }
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        if !key_down {
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        if !is_deadlock_foreground() {
-            return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-        }
-
-        let previous = ACTIVE_HISTORY_KEYS.fetch_or(bit, Ordering::SeqCst);
-        if previous & bit == 0 {
-            if let Some(sender) = HOTKEY_SENDER.get() {
-                let _ = sender.send(action);
-            }
-        }
-
-        return 1;
-    }
-
-    /*
-     * À partir d'ici :
-     * uniquement F1-F8.
-     */
-    let Some(slot) = slot_from_vk(keyboard.vkCode) else {
-        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-    };
-
-    let bit = 1u16 << (slot - 1);
-
-    /*
-     * Si SPLIT a intercepté le keydown,
-     * il doit aussi intercepter le keyup.
-     */
-    if key_up {
-        let previous = ACTIVE_HOTKEY_KEYS.fetch_and(!bit, Ordering::SeqCst);
-
-        if previous & bit != 0 {
-            return 1;
-        }
-
-        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-    }
-
-    if !key_down {
-        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-    }
-
-    /*
-     * Ne toucher à F1-F8 QUE
-     * lorsque Deadlock est réellement
-     * la fenêtre au premier plan.
-     */
-    if !is_deadlock_foreground() {
-        return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
-    }
-
-    let previous = ACTIVE_HOTKEY_KEYS.fetch_or(bit, Ordering::SeqCst);
-
-    /*
-     * Ignorer l'auto-repeat.
-     */
-    if previous & bit == 0 {
-        let alt_down = keyboard.flags & LLKHF_ALTDOWN != 0;
-
-        let action = if alt_down {
-            HotkeyAction::Save(slot)
-        } else {
-            HotkeyAction::Load(slot)
-        };
-
-        if let Some(sender) = HOTKEY_SENDER.get() {
-            let _ = sender.send(action);
+            1
         }
     }
-
-    /*
-     * Deadlock ne reçoit jamais directement
-     * le F1-F8 physique.
-     *
-     * SPLIT décide ensuite quoi envoyer :
-     *
-     * F1      -> U
-     * Alt+F1  -> H
-     */
-    1
 }
 
 fn start_inner(app: AppHandle) -> Result<(), String> {
+    let _ = runtime_settings();
     let (tx, rx) = mpsc::channel::<HotkeyAction>();
 
     HOTKEY_SENDER
@@ -1080,6 +1370,22 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
         .name("split-hotkey-worker".to_string())
         .spawn(move || {
             for action in rx {
+                if let HotkeyAction::User { hotkey, .. } = &action {
+                    if !wait_for_hotkey_release(hotkey) {
+                        eprintln!(
+                            "[SPLIT] {} cancelled: physical shortcut was held too long",
+                            hotkey.display()
+                        );
+                        continue;
+                    }
+                    if !is_deadlock_foreground() {
+                        println!(
+                            "[SPLIT] {} cancelled: Deadlock lost focus",
+                            hotkey.display()
+                        );
+                        continue;
+                    }
+                }
                 match action {
                     /*
                      * ALT + F1-F8
@@ -1087,14 +1393,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                      * Capture la position,
                      * puis watcher.rs la sauvegarde.
                      */
-                    HotkeyAction::Save(slot) => {
-                        println!("[SPLIT] Save hotkey: Alt+F{slot}");
-
-                        if !wait_for_alt_release() {
-                            eprintln!("[SPLIT] Save {slot} cancelled: Alt was held too long");
-
-                            continue;
-                        }
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::Save(slot),
+                        hotkey,
+                    } => {
+                        println!("[SPLIT] Save hotkey: {}", hotkey.display());
 
                         /*
                          * Important :
@@ -1141,8 +1444,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                      * F2 -> I
                      * etc.
                      */
-                    HotkeyAction::Load(slot) => {
-                        println!("[SPLIT] Load hotkey: F{slot}");
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::Load(slot),
+                        hotkey,
+                    } => {
+                        println!("[SPLIT] Load hotkey: {}", hotkey.display());
 
                         if !is_deadlock_foreground() {
                             println!("[SPLIT] Load {slot} cancelled: Deadlock lost focus");
@@ -1191,8 +1497,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         }
                     }
 
-                    HotkeyAction::CyclePreset => {
-                        println!("[SPLIT] Preset hotkey: V");
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::CyclePreset,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT] Preset hotkey: {}", hotkey.display());
 
                         match super::cycle_active_preset() {
                             Ok(Some((preset, saved_slots))) => {
@@ -1229,8 +1538,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         }
                     }
 
-                    HotkeyAction::Undo => {
-                        println!("[SPLIT] Undo hotkey: F9");
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::Undo,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT] Undo hotkey: {}", hotkey.display());
 
                         match super::undo_last_action() {
                             Ok(result) => {
@@ -1245,8 +1557,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         }
                     }
 
-                    HotkeyAction::Redo => {
-                        println!("[SPLIT] Redo hotkey: F10");
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::Redo,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT] Redo hotkey: {}", hotkey.display());
 
                         match super::redo_last_action() {
                             Ok(result) => {
@@ -1261,8 +1576,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         }
                     }
 
-                    HotkeyAction::ToggleFavorites => {
-                        println!("[SPLIT] Favorite Mode hotkey: F11");
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::ToggleFavorites,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT] Favorite Mode hotkey: {}", hotkey.display());
 
                         match super::toggle_favorite_mode() {
                             Ok(result) => {
@@ -1359,5 +1677,190 @@ pub fn start(app: AppHandle) -> Result<(), String> {
 
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn classify_down(engine: &mut HookEngine, vk: u16, settings: &HotkeySettings) -> HookDecision {
+        engine.classify(vk, true, false, false, true, false, settings)
+    }
+
+    #[test]
+    fn defaults_are_exact_and_match_load_save_actions() {
+        let settings = HotkeySettings::default();
+        for index in 0..8 {
+            assert_eq!(
+                settings.load_slots[index],
+                Hotkey::new(format!("F{}", index + 1), false, false, false)
+            );
+            assert_eq!(
+                settings.save_slots[index],
+                Hotkey::new(format!("F{}", index + 1), false, true, false)
+            );
+        }
+        assert_eq!(settings.undo, Hotkey::new("F9", false, false, false));
+        assert_eq!(settings.redo, Hotkey::new("F10", false, false, false));
+        assert_eq!(settings.cycle_preset, Hotkey::new("V", false, false, false));
+        assert_eq!(
+            settings.favorite_mode,
+            Hotkey::new("F11", false, false, false)
+        );
+
+        let mut load = HookEngine::default();
+        assert!(matches!(
+            classify_down(&mut load, VK_F1, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Load(1), _)
+        ));
+
+        let mut save = HookEngine::default();
+        assert_eq!(
+            classify_down(&mut save, VK_LMENU, &settings),
+            HookDecision::Pass
+        );
+        assert!(matches!(
+            classify_down(&mut save, VK_F1, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Save(1), _)
+        ));
+    }
+
+    #[test]
+    fn matching_requires_the_exact_modifiers() {
+        let settings = HotkeySettings::default();
+        let mut alt = HookEngine::default();
+        classify_down(&mut alt, VK_LMENU, &settings);
+        assert!(!matches!(
+            classify_down(&mut alt, VK_F1, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Load(1), _)
+        ));
+
+        let mut ctrl = HookEngine::default();
+        classify_down(&mut ctrl, VK_LCONTROL, &settings);
+        assert_eq!(
+            classify_down(&mut ctrl, VK_F1, &settings),
+            HookDecision::Pass
+        );
+    }
+
+    #[test]
+    fn hotkeys_pass_through_outside_deadlock() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+        assert_eq!(
+            engine.classify(VK_F1, true, false, false, false, false, &settings),
+            HookDecision::Pass
+        );
+        assert_eq!(
+            engine.classify(VK_F1, false, true, false, false, false, &settings),
+            HookDecision::Pass
+        );
+    }
+
+    #[test]
+    fn duplicate_bindings_are_rejected() {
+        let mut settings = HotkeySettings::default();
+        settings.undo = Hotkey::new("Z", true, false, false);
+        settings.favorite_mode = Hotkey::new("Z", true, false, false);
+        assert_eq!(
+            settings.normalized().unwrap_err(),
+            "Ctrl+Z is already assigned to Undo."
+        );
+    }
+
+    #[test]
+    fn consumed_keyup_is_tied_to_its_keydown_after_modifier_release() {
+        let mut settings = HotkeySettings::default();
+        settings.undo = Hotkey::new("Z", true, false, false);
+        let settings = settings.normalized().unwrap();
+        let mut engine = HookEngine::default();
+        classify_down(&mut engine, VK_LCONTROL, &settings);
+        assert!(matches!(
+            classify_down(&mut engine, b'Z' as u16, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Undo, _)
+        ));
+        assert_eq!(
+            engine.classify(VK_LCONTROL, false, true, false, true, false, &settings),
+            HookDecision::Pass
+        );
+        assert_eq!(
+            engine.classify(b'Z' as u16, false, true, false, true, false, &settings),
+            HookDecision::Consume
+        );
+    }
+
+    #[test]
+    fn function_keys_f9_through_f12_are_accepted() {
+        for key in ["F9", "F10", "F11", "F12"] {
+            assert!(validate_hotkey(&Hotkey::new(key, false, false, false), false).is_ok());
+            assert!(key_to_vk(key).is_some());
+        }
+    }
+
+    #[test]
+    fn historical_alt_f4_default_is_preserved_but_cannot_be_newly_assigned() {
+        let defaults = HotkeySettings::default().normalized().unwrap();
+        let mut previous = defaults.clone();
+        previous.save_slots[3] = Hotkey::new("Z", false, true, false);
+        assert!(defaults.validate_update_from(&previous).is_err());
+    }
+
+    #[test]
+    fn internal_unmodified_keys_are_reserved_but_modified_h_is_valid() {
+        for key in ["H", "U"] {
+            assert!(validate_hotkey(&Hotkey::new(key, false, false, false), false).is_err());
+        }
+        assert!(validate_hotkey(&Hotkey::new("H", true, false, false), false).is_ok());
+    }
+
+    #[test]
+    fn modifiers_meta_and_internal_function_keys_are_rejected() {
+        assert!(normalize_key("Control").is_err());
+        assert!(normalize_key("Alt").is_err());
+        assert!(normalize_key("Shift").is_err());
+        assert!(normalize_key("Meta").is_err());
+        assert!(normalize_key("F13").is_err());
+        assert!(normalize_key("F14").is_err());
+    }
+
+    #[test]
+    fn consumed_f10_cannot_turn_into_emergency_until_released() {
+        let mut settings = HotkeySettings::default();
+        settings.load_slots[0] = Hotkey::new("F10", false, false, false);
+        settings.redo = Hotkey::new("Z", true, false, false);
+        let settings = settings.normalized().unwrap();
+        let mut engine = HookEngine::default();
+
+        assert!(matches!(
+            engine.classify(VK_F10, true, false, false, true, false, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Load(1), _)
+        ));
+        assert_eq!(
+            engine.classify(VK_F10, true, false, false, true, true, &settings),
+            HookDecision::Consume
+        );
+        assert_eq!(
+            engine.classify(VK_F10, false, true, false, true, true, &settings),
+            HookDecision::Consume
+        );
+        assert_eq!(
+            engine.classify(VK_F10, true, false, false, true, true, &settings),
+            HookDecision::EmergencyF10
+        );
+        assert_eq!(
+            engine.classify(VK_F10, false, true, false, true, true, &settings),
+            HookDecision::Pass
+        );
+    }
+
+    #[test]
+    fn split_injected_input_never_dispatches() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+        assert_eq!(
+            engine.classify(VK_F9, true, false, true, true, false, &settings),
+            HookDecision::Pass
+        );
     }
 }

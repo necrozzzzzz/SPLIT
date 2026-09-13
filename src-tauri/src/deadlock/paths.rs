@@ -6,6 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use super::hotkeys::HotkeySettings;
 use super::process::running_deadlock_root;
 use crate::notifications::NotificationSettings;
 use crate::storage::atomic_write;
@@ -41,6 +42,8 @@ struct SplitConfig {
     deadlock_path: String,
     #[serde(deserialize_with = "deserialize_notification_settings")]
     notifications: NotificationSettings,
+    #[serde(deserialize_with = "deserialize_hotkey_settings")]
+    hotkeys: HotkeySettings,
 }
 
 impl Default for SplitConfig {
@@ -48,8 +51,20 @@ impl Default for SplitConfig {
         Self {
             deadlock_path: String::new(),
             notifications: NotificationSettings::default(),
+            hotkeys: HotkeySettings::default(),
         }
     }
+}
+
+fn deserialize_hotkey_settings<'de, D>(deserializer: D) -> Result<HotkeySettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value)
+        .ok()
+        .and_then(|settings: HotkeySettings| settings.normalized().ok())
+        .unwrap_or_default())
 }
 
 fn deserialize_notification_settings<'de, D>(
@@ -178,6 +193,38 @@ pub fn save_notification_settings(
         .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
         .unwrap_or_default();
     config.notifications = settings.clone();
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
+    atomic_write(&path, json)
+        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+    Ok(settings)
+}
+
+pub fn load_hotkey_settings() -> HotkeySettings {
+    let Ok(_guard) = CONFIG_LOCK.lock() else {
+        return HotkeySettings::default();
+    };
+    let Ok(path) = config_path() else {
+        return HotkeySettings::default();
+    };
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .and_then(|config| config.hotkeys.normalized().ok())
+        .unwrap_or_default()
+}
+
+pub fn save_hotkey_settings(settings: HotkeySettings) -> Result<HotkeySettings, String> {
+    let settings = settings.normalized()?;
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let path = config_path()?;
+    let mut config = fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .unwrap_or_default();
+    config.hotkeys = settings.clone();
     let json = serde_json::to_string_pretty(&config)
         .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
     atomic_write(&path, json)
@@ -329,6 +376,7 @@ mod tests {
 
         assert_eq!(config.deadlock_path, r"C:\Deadlock");
         assert_eq!(config.notifications, NotificationSettings::default());
+        assert_eq!(config.hotkeys, HotkeySettings::default());
     }
 
     #[test]
@@ -350,5 +398,22 @@ mod tests {
             NotificationPosition::TopRight
         );
         assert_eq!(config.notifications.duration_ms, 1_500);
+    }
+
+    #[test]
+    fn invalid_hotkeys_fall_back_to_defaults() {
+        let config: SplitConfig = serde_json::from_str(
+            r#"{
+                "deadlockPath": "C:\\Deadlock",
+                "hotkeys": {
+                    "loadSlots": [],
+                    "saveSlots": [],
+                    "undo": { "key": "F13", "ctrl": false, "alt": false, "shift": false }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.hotkeys, HotkeySettings::default());
     }
 }

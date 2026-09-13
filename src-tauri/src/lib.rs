@@ -53,6 +53,19 @@ fn get_preset_names() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+fn export_preset(preset: u8) -> Result<deadlock::PresetExport, String> {
+    deadlock::export_preset(preset)
+}
+
+#[tauri::command]
+fn import_preset(
+    preset: u8,
+    imported: deadlock::PresetExport,
+) -> Result<deadlock::SlotEditResult, String> {
+    deadlock::import_preset(preset, imported)
+}
+
+#[tauri::command]
 fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
     deadlock::rename_preset(preset, name)
 }
@@ -82,6 +95,23 @@ fn update_notification_settings(
     settings: notifications::NotificationSettings,
 ) -> Result<notifications::NotificationSettings, String> {
     deadlock::update_notification_settings(settings)
+}
+
+#[tauri::command]
+fn get_hotkey_settings() -> deadlock::HotkeySettings {
+    deadlock::get_hotkey_settings()
+}
+
+#[tauri::command]
+fn update_hotkey_settings(
+    settings: deadlock::HotkeySettings,
+) -> Result<deadlock::HotkeySettings, String> {
+    deadlock::update_hotkey_settings(settings)
+}
+
+#[tauri::command]
+fn reset_hotkey_settings() -> Result<deadlock::HotkeySettings, String> {
+    deadlock::reset_hotkey_settings()
 }
 
 #[tauri::command]
@@ -181,6 +211,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             /*
              * Le tray est léger et nécessaire
@@ -286,10 +317,15 @@ pub fn run() {
             get_history_state,
             get_favorite_mode,
             get_preset_names,
+            export_preset,
+            import_preset,
             rename_preset,
             clear_preset,
             get_notification_settings,
             update_notification_settings,
+            get_hotkey_settings,
+            update_hotkey_settings,
+            reset_hotkey_settings,
             toggle_favorite_mode,
             undo_last_action,
             redo_last_action,

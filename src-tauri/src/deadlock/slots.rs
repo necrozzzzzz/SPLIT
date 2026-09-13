@@ -72,6 +72,24 @@ pub struct SlotMetadata {
     pub color: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotMetadataExport {
+    pub snapshot: Option<PositionSnapshot>,
+    pub name: String,
+    pub saved_at: Option<u64>,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetExport {
+    pub format: String,
+    pub version: u32,
+    pub name: String,
+    pub slots: Vec<SlotMetadataExport>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SlotsFile {
@@ -509,7 +527,7 @@ fn write_state_unlocked(state: &SlotsFile) -> Result<(), String> {
     Ok(())
 }
 
-fn read_state_unlocked() -> Result<SlotsFile, String> {
+fn read_state_unlocked_with_migration(persist_migration: bool) -> Result<SlotsFile, String> {
     let path = slots_file_path()?;
 
     if !path.is_file() {
@@ -603,13 +621,172 @@ fn read_state_unlocked() -> Result<SlotsFile, String> {
      * On ne dépend donc pas d'un futur
      * Save pour convertir le fichier.
      */
-    if needs_rewrite {
+    if needs_rewrite && persist_migration {
         write_state_unlocked(&state)?;
 
         println!("[SPLIT] slots.json migration complete -> v{SLOT_FILE_VERSION}");
     }
 
     Ok(state)
+}
+
+fn read_state_unlocked() -> Result<SlotsFile, String> {
+    read_state_unlocked_with_migration(true)
+}
+
+fn export_preset_from_state(state: &SlotsFile, preset: u8) -> Result<PresetExport, String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    let index = usize::from(preset - 1);
+    let name = state
+        .preset_names
+        .get(index)
+        .ok_or_else(|| format!("Invalid preset index {index}"))?
+        .clone();
+    let slots = state
+        .presets
+        .get(index)
+        .ok_or_else(|| format!("Invalid preset index {index}"))?
+        .iter()
+        .map(|entry| SlotMetadataExport {
+            snapshot: entry.snapshot.clone(),
+            name: entry.name.clone(),
+            saved_at: entry.saved_at,
+            color: entry.color.clone(),
+        })
+        .collect();
+
+    Ok(PresetExport {
+        format: "split-preset".to_string(),
+        version: 1,
+        name,
+        slots,
+    })
+}
+
+pub fn export_preset(preset: u8) -> Result<PresetExport, String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+    let state = read_state_unlocked_with_migration(false)?;
+
+    export_preset_from_state(&state, preset)
+}
+
+fn validate_preset_import(
+    preset: u8,
+    imported: PresetExport,
+) -> Result<(String, Vec<SlotEntry>), String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+    if imported.format != "split-preset" {
+        return Err("Invalid preset format: expected split-preset".to_string());
+    }
+    if imported.version != 1 {
+        return Err(format!(
+            "Unsupported preset version: expected 1, got {}",
+            imported.version
+        ));
+    }
+    if imported.name.trim().is_empty() {
+        return Err("Preset name cannot be empty".to_string());
+    }
+    if imported.slots.len() != SLOT_COUNT {
+        return Err(format!(
+            "Invalid slot count: expected {SLOT_COUNT}, got {}",
+            imported.slots.len()
+        ));
+    }
+
+    let mut entries = Vec::with_capacity(SLOT_COUNT);
+
+    for (index, slot) in imported.slots.into_iter().enumerate() {
+        if slot.name.trim().is_empty() {
+            return Err(format!("Slot {} name cannot be empty", index + 1));
+        }
+
+        if let Some(snapshot) = &slot.snapshot {
+            let values = [
+                snapshot.x,
+                snapshot.y,
+                snapshot.z,
+                snapshot.pitch,
+                snapshot.yaw,
+                snapshot.roll,
+            ];
+            if values.iter().any(|value| !value.is_finite()) {
+                return Err(format!(
+                    "Slot {} snapshot contains a non-finite value",
+                    index + 1
+                ));
+            }
+            if let Some(camera) = snapshot.camera {
+                let camera_values = [camera.pitch, camera.yaw, camera.roll];
+                if camera_values.iter().any(|value| !value.is_finite()) {
+                    return Err(format!(
+                        "Slot {} camera contains a non-finite value",
+                        index + 1
+                    ));
+                }
+            }
+        }
+
+        let color = match slot.color {
+            None => None,
+            Some(color) => {
+                let normalized = color.trim().to_ascii_lowercase();
+                match normalized.as_str() {
+                    "#4fd1c5" | "#ffd166" | "#d98c8c" | "#9b8cff" | "#62ff8f" => Some(normalized),
+                    _ => {
+                        return Err(format!(
+                            "Unsupported slot color in slot {}: {color}",
+                            index + 1
+                        ));
+                    }
+                }
+            }
+        };
+
+        entries.push(SlotEntry {
+            snapshot: slot.snapshot,
+            name: slot.name,
+            saved_at: slot.saved_at,
+            color,
+        });
+    }
+
+    Ok((imported.name, entries))
+}
+
+fn apply_preset_import(state: &mut SlotsFile, preset: u8, name: String, entries: Vec<SlotEntry>) {
+    let index = usize::from(preset - 1);
+    state.preset_names[index] = name;
+    state.presets[index] = entries;
+}
+
+pub fn import_preset(
+    preset: u8,
+    imported: PresetExport,
+) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    let (name, entries) = validate_preset_import(preset, imported)?;
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+    let mut state = read_state_unlocked()?;
+
+    apply_preset_import(&mut state, preset, name, entries);
+    let saved = snapshots_from_entries(&state.presets[usize::from(preset - 1)]);
+    write_state_unlocked(&state)?;
+
+    Ok(saved)
 }
 
 pub(crate) fn load_bank(bank: SlotBank) -> Result<Vec<Option<PositionSnapshot>>, String> {
@@ -993,6 +1170,25 @@ mod tests {
             roll: value,
             camera: None,
         }
+    }
+
+    fn valid_preset_import() -> PresetExport {
+        let mut state = default_state();
+        let mut snapshot = position(42.0);
+        snapshot.camera = Some(crate::deadlock::camera::CameraSnapshot {
+            pitch: 10.0,
+            yaw: 20.0,
+            roll: 30.0,
+        });
+        state.preset_names[1] = "Movement".to_string();
+        state.presets[1][3] = SlotEntry {
+            snapshot: Some(snapshot),
+            name: "Rooftop".to_string(),
+            saved_at: Some(123456),
+            color: Some("#9b8cff".to_string()),
+        };
+
+        export_preset_from_state(&state, 2).unwrap()
     }
 
     #[test]
@@ -1447,5 +1643,132 @@ mod tests {
         }));
 
         assert_eq!(state.presets[1][0].name, "Slot 1",);
+    }
+
+    #[test]
+    fn preset_export_contains_only_selected_preset_with_complete_slots() {
+        let mut state = default_state();
+
+        state.preset_names[1] = "Movement".to_string();
+        let mut snapshot = position(42.0);
+        snapshot.camera = Some(crate::deadlock::camera::CameraSnapshot {
+            pitch: 10.0,
+            yaw: 20.0,
+            roll: 30.0,
+        });
+        state.presets[1][3] = SlotEntry {
+            snapshot: Some(snapshot.clone()),
+            name: "Rooftop".to_string(),
+            saved_at: Some(123456),
+            color: Some("#9b8cff".to_string()),
+        };
+        state.presets[0][0].name = "Other preset marker".to_string();
+        state.favorites[0].name = "Favorite marker".to_string();
+
+        let exported = export_preset_from_state(&state, 2).unwrap();
+        let json = serde_json::to_string(&exported).unwrap();
+
+        assert_eq!(exported.format, "split-preset");
+        assert_eq!(exported.version, 1);
+        assert_eq!(exported.name, "Movement");
+        assert_eq!(exported.slots.len(), SLOT_COUNT);
+        assert_eq!(exported.slots[3].snapshot, Some(snapshot));
+        assert_eq!(exported.slots[3].name, "Rooftop");
+        assert_eq!(exported.slots[3].saved_at, Some(123456));
+        assert_eq!(exported.slots[3].color.as_deref(), Some("#9b8cff"));
+        assert!(!json.contains("Other preset marker"));
+        assert!(!json.contains("Favorite marker"));
+    }
+
+    #[test]
+    fn valid_import_replaces_only_selected_preset() {
+        let mut state = default_state();
+        state.presets[0][0].snapshot = Some(position(1.0));
+        state.presets[2][0].snapshot = Some(position(3.0));
+        state.favorites[0].snapshot = Some(position(4.0));
+        let preset_one_before = state.presets[0].clone();
+        let preset_three_before = state.presets[2].clone();
+        let preset_four_before = state.presets[3].clone();
+        let favorites_before = state.favorites.clone();
+
+        let (name, entries) = validate_preset_import(2, valid_preset_import()).unwrap();
+        apply_preset_import(&mut state, 2, name, entries);
+
+        assert_eq!(state.preset_names[1], "Movement");
+        assert_eq!(state.presets[1].len(), SLOT_COUNT);
+        assert_eq!(
+            state.presets[1][3].snapshot,
+            valid_preset_import().slots[3].snapshot
+        );
+        assert_eq!(state.presets[1][3].name, "Rooftop");
+        assert_eq!(state.presets[1][3].saved_at, Some(123456));
+        assert_eq!(state.presets[1][3].color.as_deref(), Some("#9b8cff"));
+        assert_eq!(state.presets[0], preset_one_before);
+        assert_eq!(state.presets[2], preset_three_before);
+        assert_eq!(state.presets[3], preset_four_before);
+        assert_eq!(state.favorites, favorites_before);
+    }
+
+    #[test]
+    fn import_rejects_wrong_format() {
+        let mut imported = valid_preset_import();
+        imported.format = "other-format".to_string();
+        assert!(validate_preset_import(2, imported).is_err());
+    }
+
+    #[test]
+    fn import_rejects_invalid_target_preset() {
+        assert!(validate_preset_import(0, valid_preset_import()).is_err());
+        assert!(validate_preset_import(5, valid_preset_import()).is_err());
+    }
+
+    #[test]
+    fn import_rejects_wrong_version() {
+        let mut imported = valid_preset_import();
+        imported.version = 2;
+        assert!(validate_preset_import(2, imported).is_err());
+    }
+
+    #[test]
+    fn import_rejects_wrong_slot_count() {
+        let mut imported = valid_preset_import();
+        imported.slots.pop();
+        assert!(validate_preset_import(2, imported).is_err());
+    }
+
+    #[test]
+    fn import_rejects_invalid_color() {
+        let mut imported = valid_preset_import();
+        imported.slots[3].color = Some("#123456".to_string());
+        assert!(validate_preset_import(2, imported).is_err());
+    }
+
+    #[test]
+    fn import_rejects_empty_preset_or_slot_name() {
+        let mut imported = valid_preset_import();
+        imported.name = "   ".to_string();
+        assert!(validate_preset_import(2, imported).is_err());
+
+        let mut imported = valid_preset_import();
+        imported.slots[0].name = "".to_string();
+        assert!(validate_preset_import(2, imported).is_err());
+    }
+
+    #[test]
+    fn import_rejects_non_finite_snapshot_or_camera_values() {
+        let mut imported = valid_preset_import();
+        imported.slots[3].snapshot.as_mut().unwrap().x = f64::NAN;
+        assert!(validate_preset_import(2, imported).is_err());
+
+        let mut imported = valid_preset_import();
+        imported.slots[3]
+            .snapshot
+            .as_mut()
+            .unwrap()
+            .camera
+            .as_mut()
+            .unwrap()
+            .yaw = f32::INFINITY;
+        assert!(validate_preset_import(2, imported).is_err());
     }
 }

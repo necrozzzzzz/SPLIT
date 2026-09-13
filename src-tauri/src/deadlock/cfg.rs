@@ -13,6 +13,11 @@ use crate::storage::atomic_write;
 
 const LOAD_TRANSPORT_KEYS: [&str; 8] = ["u", "i", "o", "j", "k", "l", "n", "m"];
 
+pub(crate) const PREPARE_BIND: &str = "bind \"F13\" \"exec savestate_prepare\"";
+pub(crate) const PRESENTATION_RESUME_BIND: &str = "bind \"F10\" \"r_force_no_present 0\"";
+pub(crate) const MOMENTUM_RESET_BIND: &str = "bind \"F14\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"";
+pub(crate) const LEGACY_MOMENTUM_RESET_BIND: &str = "bind \"F9\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"";
+
 static TELEPORT_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 static TELEPORTS_DIRTY: AtomicBool = AtomicBool::new(false);
@@ -78,6 +83,9 @@ pub fn write_savestate_cfg(
      * F13 est une touche virtuelle interne utilisée
      * uniquement pour préparer les point_teleport.
      *
+     * F14 injecté par SPLIT réinitialise le momentum
+     * après un vrai Load.
+     *
      * F10 injecté par SPLIT réactive la présentation
      * après le masque d'un Load.
      *
@@ -88,7 +96,7 @@ pub fn write_savestate_cfg(
     output.push_str(
         "bind \"F13\" \"exec savestate_prepare\"\n\
         bind \"F10\" \"r_force_no_present 0\"\n\
-        bind \"F9\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"\n\n",
+        bind \"F14\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"\n\n",
     );
 
     for index in 0..8 {
@@ -217,4 +225,34 @@ pub fn ensure_autoexec(autoexec: &Path) -> Result<(), String> {
     println!("[SPLIT] autoexec.cfg configured");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_cfg_uses_f14_only_for_momentum_transport() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "split-cfg-momentum-test-{}-{unique}",
+            std::process::id()
+        ));
+        let cfg_file = directory.join("savestate.cfg");
+
+        let empty_slots: [Option<PositionSnapshot>; 8] = std::array::from_fn(|_| None);
+        write_savestate_cfg(&cfg_file, &empty_slots).unwrap();
+        let content = fs::read_to_string(&cfg_file).unwrap();
+
+        assert!(content.contains(MOMENTUM_RESET_BIND));
+        assert!(!content.contains(LEGACY_MOMENTUM_RESET_BIND));
+        assert!(!content.contains("bind \"F9\""));
+        assert!(content.contains(PREPARE_BIND));
+        assert!(content.contains(PRESENTATION_RESUME_BIND));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

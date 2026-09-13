@@ -8,8 +8,9 @@ mod process;
 mod slots;
 mod watcher;
 pub use history::HistoryState;
+pub use hotkeys::HotkeySettings;
 pub use parser::PositionSnapshot;
-pub use slots::SlotMetadata;
+pub use slots::{PresetExport, SlotMetadata};
 
 pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     hotkeys::foreground_deadlock_window()
@@ -123,6 +124,10 @@ pub fn get_preset_names() -> Result<Vec<String>, String> {
     slots::get_preset_names()
 }
 
+pub fn export_preset(preset: u8) -> Result<PresetExport, String> {
+    slots::export_preset(preset)
+}
+
 pub fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()
@@ -177,6 +182,24 @@ pub fn update_notification_settings(
     Ok(saved)
 }
 
+pub fn get_hotkey_settings() -> HotkeySettings {
+    hotkeys::current_settings()
+}
+
+pub fn update_hotkey_settings(settings: HotkeySettings) -> Result<HotkeySettings, String> {
+    let normalized = settings.normalized()?;
+    normalized.validate_update_from(&hotkeys::current_settings())?;
+    let saved = paths::save_hotkey_settings(normalized)?;
+    hotkeys::apply_settings(saved.clone());
+    Ok(saved)
+}
+
+pub fn reset_hotkey_settings() -> Result<HotkeySettings, String> {
+    let saved = paths::save_hotkey_settings(HotkeySettings::default())?;
+    hotkeys::apply_settings(saved.clone());
+    Ok(saved)
+}
+
 pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()
@@ -217,6 +240,39 @@ pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
      * réinitialise pour empêcher un
      * Undo/Redo partiel après le Clear.
      */
+    let history_state = history::clear()?;
+
+    Ok(SlotEditResult {
+        preset,
+        slots: saved,
+        history_state,
+        favorite_active: false,
+    })
+}
+
+pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResult, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    if favorite_mode_active() {
+        return Err("Cannot import a preset while Favorite Mode is active".to_string());
+    }
+
+    let active = slots::get_active_preset()?;
+    if preset != active {
+        return Err("Only the active preset can be imported".to_string());
+    }
+
+    let saved = slots::import_preset(preset, imported)?;
+    let deadlock = paths::configured_deadlock_paths()
+        .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
+
+    cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
+    cfg::ensure_autoexec(&deadlock.autoexec)?;
+
     let history_state = history::clear()?;
 
     Ok(SlotEditResult {
@@ -756,9 +812,10 @@ fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
     let savestate_cfg_valid = fs::read_to_string(&found.cfg_file)
         .map(|content| {
             content.contains("alias \"savestate_getpos\"")
-                && content.contains("bind \"F13\" \"exec savestate_prepare\"")
-                && content.contains("bind \"F10\" \"r_force_no_present 0\"")
-                && content.contains("modifier_citadel_root")
+                && content.contains(cfg::PREPARE_BIND)
+                && content.contains(cfg::PRESENTATION_RESUME_BIND)
+                && content.contains(cfg::MOMENTUM_RESET_BIND)
+                && !content.contains(cfg::LEGACY_MOMENTUM_RESET_BIND)
         })
         .unwrap_or(false);
 
