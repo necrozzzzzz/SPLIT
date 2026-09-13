@@ -79,6 +79,14 @@ type SlotMetadata = {
   color: string | null;
 };
 
+type FavoriteSlotSummary = {
+  slot: number;
+  occupied: boolean;
+  name: string;
+  savedAt: number | null;
+  color: string | null;
+};
+
 type SlotMetadataExport = SlotMetadata & {
   snapshot: PositionSnapshot | null;
 };
@@ -183,6 +191,9 @@ const SLOT_COLORS = [
 const CLEAR_PRESET_CONFIRMATION_KEY =
   "split.clearPreset.skipConfirmation";
 
+const GAMEPLAY_HOTKEY_WARNING_KEY =
+  "split.hotkeys.skipGameplayWarning";  
+
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
@@ -233,6 +244,117 @@ function capturedKey(event: KeyboardEvent): string | null {
 function isHotkeyTarget(active: HotkeyTarget | null, target: HotkeyTarget): boolean {
   return active?.group === target.group
     && (!("index" in target) || ("index" in active && active.index === target.index));
+}
+
+function hotkeysEqual(
+  first: Hotkey,
+  second: Hotkey,
+): boolean {
+  return (
+    first.key === second.key &&
+    first.ctrl === second.ctrl &&
+    first.alt === second.alt &&
+    first.shift === second.shift
+  );
+}
+
+function findHotkeyConflictLabel(
+  settings: HotkeySettings,
+  target: HotkeyTarget,
+  candidate: Hotkey,
+): string | null {
+  for (let index = 0; index < 8; index += 1) {
+    if (
+      !(
+        target.group === "loadSlots" &&
+        target.index === index
+      ) &&
+      hotkeysEqual(
+        settings.loadSlots[index],
+        candidate,
+      )
+    ) {
+      return `Load Slot ${index + 1}`;
+    }
+
+    if (
+      !(
+        target.group === "saveSlots" &&
+        target.index === index
+      ) &&
+      hotkeysEqual(
+        settings.saveSlots[index],
+        candidate,
+      )
+    ) {
+      return `Save Slot ${index + 1}`;
+    }
+  }
+
+  if (
+    target.group !== "undo" &&
+    hotkeysEqual(
+      settings.undo,
+      candidate,
+    )
+  ) {
+    return "Undo";
+  }
+
+  if (
+    target.group !== "redo" &&
+    hotkeysEqual(
+      settings.redo,
+      candidate,
+    )
+  ) {
+    return "Redo";
+  }
+
+  if (
+    target.group !== "cyclePreset" &&
+    hotkeysEqual(
+      settings.cyclePreset,
+      candidate,
+    )
+  ) {
+    return "Cycle Preset";
+  }
+
+  if (
+    target.group !== "favoriteMode" &&
+    hotkeysEqual(
+      settings.favoriteMode,
+      candidate,
+    )
+  ) {
+    return "Favorite Mode";
+  }
+
+  return null;
+}
+
+function hotkeyMayInterfereWithGameplay(hotkey: Hotkey): boolean {
+  const usesModifier =
+    hotkey.ctrl ||
+    hotkey.alt ||
+    hotkey.shift;
+
+  if (!usesModifier) {
+    return false;
+  }
+
+  const gameplayKey =
+    /^[A-Z0-9]$/.test(hotkey.key) ||
+    [
+      "Space",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+    ].includes(hotkey.key);
+
+  return gameplayKey;
 }
 
 const EMPTY_STATUS: DeadlockStatus = {
@@ -482,6 +604,33 @@ function App() {
   ] = useState(false);
 
   const [
+    favoriteSlotSummaries,
+    setFavoriteSlotSummaries,
+  ] = useState<Array<FavoriteSlotSummary>>([]);
+
+  const [
+    pendingFavoriteCopy,
+    setPendingFavoriteCopy,
+  ] = useState<{
+    sourceSlot: number;
+    sourceName: string;
+  } | null>(null);
+
+  const [
+    pendingFavoriteOverwrite,
+    setPendingFavoriteOverwrite,
+  ] = useState<{
+    sourceSlot: number;
+    sourceName: string;
+    target: FavoriteSlotSummary;
+  } | null>(null);
+
+  const [
+    favoriteCopyWorking,
+    setFavoriteCopyWorking,
+  ] = useState(false);
+
+  const [
     notificationSettings,
     setNotificationSettings,
   ] = useState<NotificationSettings>(
@@ -505,8 +654,27 @@ function App() {
     useState(false);
 
   const [
+    pendingGameplayHotkey,
+    setPendingGameplayHotkey,
+  ] = useState<{
+    target: HotkeyTarget;
+    hotkey: Hotkey;
+  } | null>(null);
+
+  const [
+    dontRemindGameplayHotkeyAgain,
+    setDontRemindGameplayHotkeyAgain,
+  ] = useState(false);
+
+
+  const [
     clearPresetConfirmationRestored,
     setClearPresetConfirmationRestored,
+  ] = useState(false);
+
+  const [
+    gameplayHotkeyWarningRestored,
+    setGameplayHotkeyWarningRestored,
   ] = useState(false);
 
   const [
@@ -1897,6 +2065,155 @@ function App() {
       }
     }, []);
 
+
+  const openSaveToFavorite =
+    useCallback(
+      async (
+        sourceSlot: number,
+        sourceName: string,
+      ) => {
+        setFavoriteCopyWorking(true);
+        setError(null);
+
+        try {
+          const favorites =
+            await invoke<Array<FavoriteSlotSummary>>(
+              "get_favorite_slot_summaries",
+            );
+
+          setFavoriteSlotSummaries(
+            favorites,
+          );
+
+          setPendingFavoriteCopy({
+            sourceSlot,
+            sourceName,
+          });
+        } catch (reason) {
+          setError(
+            `Could not load Favorites: ${String(reason)}`,
+          );
+        } finally {
+          setFavoriteCopyWorking(false);
+        }
+      },
+      [],
+    );
+
+  const performFavoriteCopy =
+    useCallback(
+      async (
+        sourceSlot: number,
+        favoriteSlot: number,
+        overwrite: boolean,
+      ) => {
+        setFavoriteCopyWorking(true);
+        setError(null);
+
+        try {
+          await invoke<FavoriteSlotSummary>(
+            "copy_slot_to_favorite",
+            {
+              sourceSlot,
+              favoriteSlot,
+              overwrite,
+            },
+          );
+
+          setPendingFavoriteCopy(null);
+          setPendingFavoriteOverwrite(null);
+        } catch (reason) {
+          setError(
+            `Could not save to Favorites: ${String(reason)}`,
+          );
+        } finally {
+          setFavoriteCopyWorking(false);
+        }
+      },
+      [],
+    );
+
+  const chooseFavoriteDestination =
+    useCallback(
+      async (
+        target: FavoriteSlotSummary,
+      ) => {
+        const source =
+          pendingFavoriteCopy;
+
+        if (!source) {
+          return;
+        }
+
+        if (target.occupied) {
+          setPendingFavoriteOverwrite({
+            sourceSlot:
+              source.sourceSlot,
+            sourceName:
+              source.sourceName,
+            target,
+          });
+
+          setPendingFavoriteCopy(null);
+
+          return;
+        }
+
+        await performFavoriteCopy(
+          source.sourceSlot,
+          target.slot,
+          false,
+        );
+      },
+      [
+        pendingFavoriteCopy,
+        performFavoriteCopy,
+      ],
+    );
+
+  const cancelFavoriteCopy =
+    useCallback(() => {
+      setPendingFavoriteCopy(null);
+    }, []);
+
+  const cancelFavoriteOverwrite =
+    useCallback(() => {
+      const pending =
+        pendingFavoriteOverwrite;
+
+      setPendingFavoriteOverwrite(null);
+
+      if (!pending) {
+        return;
+      }
+
+      setPendingFavoriteCopy({
+        sourceSlot:
+          pending.sourceSlot,
+        sourceName:
+          pending.sourceName,
+      });
+    }, [pendingFavoriteOverwrite]);
+
+  const confirmFavoriteOverwrite =
+    useCallback(async () => {
+      const pending =
+        pendingFavoriteOverwrite;
+
+      if (!pending) {
+        return;
+      }
+
+      await performFavoriteCopy(
+        pending.sourceSlot,
+        pending.target.slot,
+        true,
+      );
+    }, [
+      pendingFavoriteOverwrite,
+      performFavoriteCopy,
+    ]);  
+
   useEffect(() => {
     let disposed = false;
 
@@ -1967,6 +2284,20 @@ function App() {
 
   const saveCapturedHotkey = useCallback(
     async (target: HotkeyTarget, hotkey: Hotkey) => {
+      const conflictLabel =
+        findHotkeyConflictLabel(
+          hotkeySettings,
+          target,
+          hotkey,
+        );
+
+      if (conflictLabel) {
+        setHotkeyMessage(
+          `${formatHotkey(hotkey)} is already assigned to ${conflictLabel}.`,
+        );
+
+        return;
+      }
       const next: HotkeySettings = {
         ...hotkeySettings,
         loadSlots: [...hotkeySettings.loadSlots],
@@ -2015,16 +2346,76 @@ function App() {
         setHotkeyMessage(`${event.key} is not a supported hotkey.`);
         return;
       }
-      void saveCapturedHotkey(capturingHotkey, {
+      const capturedHotkey: Hotkey = {
         key,
         ctrl: event.ctrlKey,
         alt: event.altKey,
         shift: event.shiftKey,
-      });
+      };
+
+      if (hotkeyMayInterfereWithGameplay(capturedHotkey)) {
+        const skipGameplayWarning =
+          localStorage.getItem(
+            GAMEPLAY_HOTKEY_WARNING_KEY,
+          ) === "true";
+
+        if (!skipGameplayWarning) {
+          setDontRemindGameplayHotkeyAgain(false);
+
+          setPendingGameplayHotkey({
+            target: capturingHotkey,
+            hotkey: capturedHotkey,
+          });
+
+          setCapturingHotkey(null);
+          setHotkeyMessage(null);
+
+          return;
+        }
+      }
+
+      void saveCapturedHotkey(
+        capturingHotkey,
+        capturedHotkey,
+      );
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [capturingHotkey, hotkeySettingsSaving, saveCapturedHotkey]);
+
+
+  const cancelGameplayHotkey = useCallback(() => {
+    setPendingGameplayHotkey(null);
+    setDontRemindGameplayHotkeyAgain(false);
+  }, []);
+
+  const confirmGameplayHotkey = useCallback(async () => {
+    const pending = pendingGameplayHotkey;
+
+    if (!pending) {
+      return;
+    }
+
+    if (dontRemindGameplayHotkeyAgain) {
+      localStorage.setItem(
+        GAMEPLAY_HOTKEY_WARNING_KEY,
+        "true",
+      );
+    }
+
+    setPendingGameplayHotkey(null);
+    setDontRemindGameplayHotkeyAgain(false);
+
+    await saveCapturedHotkey(
+      pending.target,
+      pending.hotkey,
+    );
+  }, [
+    pendingGameplayHotkey,
+    dontRemindGameplayHotkeyAgain,
+    saveCapturedHotkey,
+  ]);
+
 
   const resetHotkeys = useCallback(async () => {
     setHotkeySettingsSaving(true);
@@ -2053,6 +2444,21 @@ function App() {
         setClearPresetConfirmationRestored(false);
       }, 1500);
     }, []);
+
+
+  const restoreGameplayHotkeyWarning =
+    useCallback(() => {
+      localStorage.removeItem(
+        GAMEPLAY_HOTKEY_WARNING_KEY,
+      );
+
+      setGameplayHotkeyWarningRestored(true);
+
+      window.setTimeout(() => {
+        setGameplayHotkeyWarningRestored(false);
+      }, 1500);
+    }, []);  
+
 
   const confirmPath =
     useCallback(
@@ -2370,6 +2776,254 @@ function App() {
 
   return (
     <main className="shell">
+      
+      {pendingGameplayHotkey && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gameplay-hotkey-warning-title"
+          >
+            <div className="confirmation-content">
+              <span
+                className="confirmation-warning"
+                aria-hidden="true"
+              >
+                !
+              </span>
+
+              <div>
+                <h3
+                  id="gameplay-hotkey-warning-title"
+                  className="confirmation-title"
+                >
+                  This shortcut may interfere with gameplay
+                </h3>
+
+                <p className="confirmation-message">
+                  While this shortcut is active, SPLIT captures
+                  its key combination before Deadlock receives it.
+                  If these keys are also used for movement or other
+                  in-game actions, those actions may not work while
+                  the shortcut is being triggered.
+                </p>
+
+                <p className="confirmation-description">
+                  For example, assigning Ctrl + Z may prevent Z
+                  movement while Ctrl is held (if Ctrl is also used
+                  for an in-game action, such as crouch).
+                </p>
+
+                <p className="confirmation-description">
+                  Selected shortcut:{" "}
+                  <strong>
+                    {formatHotkey(
+                      pendingGameplayHotkey.hotkey,
+                    )}
+                  </strong>
+                </p>
+              </div>
+            </div>
+
+
+            <label className="confirmation-checkbox">
+              <input
+                type="checkbox"
+                checked={dontRemindGameplayHotkeyAgain}
+                onChange={(event) =>
+                  setDontRemindGameplayHotkeyAgain(
+                    event.target.checked,
+                  )
+                }
+              />
+
+              <span>
+                Don't remind me again
+              </span>
+            </label>
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                onClick={cancelGameplayHotkey}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="preset-button preset-clear-button"
+                type="button"
+                onClick={() =>
+                  void confirmGameplayHotkey()
+                }
+              >
+                Use anyway
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      
+
+      {pendingFavoriteCopy && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-favorite-title"
+          >
+            <div className="confirmation-content">
+              <span
+                className="confirmation-warning"
+                aria-hidden="true"
+              >
+                ★
+              </span>
+
+              <div>
+                <h3
+                  id="save-favorite-title"
+                  className="confirmation-title"
+                >
+                  Save to Favorite
+                </h3>
+
+                <p className="confirmation-message">
+                  Save{" "}
+                  <strong>
+                    &quot;
+                    {pendingFavoriteCopy.sourceName}
+                    &quot;
+                  </strong>{" "}
+                  to which Favorite slot?
+                </p>
+
+                <p className="confirmation-description">
+                  The complete save will be copied,
+                  including position, camera, name,
+                  timestamp and color.
+                </p>
+              </div>
+            </div>
+
+            <div className="preset-switcher">
+              {favoriteSlotSummaries.map(
+                (favorite) => (
+                  <button
+                    key={favorite.slot}
+                    className="preset-button"
+                    type="button"
+                    disabled={favoriteCopyWorking}
+                    onClick={() =>
+                      void chooseFavoriteDestination(
+                        favorite,
+                      )
+                    }
+                  >
+                    Favorite {favorite.slot}
+                    {" · "}
+                    {favorite.occupied
+                      ? favorite.name
+                      : "Empty"}
+                  </button>
+                ),
+              )}
+            </div>
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                disabled={favoriteCopyWorking}
+                onClick={cancelFavoriteCopy}
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {pendingFavoriteOverwrite && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="overwrite-favorite-title"
+          >
+            <div className="confirmation-content">
+              <span
+                className="confirmation-warning"
+                aria-hidden="true"
+              >
+                !
+              </span>
+
+              <div>
+                <h3
+                  id="overwrite-favorite-title"
+                  className="confirmation-title"
+                >
+                  Replace Favorite?
+                </h3>
+
+                <p className="confirmation-message">
+                  Favorite{" "}
+                  {pendingFavoriteOverwrite.target.slot}
+                  {" "}
+                  currently contains{" "}
+                  <strong>
+                    &quot;
+                    {pendingFavoriteOverwrite.target.name}
+                    &quot;
+                  </strong>
+                  .
+                </p>
+
+                <p className="confirmation-description">
+                  Replace it with{" "}
+                  <strong>
+                    &quot;
+                    {pendingFavoriteOverwrite.sourceName}
+                    &quot;
+                  </strong>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                disabled={favoriteCopyWorking}
+                onClick={cancelFavoriteOverwrite}
+              >
+                Back
+              </button>
+
+              <button
+                className="preset-button preset-clear-button"
+                type="button"
+                disabled={favoriteCopyWorking}
+                onClick={() =>
+                  void confirmFavoriteOverwrite()
+                }
+              >
+                {favoriteCopyWorking
+                  ? "Replacing…"
+                  : "Replace Favorite"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+
       {pendingImportPreset && (
         <div className="confirmation-backdrop">
           <section
@@ -3026,6 +3680,27 @@ function App() {
                 Rename
               </button>
 
+              {!favoriteMode && position && (
+                <button
+                  className="slot-save-button"
+                  type="button"
+                  disabled={
+                    favoriteCopyWorking ||
+                    savingSlot !== null ||
+                    loadingSlot !== null ||
+                    coloringSlot !== null
+                  }
+                  onClick={() =>
+                    void openSaveToFavorite(
+                      slot,
+                      displayName,
+                    )
+                  }
+                >
+                  To Favorite
+                </button>
+              )}
+
               <button
                 className="slot-save-button slot-clear-button"
                 type="button"
@@ -3221,6 +3896,22 @@ function App() {
                 : "Restore"}
             </button>
           </div>
+
+          <div className="notification-setting-row">
+            <span>Gameplay hotkey warning</span>
+
+            <button
+              className="notification-toggle"
+              type="button"
+              onClick={restoreGameplayHotkeyWarning}
+            >
+              {gameplayHotkeyWarningRestored
+                ? "Restored"
+                : "Restore"}
+            </button>
+          </div>      
+
+
         </div>
       </section>
 

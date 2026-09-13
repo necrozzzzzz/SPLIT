@@ -285,6 +285,7 @@ fn normalize_key(key: &str) -> Result<String, String> {
 
 fn validate_hotkey(hotkey: &Hotkey, allow_historical_alt_f4: bool) -> Result<(), String> {
     let display = hotkey.display();
+
     if (hotkey.alt
         && !hotkey.ctrl
         && !hotkey.shift
@@ -295,16 +296,14 @@ fn validate_hotkey(hotkey: &Hotkey, allow_historical_alt_f4: bool) -> Result<(),
     {
         return Err(format!("{display} is reserved by Windows."));
     }
-    if !hotkey.ctrl
-        && !hotkey.alt
-        && !hotkey.shift
-        && matches!(
-            hotkey.key.as_str(),
-            "H" | "U" | "I" | "O" | "J" | "K" | "L" | "N" | "M"
-        )
-    {
+
+    if matches!(
+        hotkey.key.as_str(),
+        "H" | "U" | "I" | "O" | "J" | "K" | "L" | "N" | "M"
+    ) {
         return Err(format!("{} is reserved by SPLIT.", hotkey.key));
     }
+
     Ok(())
 }
 
@@ -1807,11 +1806,33 @@ mod tests {
     }
 
     #[test]
-    fn internal_unmodified_keys_are_reserved_but_modified_h_is_valid() {
-        for key in ["H", "U"] {
-            assert!(validate_hotkey(&Hotkey::new(key, false, false, false), false).is_err());
+    fn internal_transport_keys_are_reserved_with_or_without_modifiers() {
+        for key in ["H", "U", "I", "O", "J", "K", "L", "N", "M"] {
+            assert!(
+                validate_hotkey(&Hotkey::new(key, false, false, false), false).is_err(),
+                "{key} should be reserved"
+            );
+
+            assert!(
+                validate_hotkey(&Hotkey::new(key, true, false, false), false).is_err(),
+                "Ctrl+{key} should be reserved"
+            );
+
+            assert!(
+                validate_hotkey(&Hotkey::new(key, false, true, false), false).is_err(),
+                "Alt+{key} should be reserved"
+            );
+
+            assert!(
+                validate_hotkey(&Hotkey::new(key, false, false, true), false).is_err(),
+                "Shift+{key} should be reserved"
+            );
+
+            assert!(
+                validate_hotkey(&Hotkey::new(key, true, true, true), false).is_err(),
+                "Ctrl+Alt+Shift+{key} should be reserved"
+            );
         }
-        assert!(validate_hotkey(&Hotkey::new("H", true, false, false), false).is_ok());
     }
 
     #[test]

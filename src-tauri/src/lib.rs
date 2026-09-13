@@ -86,6 +86,20 @@ fn get_favorite_mode() -> bool {
 }
 
 #[tauri::command]
+fn get_favorite_slot_summaries() -> Result<Vec<deadlock::FavoriteSlotSummary>, String> {
+    deadlock::get_favorite_slot_summaries()
+}
+
+#[tauri::command]
+fn copy_slot_to_favorite(
+    source_slot: u8,
+    favorite_slot: u8,
+    overwrite: bool,
+) -> Result<deadlock::FavoriteSlotSummary, String> {
+    deadlock::copy_slot_to_favorite(source_slot, favorite_slot, overwrite)
+}
+
+#[tauri::command]
 fn get_notification_settings() -> notifications::NotificationSettings {
     deadlock::get_notification_settings()
 }
@@ -316,6 +330,8 @@ pub fn run() {
             get_active_preset,
             get_history_state,
             get_favorite_mode,
+            get_favorite_slot_summaries,
+            copy_slot_to_favorite,
             get_preset_names,
             export_preset,
             import_preset,

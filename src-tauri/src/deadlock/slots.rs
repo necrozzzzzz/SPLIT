@@ -72,6 +72,16 @@ pub struct SlotMetadata {
     pub color: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteSlotSummary {
+    pub slot: u8,
+    pub occupied: bool,
+    pub name: String,
+    pub saved_at: Option<u64>,
+    pub color: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SlotMetadataExport {
@@ -825,6 +835,27 @@ pub(crate) fn load_metadata(bank: SlotBank) -> Result<Vec<SlotMetadata>, String>
     }
 }
 
+pub fn favorite_slot_summaries() -> Result<Vec<FavoriteSlotSummary>, String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let state = read_state_unlocked()?;
+
+    Ok(state
+        .favorites
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| FavoriteSlotSummary {
+            slot: (index + 1) as u8,
+            occupied: entry.snapshot.is_some(),
+            name: entry.name.clone(),
+            saved_at: entry.saved_at,
+            color: entry.color.clone(),
+        })
+        .collect())
+}
+
 pub fn get_preset_names() -> Result<Vec<String>, String> {
     let _guard = STORAGE_LOCK
         .lock()
@@ -927,6 +958,84 @@ pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, St
     let index = usize::from(preset - 1);
 
     Ok(snapshots_from_entries(&state.presets[index]))
+}
+
+pub fn copy_preset_slot_to_favorite(
+    preset: u8,
+    source_slot: u8,
+    favorite_slot: u8,
+    overwrite: bool,
+) -> Result<FavoriteSlotSummary, String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    if !(1..=SLOT_COUNT as u8).contains(&source_slot) {
+        return Err(format!("Invalid source slot {source_slot}"));
+    }
+
+    if !(1..=SLOT_COUNT as u8).contains(&favorite_slot) {
+        return Err(format!("Invalid favorite slot {favorite_slot}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let mut state = read_state_unlocked()?;
+
+    let preset_index = usize::from(preset - 1);
+    let source_index = usize::from(source_slot - 1);
+    let favorite_index = usize::from(favorite_slot - 1);
+
+    /*
+     * Cloner l'entrée ENTIÈRE :
+     *
+     * - snapshot
+     * - camera incluse dans le snapshot
+     * - name
+     * - savedAt
+     * - color
+     *
+     * La copie Favorite devient donc totalement
+     * indépendante du slot source après cette opération.
+     */
+    let source_entry = state.presets[preset_index]
+        .get(source_index)
+        .ok_or_else(|| format!("Invalid source slot index {source_index}"))?
+        .clone();
+
+    if source_entry.snapshot.is_none() {
+        return Err("Cannot save an empty slot to Favorites.".to_string());
+    }
+
+    let favorite_entry = state
+        .favorites
+        .get_mut(favorite_index)
+        .ok_or_else(|| format!("Invalid favorite slot index {favorite_index}"))?;
+
+    if favorite_entry.snapshot.is_some() && !overwrite {
+        return Err(format!("Favorite {favorite_slot} is already occupied."));
+    }
+
+    *favorite_entry = source_entry;
+
+    let summary = FavoriteSlotSummary {
+        slot: favorite_slot,
+        occupied: true,
+        name: favorite_entry.name.clone(),
+        saved_at: favorite_entry.saved_at,
+        color: favorite_entry.color.clone(),
+    };
+
+    write_state_unlocked(&state)?;
+
+    println!(
+        "[SPLIT] Copied preset {} slot {} to Favorite {}",
+        preset, source_slot, favorite_slot,
+    );
+
+    Ok(summary)
 }
 
 pub fn save_slot(

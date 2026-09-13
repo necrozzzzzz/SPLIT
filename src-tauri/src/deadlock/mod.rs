@@ -10,7 +10,7 @@ mod watcher;
 pub use history::HistoryState;
 pub use hotkeys::HotkeySettings;
 pub use parser::PositionSnapshot;
-pub use slots::{PresetExport, SlotMetadata};
+pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
 
 pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     hotkeys::foreground_deadlock_window()
@@ -168,6 +168,32 @@ fn favorite_mode_for_bank(bank: slots::SlotBank) -> bool {
 
 pub fn get_favorite_mode() -> bool {
     favorite_mode_active()
+}
+
+pub fn get_favorite_slot_summaries() -> Result<Vec<FavoriteSlotSummary>, String> {
+    slots::favorite_slot_summaries()
+}
+
+pub fn copy_slot_to_favorite(
+    source_slot: u8,
+    favorite_slot: u8,
+    overwrite: bool,
+) -> Result<FavoriteSlotSummary, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    if watcher::has_pending_save() {
+        return Err("Cannot save to Favorites while a save capture is pending.".to_string());
+    }
+
+    if favorite_mode_active() {
+        return Err("Save to Favorite is only available from a preset.".to_string());
+    }
+
+    let preset = slots::get_active_preset()?;
+
+    slots::copy_preset_slot_to_favorite(preset, source_slot, favorite_slot, overwrite)
 }
 
 pub fn get_notification_settings() -> crate::notifications::NotificationSettings {
