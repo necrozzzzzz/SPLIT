@@ -194,6 +194,9 @@ const CLEAR_PRESET_CONFIRMATION_KEY =
 const GAMEPLAY_HOTKEY_WARNING_KEY =
   "split.hotkeys.skipGameplayWarning";  
 
+const FAVORITE_MODE_WARNING_KEY =
+  "split.favorites.skipModeWarning";  
+
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
@@ -631,6 +634,16 @@ function App() {
   ] = useState(false);
 
   const [
+    favoriteModeWarningOpen,
+    setFavoriteModeWarningOpen,
+  ] = useState(false);
+
+  const [
+    dontRemindFavoriteModeAgain,
+    setDontRemindFavoriteModeAgain,
+  ] = useState(false);
+
+  const [
     notificationSettings,
     setNotificationSettings,
   ] = useState<NotificationSettings>(
@@ -675,6 +688,11 @@ function App() {
   const [
     gameplayHotkeyWarningRestored,
     setGameplayHotkeyWarningRestored,
+  ] = useState(false);
+
+  const [
+    favoriteModeWarningRestored,
+    setFavoriteModeWarningRestored,
   ] = useState(false);
 
   const [
@@ -2065,6 +2083,55 @@ function App() {
       }
     }, []);
 
+  useEffect(() => {
+    if (!favoriteMode) {
+      setFavoriteModeWarningOpen(false);
+      setDontRemindFavoriteModeAgain(false);
+
+      return;
+    }
+
+    const skipWarning =
+      localStorage.getItem(
+        FAVORITE_MODE_WARNING_KEY,
+      ) === "true";
+
+    if (skipWarning) {
+      return;
+    }
+
+    setDontRemindFavoriteModeAgain(false);
+    setFavoriteModeWarningOpen(true);
+  }, [favoriteMode]);
+
+  const continueFavoriteMode =
+    useCallback(() => {
+      if (dontRemindFavoriteModeAgain) {
+        localStorage.setItem(
+          FAVORITE_MODE_WARNING_KEY,
+          "true",
+        );
+      }
+
+      setFavoriteModeWarningOpen(false);
+      setDontRemindFavoriteModeAgain(false);
+    }, [dontRemindFavoriteModeAgain]);
+
+  const leaveFavoriteMode =
+    useCallback(async () => {
+      setFavoriteModeWarningOpen(false);
+      setDontRemindFavoriteModeAgain(false);
+
+      if (!favoriteMode) {
+        return;
+      }
+
+      await toggleFavorites();
+    }, [
+      favoriteMode,
+      toggleFavorites,
+    ]);  
+
 
   const openSaveToFavorite =
     useCallback(
@@ -2456,6 +2523,19 @@ function App() {
 
       window.setTimeout(() => {
         setGameplayHotkeyWarningRestored(false);
+      }, 1500);
+    }, []);  
+
+  const restoreFavoriteModeWarning =
+    useCallback(() => {
+      localStorage.removeItem(
+        FAVORITE_MODE_WARNING_KEY,
+      );
+
+      setFavoriteModeWarningRestored(true);
+
+      window.setTimeout(() => {
+        setFavoriteModeWarningRestored(false);
       }, 1500);
     }, []);  
 
@@ -2866,6 +2946,86 @@ function App() {
         </div>
       )}
       
+
+      {favoriteModeWarningOpen && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="favorite-mode-warning-title"
+          >
+            <div className="confirmation-content">
+              <span
+                className="confirmation-warning"
+                aria-hidden="true"
+              >
+                !
+              </span>
+
+              <div>
+                <h3
+                  id="favorite-mode-warning-title"
+                  className="confirmation-title"
+                >
+                  Favorite Mode has no presets
+                </h3>
+
+                <p className="confirmation-message">
+                  Favorite Mode uses a single set of
+                  8 Favorites.
+                </p>
+
+                <p className="confirmation-description">
+                  Presets do not apply while Favorite
+                  Mode is active.
+                </p>
+
+                <p className="confirmation-description">
+                  Any changes you make here affect
+                  these same 8 Favorites.
+                </p>
+              </div>
+            </div>
+
+            <label className="confirmation-checkbox">
+              <input
+                type="checkbox"
+                checked={dontRemindFavoriteModeAgain}
+                onChange={(event) =>
+                  setDontRemindFavoriteModeAgain(
+                    event.target.checked,
+                  )
+                }
+              />
+
+              <span>
+                Don't remind me again
+              </span>
+            </label>
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                onClick={() =>
+                  void leaveFavoriteMode()
+                }
+              >
+                Leave Favorites
+              </button>
+
+              <button
+                className="preset-button preset-clear-button"
+                type="button"
+                onClick={continueFavoriteMode}
+              >
+                Continue
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {pendingFavoriteCopy && (
         <div className="confirmation-backdrop">
@@ -3906,6 +4066,20 @@ function App() {
               onClick={restoreGameplayHotkeyWarning}
             >
               {gameplayHotkeyWarningRestored
+                ? "Restored"
+                : "Restore"}
+            </button>
+          </div>
+
+          <div className="notification-setting-row">
+            <span>Favorite Mode warning</span>
+
+            <button
+              className="notification-toggle"
+              type="button"
+              onClick={restoreFavoriteModeWarning}
+            >
+              {favoriteModeWarningRestored
                 ? "Restored"
                 : "Restore"}
             </button>
