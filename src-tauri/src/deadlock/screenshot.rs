@@ -155,7 +155,7 @@ fn write_thumbnail(
      * et crop légèrement si nécessaire.
      */
     let thumbnail = DynamicImage::ImageRgba8(image)
-        .resize_to_fill(640, 360, FilterType::Lanczos3)
+        .resize_to_fill(640, 360, FilterType::Triangle)
         .to_rgb8();
 
     let file =

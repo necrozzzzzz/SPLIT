@@ -137,6 +137,8 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         return Err(format!("Invalid slot {slot}"));
     }
 
+    let request_started = Instant::now();
+
     /*
      * On prend la vraie caméra immédiatement.
      *
@@ -144,6 +146,9 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
      * une update de Deadlock, on n'empêche
      * PAS les savestates classiques de marcher.
      */
+
+    let camera_started = Instant::now();
+
     let camera = match camera::capture() {
         Ok(camera) => {
             println!(
@@ -182,6 +187,16 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
             None
         }
     };
+
+    println!(
+        "[SPLIT TIMING] screenshot = {:.2?}",
+        screenshot_started.elapsed()
+    );
+
+    println!(
+        "[SPLIT TIMING] request_save_slot total = {:.2?}",
+        request_started.elapsed()
+    );
 
     let mut pending = PENDING_SAVE
         .lock()
