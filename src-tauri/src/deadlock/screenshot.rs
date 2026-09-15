@@ -8,12 +8,12 @@ use std::{
 use windows_sys::{
     core::BOOL,
     Win32::{
-        Foundation::{HWND, LPARAM, RECT},
+        Foundation::{HWND, LPARAM, POINT, RECT},
         Graphics::Gdi::{
-            CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
-            ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+            BitBlt, ClientToScreen, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC,
+            DeleteObject, GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER,
+            BI_RGB, DIB_RGB_COLORS, SRCCOPY,
         },
-        Storage::Xps::PrintWindow,
         UI::WindowsAndMessaging::{
             EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
         },
@@ -226,25 +226,41 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
         let old_object = SelectObject(memory_dc, bitmap);
 
         /*
-         * 0x00000001 = PW_CLIENTONLY
-         * 0x00000002 = PW_RENDERFULLCONTENT
+         * Au moment d'un Save, Deadlock est déjà
+         * au premier plan.
          *
-         * On teste volontairement PrintWindow
-         * en premier car il peut capturer la
-         * fenêtre même si SPLIT est devant.
+         * On copie donc directement les pixels
+         * visibles de son client depuis l'écran.
+         *
+         * BitBlt est beaucoup plus léger que
+         * PrintWindow sur une fenêtre de jeu.
          */
-        let captured = PrintWindow(hwnd, memory_dc, 0x00000001 | 0x00000002);
+        let mut origin = POINT { x: 0, y: 0 };
+
+        if ClientToScreen(hwnd, &mut origin) == 0 {
+            SelectObject(memory_dc, old_object);
+
+            DeleteObject(bitmap);
+            DeleteDC(memory_dc);
+
+            ReleaseDC(null_mut(), screen_dc);
+
+            return Err("ClientToScreen failed.".to_string());
+        }
+
+        let captured = BitBlt(
+            memory_dc, 0, 0, width, height, screen_dc, origin.x, origin.y, SRCCOPY,
+        );
 
         if captured == 0 {
             SelectObject(memory_dc, old_object);
 
             DeleteObject(bitmap);
-
             DeleteDC(memory_dc);
 
             ReleaseDC(null_mut(), screen_dc);
 
-            return Err("PrintWindow could not capture Deadlock.".to_string());
+            return Err("BitBlt could not capture Deadlock.".to_string());
         }
 
         let mut bitmap_info: BITMAPINFO = zeroed();
