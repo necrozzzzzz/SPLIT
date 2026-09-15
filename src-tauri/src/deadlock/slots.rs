@@ -1603,14 +1603,7 @@ mod tests {
             screenshot: None,
         };
 
-        apply_save_to_entry(
-            &mut entry,
-            SlotBank::Preset(1),
-            0,
-            position(2.0),
-            200,
-            None,
-        );
+        apply_save_to_entry(&mut entry, SlotBank::Preset(1), 0, position(2.0), 200, None);
 
         assert_eq!(entry.name, "Mid rooftop",);
 
@@ -1819,8 +1812,8 @@ mod tests {
             roll: 30.0,
         });
         state.presets[1][3] = SlotEntry {
-            snapshot: Some(position(42.0)),
-            name: "Roof".to_string(),
+            snapshot: Some(snapshot.clone()),
+            name: "Rooftop".to_string(),
             saved_at: Some(123456),
             color: Some("#9b8cff".to_string()),
             screenshot: None,
