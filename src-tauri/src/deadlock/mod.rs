@@ -394,12 +394,13 @@ fn next_preset(current: u8, favorite_active: bool) -> u8 {
 pub(crate) fn persist_slot_position(
     slot: u8,
     position: PositionSnapshot,
+    screenshot: Option<String>,
 ) -> Result<PersistSlotResult, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
     let bank = current_slot_bank()?;
-    let saved = slots::save_slot(bank, slot, position)?;
+    let saved = slots::save_slot(bank, slot, position, screenshot)?;
 
     let deadlock = paths::configured_deadlock_paths()
         .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
@@ -427,7 +428,7 @@ pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
     let position = watcher::get_last_position()
         .ok_or_else(|| "No position captured yet. Run getpos_exact first.".to_string())?;
 
-    persist_slot_position(slot, position).map(|result| result.slots)
+    persist_slot_position(slot, position, None).map(|result| result.slots)
 }
 
 pub fn rename_slot(slot: u8, name: String) -> Result<SlotEditResult, String> {

@@ -33,11 +33,9 @@ struct PendingSave {
     generation: u64,
     requested_at: Instant,
 
-    /*
-     * Caméra prise au moment exact
-     * où Alt+F1-F8 est déclenché.
-     */
     camera: Option<CameraSnapshot>,
+
+    screenshot: Option<String>,
 }
 
 static PENDING_SAVE: Mutex<Option<PendingSave>> = Mutex::new(None);
@@ -163,6 +161,28 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         }
     };
 
+    /*
+     * Le screenshot est pris au même moment logique
+     * que la caméra : dès que l'utilisateur déclenche Save.
+     *
+     * IMPORTANT :
+     * une panne de screenshot ne doit JAMAIS empêcher
+     * le savestate classique de fonctionner.
+     */
+    let screenshot = match super::screenshot::capture_deadlock_thumbnail() {
+        Ok(path) => {
+            println!("[SPLIT] Screenshot captured -> {}", path,);
+
+            Some(path)
+        }
+
+        Err(error) => {
+            eprintln!("[SPLIT] Screenshot capture unavailable: {error}");
+
+            None
+        }
+    };
+
     let mut pending = PENDING_SAVE
         .lock()
         .map_err(|_| "Pending save lock poisoned".to_string())?;
@@ -182,6 +202,7 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         generation,
         requested_at: Instant::now(),
         camera,
+        screenshot,
     });
     drop(pending);
 
@@ -230,6 +251,7 @@ enum PendingSaveResult {
     Ready {
         slot: u8,
         camera: Option<CameraSnapshot>,
+        screenshot: Option<String>,
     },
 
     Expired(u8),
@@ -258,6 +280,7 @@ fn take_pending_save_slot() -> PendingSaveResult {
     PendingSaveResult::Ready {
         slot: request.slot,
         camera: request.camera,
+        screenshot: request.screenshot,
     }
 }
 
@@ -386,8 +409,12 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
         set_last_position(position.clone());
 
         match pending_save {
-            PendingSaveResult::Ready { slot, camera: _ } => {
-                match super::persist_slot_position(slot, position.clone()) {
+            PendingSaveResult::Ready {
+                slot,
+                camera: _,
+                screenshot,
+            } => {
+                match super::persist_slot_position(slot, position.clone(), screenshot) {
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
 
@@ -593,6 +620,7 @@ mod tests {
             generation: 12,
             requested_at: Instant::now() - SAVE_TIMEOUT,
             camera: None,
+            screenshot: None,
         });
 
         assert_eq!(take_expired_generation(&mut pending, 11), None);

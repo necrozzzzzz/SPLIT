@@ -13,8 +13,9 @@ use windows_sys::{
             CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
             ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
         },
+        Storage::Xps::PrintWindow,
         UI::WindowsAndMessaging::{
-            EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindowVisible, PrintWindow,
+            EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
         },
     },
 };
@@ -97,88 +98,84 @@ fn find_deadlock_window() -> Result<HWND, String> {
 }
 
 fn output_path() -> Result<PathBuf, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     let appdata =
         std::env::var_os("APPDATA").ok_or_else(|| "APPDATA is unavailable.".to_string())?;
 
-    let directory = PathBuf::from(appdata).join("SPLIT");
+    let directory = PathBuf::from(appdata).join("SPLIT").join("screenshots");
 
     fs::create_dir_all(&directory)
-        .map_err(|error| format!("Could not create SPLIT directory: {error}"))?;
+        .map_err(|error| format!("Could not create screenshot directory: {error}"))?;
 
-    Ok(directory.join("test-capture.bmp"))
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("System clock error: {error}"))?
+        .as_millis();
+
+    Ok(directory.join(format!("capture-{timestamp}.jpg")))
 }
 
-fn write_bmp(path: &PathBuf, width: i32, height: i32, pixels: &[u8]) -> Result<(), String> {
+fn write_thumbnail(
+    path: &PathBuf,
+    width: i32,
+    height: i32,
+    pixels: &mut [u8],
+) -> Result<(), String> {
+    use image::{
+        codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage, ExtendedColorType, RgbaImage,
+    };
+
     /*
-     * BMP très simple :
+     * GetDIBits nous donne du BGRA.
      *
-     * 14 bytes BITMAPFILEHEADER
-     * 40 bytes BITMAPINFOHEADER
-     * pixels BGRA 32 bits
+     * image attend du RGBA :
+     * on inverse donc B et R.
      */
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
 
-    let pixel_size =
-        u32::try_from(pixels.len()).map_err(|_| "Screenshot is too large.".to_string())?;
+        /*
+         * Alpha opaque.
+         */
+        pixel[3] = 255;
+    }
 
-    let pixel_offset = 54u32;
+    let width = u32::try_from(width).map_err(|_| "Invalid screenshot width.".to_string())?;
 
-    let file_size = pixel_offset
-        .checked_add(pixel_size)
-        .ok_or_else(|| "Screenshot file is too large.".to_string())?;
+    let height = u32::try_from(height).map_err(|_| "Invalid screenshot height.".to_string())?;
 
-    let mut file = Vec::with_capacity(file_size as usize);
+    let image = RgbaImage::from_raw(width, height, pixels.to_vec())
+        .ok_or_else(|| "Could not build screenshot image.".to_string())?;
 
     /*
-     * BITMAPFILEHEADER
-     */
-
-    file.extend_from_slice(b"BM");
-
-    file.extend_from_slice(&file_size.to_le_bytes());
-
-    file.extend_from_slice(&[0u8; 4]);
-
-    file.extend_from_slice(&pixel_offset.to_le_bytes());
-
-    /*
-     * BITMAPINFOHEADER
-     */
-
-    file.extend_from_slice(&40u32.to_le_bytes());
-
-    file.extend_from_slice(&width.to_le_bytes());
-
-    /*
-     * Hauteur négative =
-     * bitmap top-down.
+     * Taille finale des miniatures SPLIT.
      *
-     * Ça évite d'avoir l'image retournée
-     * verticalement.
+     * resize_to_fill conserve le ratio visuel
+     * et crop légèrement si nécessaire.
      */
-    file.extend_from_slice(&(-height).to_le_bytes());
+    let thumbnail = DynamicImage::ImageRgba8(image)
+        .resize_to_fill(640, 360, FilterType::Lanczos3)
+        .to_rgb8();
 
-    file.extend_from_slice(&1u16.to_le_bytes());
+    let file =
+        fs::File::create(path).map_err(|error| format!("Could not create screenshot: {error}"))?;
 
-    file.extend_from_slice(&32u16.to_le_bytes());
+    let mut encoder = JpegEncoder::new_with_quality(file, 82);
 
-    file.extend_from_slice(&0u32.to_le_bytes());
+    encoder
+        .encode(
+            thumbnail.as_raw(),
+            thumbnail.width(),
+            thumbnail.height(),
+            ExtendedColorType::Rgb8,
+        )
+        .map_err(|error| format!("Could not encode screenshot: {error}"))?;
 
-    file.extend_from_slice(&pixel_size.to_le_bytes());
-
-    file.extend_from_slice(&0i32.to_le_bytes());
-
-    file.extend_from_slice(&0i32.to_le_bytes());
-
-    file.extend_from_slice(&0u32.to_le_bytes());
-
-    file.extend_from_slice(&0u32.to_le_bytes());
-
-    file.extend_from_slice(pixels);
-
-    fs::write(path, file).map_err(|error| format!("Could not write screenshot: {error}"))
+    Ok(())
 }
 
-pub(crate) fn capture_deadlock_test() -> Result<String, String> {
+pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
     let hwnd = find_deadlock_window()?;
 
     let mut rect: RECT = unsafe { zeroed() };
@@ -312,12 +309,9 @@ pub(crate) fn capture_deadlock_test() -> Result<String, String> {
 
         let path = output_path()?;
 
-        write_bmp(&path, width, height, &pixels)?;
+        write_thumbnail(&path, width, height, &mut pixels)?;
 
-        println!(
-            "[SPLIT] Deadlock test capture written to {}",
-            path.display(),
-        );
+        println!("[SPLIT] Deadlock thumbnail written to {}", path.display(),);
 
         Ok(path.to_string_lossy().into_owned())
     }
@@ -329,8 +323,8 @@ mod tests {
 
     #[test]
     #[ignore = "requires Deadlock to be running"]
-    fn captures_deadlock_window_to_bmp() {
-        let path = capture_deadlock_test().expect("Deadlock screenshot test failed");
+    fn captures_deadlock_window_to_jpeg() {
+        let path = capture_deadlock_thumbnail().expect("Deadlock screenshot test failed");
 
         println!("Capture written to: {path}");
 

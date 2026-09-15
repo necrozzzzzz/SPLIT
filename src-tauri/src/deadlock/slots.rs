@@ -14,17 +14,16 @@ const SLOT_COUNT: usize = 8;
 const PRESET_COUNT: usize = 4;
 
 /*
- * v6 ajoute les noms persistants des presets.
+ * v7 ajoute le screenshot associé à chaque savestate.
  *
- * v5 avait introduit les métadonnées de slot :
+ * v6 ajoutait les noms persistants des presets.
  *
+ * v5 avait introduit :
  * - name
  * - savedAt
  * - color
- *
- * L'API historique des snapshots reste inchangée.
  */
-const SLOT_FILE_VERSION: u32 = 6;
+const SLOT_FILE_VERSION: u32 = 7;
 
 static STORAGE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -62,6 +61,9 @@ pub(crate) struct SlotEntry {
 
     #[serde(default)]
     pub(crate) color: Option<String>,
+
+    #[serde(default)]
+    pub(crate) screenshot: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +72,7 @@ pub struct SlotMetadata {
     pub name: String,
     pub saved_at: Option<u64>,
     pub color: Option<String>,
+    pub screenshot: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -253,6 +256,7 @@ fn apply_save_to_entry(
     slot_index: usize,
     position: PositionSnapshot,
     saved_at: u64,
+    screenshot: Option<String>,
 ) {
     /*
      * SPLIT 1 renommait automatiquement
@@ -273,6 +277,19 @@ fn apply_save_to_entry(
      * color n'est volontairement PAS touché.
      * Un Overwrite conservera donc son tag.
      */
+
+    /*
+     * Le screenshot correspond exactement
+     * à CE Save.
+     *
+     * Un Overwrite remplace donc également
+     * l'ancien screenshot.
+     *
+     * Si la capture a échoué, on préfère None
+     * plutôt que conserver une image qui
+     * représenterait l'ancien savestate.
+     */
+    entry.screenshot = screenshot;
 }
 
 fn apply_rename_to_entry(entry: &mut SlotEntry, name: &str) -> Result<(), String> {
@@ -326,6 +343,8 @@ fn empty_entry(bank: SlotBank, slot_index: usize) -> SlotEntry {
         saved_at: None,
 
         color: None,
+
+        screenshot: None,
     }
 }
 
@@ -356,6 +375,8 @@ fn entries_from_snapshots(
                 saved_at: None,
 
                 color: None,
+
+                screenshot: None,
             }
         })
         .collect()
@@ -374,6 +395,8 @@ fn metadata_from_entries(entries: &[SlotEntry]) -> Vec<SlotMetadata> {
             saved_at: entry.saved_at,
 
             color: entry.color.clone(),
+
+            screenshot: entry.screenshot.clone(),
         })
         .collect()
 }
@@ -423,6 +446,7 @@ fn normalize_entries(entries: &mut Vec<SlotEntry>, bank: SlotBank) {
         if entry.snapshot.is_none() {
             entry.saved_at = None;
             entry.color = None;
+            entry.screenshot = None;
         }
     }
 }
@@ -769,6 +793,7 @@ fn validate_preset_import(
             name: slot.name,
             saved_at: slot.saved_at,
             color,
+            screenshot: None,
         });
     }
 
@@ -1042,6 +1067,7 @@ pub fn save_slot(
     bank: SlotBank,
     slot: u8,
     position: PositionSnapshot,
+    screenshot: Option<String>,
 ) -> Result<SlotChangeResult, String> {
     if !(1..=SLOT_COUNT as u8).contains(&slot) {
         return Err(format!("Invalid slot {slot}"));
@@ -1073,7 +1099,7 @@ pub fn save_slot(
      */
     let before = entry.clone();
 
-    apply_save_to_entry(entry, bank, slot_index, position, saved_at);
+    apply_save_to_entry(entry, bank, slot_index, position, saved_at, screenshot);
 
     let after = entry.clone();
 
