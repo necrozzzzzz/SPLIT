@@ -184,6 +184,7 @@ mod tests {
             name: "Slot 1".to_string(),
             saved_at: None,
             color: None,
+            screenshot: None,
         }
     }
 
@@ -196,6 +197,8 @@ mod tests {
             saved_at: Some(timestamp),
 
             color: None,
+
+            screenshot: None,
         }
     }
 

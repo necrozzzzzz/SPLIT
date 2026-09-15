@@ -1321,6 +1321,7 @@ mod tests {
             name: "Rooftop".to_string(),
             saved_at: Some(123456),
             color: Some("#9b8cff".to_string()),
+            screenshot: None,
         };
 
         export_preset_from_state(&state, 2).unwrap()
@@ -1342,6 +1343,8 @@ mod tests {
                 saved_at: Some(123),
 
                 color: Some("#ffffff".to_string()),
+
+                screenshot: None,
             })
             .collect()];
 
@@ -1532,6 +1535,8 @@ mod tests {
                 saved_at: Some(123),
 
                 color: Some("#fff".to_string()),
+
+                screenshot: None,
             },
             empty_entry(SlotBank::Preset(1), 1),
         ];
@@ -1568,7 +1573,14 @@ mod tests {
     fn save_metadata_uses_automatic_name_and_timestamp() {
         let mut entry = empty_entry(SlotBank::Preset(1), 0);
 
-        apply_save_to_entry(&mut entry, SlotBank::Preset(1), 0, position(10.0), 123456);
+        apply_save_to_entry(
+            &mut entry,
+            SlotBank::Preset(1),
+            0,
+            position(10.0),
+            123456,
+            None,
+        );
 
         assert_eq!(entry.name, "Save 1",);
 
@@ -1587,9 +1599,18 @@ mod tests {
             saved_at: Some(100),
 
             color: Some("#abcdef".to_string()),
+
+            screenshot: None,
         };
 
-        apply_save_to_entry(&mut entry, SlotBank::Preset(1), 0, position(2.0), 200);
+        apply_save_to_entry(
+            &mut entry,
+            SlotBank::Preset(1),
+            0,
+            position(2.0),
+            200,
+            None,
+        );
 
         assert_eq!(entry.name, "Mid rooftop",);
 
@@ -1607,6 +1628,7 @@ mod tests {
             name: "Save 1".to_string(),
             saved_at: Some(123456),
             color: Some("#abcdef".to_string()),
+            screenshot: None,
         };
 
         apply_rename_to_entry(&mut entry, "  Mid rooftop  ").unwrap();
@@ -1624,9 +1646,10 @@ mod tests {
     fn clear_resets_complete_slot_entry() {
         let mut entry = SlotEntry {
             snapshot: Some(position(10.0)),
-            name: "Mid rooftop".to_string(),
+            name: "Save 1".to_string(),
             saved_at: Some(123456),
             color: Some("#abcdef".to_string()),
+            screenshot: None,
         };
 
         apply_clear_to_entry(&mut entry, SlotBank::Preset(1), 2);
@@ -1643,6 +1666,7 @@ mod tests {
             name: "Mid rooftop".to_string(),
             saved_at: Some(123456),
             color: None,
+            screenshot: None,
         };
 
         apply_color_to_entry(&mut entry, Some("#4FD1C5".to_string())).unwrap();
@@ -1663,6 +1687,7 @@ mod tests {
             name: "Save 1".to_string(),
             saved_at: Some(123),
             color: None,
+            screenshot: None,
         };
 
         assert!(apply_color_to_entry(&mut filled, Some("#123456".to_string(),),).is_err());
@@ -1687,6 +1712,7 @@ mod tests {
             name: "Roof".to_string(),
             saved_at: Some(123456),
             color: Some("#9b8cff".to_string()),
+            screenshot: None,
         };
 
         let before = state.presets.clone();
@@ -1755,6 +1781,7 @@ mod tests {
             name: "Custom Spawn".to_string(),
             saved_at: Some(123456),
             color: Some("#9b8cff".to_string()),
+            screenshot: None,
         };
 
         state.favorites[0].snapshot = Some(position(3.0));
@@ -1792,10 +1819,11 @@ mod tests {
             roll: 30.0,
         });
         state.presets[1][3] = SlotEntry {
-            snapshot: Some(snapshot.clone()),
-            name: "Rooftop".to_string(),
+            snapshot: Some(position(42.0)),
+            name: "Roof".to_string(),
             saved_at: Some(123456),
             color: Some("#9b8cff".to_string()),
+            screenshot: None,
         };
         state.presets[0][0].name = "Other preset marker".to_string();
         state.favorites[0].name = "Favorite marker".to_string();
