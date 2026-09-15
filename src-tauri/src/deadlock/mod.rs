@@ -5,6 +5,7 @@ mod hotkeys;
 mod parser;
 mod paths;
 mod process;
+mod screenshot;
 mod slots;
 mod watcher;
 pub use history::HistoryState;

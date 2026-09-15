@@ -399,6 +399,8 @@ type StatusTone =
   | "error"
   | "off";
 
+type AppView = "slots" | "settings";
+
 function formatSavedAge(
   savedAt: number | null,
   nowMs: number,
@@ -461,6 +463,9 @@ function StatusDot({
 }
 
 function App() {
+  const [activeView, setActiveView] =
+    useState<AppView>("slots");
+
   const [
     setup,
     setSetup,
@@ -2855,7 +2860,7 @@ function App() {
         : "All monitored SPLIT systems are ready.";
 
   return (
-    <main className="shell">
+    <div className="shell">
       
       {pendingGameplayHotkey && (
         <div className="confirmation-backdrop">
@@ -3338,23 +3343,104 @@ function App() {
         </div>
       )}
 
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">
-            SPLIT 2
-          </p>
-
-          <h1>
-            Deadlock bridge
-          </h1>
-
-          <p className="subtitle">
-            Rust core diagnostic
-            checkpoint
-          </p>
+      <aside className="sidebar">
+        <div className="brand" aria-label="SPLIT version 2">
+          <strong>SPLIT</strong>
+          <span>v2</span>
         </div>
 
-        <div className="topbar-actions">
+        <nav className="sidebar-nav" aria-label="Main navigation">
+          <button
+            type="button"
+            className={activeView === "slots" && !favoriteMode ? "active" : ""}
+            onClick={() => {
+              setActiveView("slots");
+              if (favoriteMode) void leaveFavoriteMode();
+            }}
+          >
+            <span>Presets</span>
+          </button>
+          <button
+            type="button"
+            className={activeView === "slots" && favoriteMode ? "active" : ""}
+            disabled={savingSlot !== null || loadingSlot !== null}
+            onClick={() => {
+              setActiveView("slots");
+              if (!favoriteMode) void toggleFavorites();
+            }}
+          >
+            <span>Favorites</span>
+            <kbd>F11</kbd>
+          </button>
+          <button
+            type="button"
+            className={activeView === "settings" ? "active" : ""}
+            onClick={() => setActiveView("settings")}
+          >
+            <span>Settings</span>
+          </button>
+        </nav>
+
+        <div className="sidebar-status">
+          <div>
+            <StatusDot
+              tone={status.deadlockRunning ? "ok" : "off"}
+            />
+            <strong>Deadlock</strong>
+          </div>
+          <span>{status.deadlockRunning ? "Connected" : "Not connected"}</span>
+        </div>
+      </aside>
+
+      <main className="workspace">
+      <header className={`topbar ${activeView === "slots" ? "slots-topbar" : ""}`}>
+        <div>
+          <h1>
+            {activeView === "settings"
+              ? "Settings"
+              : favoriteMode
+                ? "Favorites"
+                : "Position slots"}
+          </h1>
+
+          {(activeView === "settings" || !favoriteMode) && (
+            <p className="subtitle">
+              {activeView === "settings"
+                ? "Preferences, shortcuts and diagnostics"
+                : presetNames[activePreset - 1] ?? `Preset ${activePreset}`}
+            </p>
+          )}
+        </div>
+
+        {activeView === "slots" ? (
+          <div className="history-actions header-history-actions">
+            <button
+              className="preset-button"
+              type="button"
+              disabled={
+                !historyState.canUndo ||
+                savingSlot !== null ||
+                loadingSlot !== null
+              }
+              onClick={() => void runHistoryAction("undo_last_action")}
+            >
+              Undo <kbd>F9</kbd>
+            </button>
+            <button
+              className="preset-button"
+              type="button"
+              disabled={
+                !historyState.canRedo ||
+                savingSlot !== null ||
+                loadingSlot !== null
+              }
+              onClick={() => void runHistoryAction("redo_last_action")}
+            >
+              Redo <kbd>F10</kbd>
+            </button>
+          </div>
+        ) : (
+          <div className="topbar-actions">
           <button
             className="refresh-button"
             type="button"
@@ -3382,9 +3468,11 @@ function App() {
               ? "Checking…"
               : "Refresh"}
           </button>
-        </div>
+          </div>
+        )}
       </header>
 
+      {activeView === "settings" && (
       <section
         className={`hero-card health-summary ${healthTone}`}
       >
@@ -3429,8 +3517,9 @@ function App() {
             )}
         </div>
       </section>
+      )}
 
-
+      {activeView === "slots" && (
     <section className="savestates-section">
       <div className="savestates-header">
         <div>
@@ -3449,6 +3538,7 @@ function App() {
       </div>
 
 
+      {!favoriteMode && <div className="preset-toolbar">
       <div className="preset-switcher">
         {[1, 2, 3, 4].map(
           (preset) => (
@@ -3480,7 +3570,16 @@ function App() {
         )}
       </div>
 
-      <div className="preset-management">
+      <details className="preset-actions-menu">
+        <summary aria-label="Preset actions" title="Preset actions">...</summary>
+        <div
+          className="preset-management"
+          onClick={(event) => {
+            if (event.target instanceof HTMLButtonElement) {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+            }
+          }}
+        >
         <button
           className="preset-button"
           type="button"
@@ -3568,7 +3667,9 @@ function App() {
             ? "Clearing…"
             : "Clear preset"}
         </button>
-      </div>
+        </div>
+      </details>
+      </div>}
 
       <button
         className={`favorite-mode-button ${
@@ -3662,230 +3763,371 @@ function App() {
 
             return (
               <article
-                className="slot-card"
+                className={`slot-card ${
+                  position ? "filled" : "empty"
+                }`}
                 key={slot}
+                onMouseEnter={(event) => {
+                  document
+                    .querySelectorAll<HTMLDetailsElement>(
+                      ".slot-card-menu[open]",
+                    )
+                    .forEach((details) => {
+                      const parentCard =
+                        details.closest(".slot-card");
+
+                      if (
+                        parentCard !==
+                        event.currentTarget
+                      ) {
+                        details.removeAttribute(
+                          "open",
+                        );
+                      }
+                    });
+                }}
               >
-                <div className="slot-top">
-                  <div className="slot-title">
-                    <div className="slot-name-row">
-                      {metadata?.color && (
-                        <span
-                          className="slot-color-indicator"
-                          style={{
-                            backgroundColor:
-                              metadata.color,
-                          }}
-                        />
-                      )}
-
-                      <span className="slot-number">
-                        {displayName}
-                      </span>
-                    </div>
-
-                    {savedAge && (
-                      <span className="slot-saved-age">
-                        {savedAge}
-                      </span>
-                    )}
-                  </div>
-
+                {metadata?.color && (
                   <span
-                    className={`slot-state ${
-                      position
-                        ? "filled"
-                        : ""
-                    }`}
-                  >
-                    {position
-                      ? "Saved"
-                      : "Empty"}
+                    className="slot-card-accent"
+                    style={{
+                      backgroundColor:
+                        metadata.color,
+                    }}
+                  />
+                )}
+
+                <div
+                  className={`slot-preview ${
+                    position ? "filled" : "empty"
+                  }`}
+                >
+                  <span className="slot-preview-number">
+                    {String(slot).padStart(2, "0")}
                   </span>
-                </div>
 
-                            {position ? (
-              <div className="slot-position">
-                <code>
-                  XYZ{" "}
-                  {position.x.toFixed(2)}{" "}
-                  {position.y.toFixed(2)}{" "}
-                  {position.z.toFixed(2)}
-                </code>
+                  {position ? (
+                    <>
+                      <div className="slot-preview-placeholder">
+                        <span>
+                          Position captured
+                        </span>
 
-                <code>
-                  ANG{" "}
-                  {position.pitch.toFixed(2)}{" "}
-                  {position.yaw.toFixed(2)}{" "}
-                  {position.roll.toFixed(2)}
-                </code>
-              </div>
-            ) : (
-              <p className="slot-empty">
-                No position saved
-              </p>
-            )}
+                        <code>
+                          {position.x.toFixed(0)}
+                          {"  /  "}
+                          {position.y.toFixed(0)}
+                          {"  /  "}
+                          {position.z.toFixed(0)}
+                        </code>
+                      </div>
 
-            <div className="slot-color-picker">
-              {SLOT_COLORS.map(
-                ({ label, value }) => {
-                  const active =
-                    metadata?.color === value;
-
-                  return (
+                      <button
+                        className="slot-preview-load"
+                        type="button"
+                        disabled={
+                          loadingSlot !== null ||
+                          savingSlot !== null
+                        }
+                        onClick={() =>
+                          void loadSavedSlot(
+                            slot,
+                          )
+                        }
+                      >
+                        {loadingSlot === slot
+                          ? "Loading…"
+                          : "Load"}
+                      </button>
+                    </>
+                  ) : (
                     <button
-                      className={`slot-color-button ${
-                        active ? "active" : ""
-                      }`}
+                      className="slot-empty-save"
                       type="button"
-                      key={label}
-                      title={label}
-                      aria-label={`${label} slot color`}
                       disabled={
-                        !position ||
                         savingSlot !== null ||
-                        loadingSlot !== null ||
-                        coloringSlot !== null
+                        loadingSlot !== null
                       }
                       onClick={() =>
-                        void updateSlotColor(
+                        void saveCurrentToSlot(
                           slot,
-                          value,
                         )
                       }
                     >
-                      {value ? (
-                        <span
-                          className="slot-color-swatch"
-                          style={{
-                            backgroundColor:
-                              value,
-                          }}
-                        />
-                      ) : (
-                        <span className="slot-color-none">
-                          ×
-                        </span>
-                      )}
+                      <span className="slot-empty-plus">
+                        +
+                      </span>
+
+                      <span>
+                        Empty slot
+                      </span>
+
+                      <small>
+                        Save current position
+                      </small>
                     </button>
-                  );
-                },
-              )}
-            </div>
+                  )}
+                </div>
 
+                <details className="slot-card-menu">
+                  <summary
+                    aria-label={`Open actions for ${displayName}`}
+                    title="Slot actions"
+                  >
+                    ···
+                  </summary>
 
-            <div className="slot-shortcuts">
-              <span>
-                Load {formatHotkey(hotkeySettings.loadSlots[slot - 1])}
-              </span>
+                  <div className="slot-card-menu-panel">
+                    {position && (
+                      <>
+                        <div className="slot-menu-position">
+                          <code>
+                            XYZ{" "}
+                            {position.x.toFixed(2)}{" "}
+                            {position.y.toFixed(2)}{" "}
+                            {position.z.toFixed(2)}
+                          </code>
 
-              <span>
-                Save {formatHotkey(hotkeySettings.saveSlots[slot - 1])}
-              </span>
-            </div>
+                          <code>
+                            ANG{" "}
+                            {position.pitch.toFixed(2)}{" "}
+                            {position.yaw.toFixed(2)}{" "}
+                            {position.roll.toFixed(2)}
+                          </code>
+                        </div>
 
-            <div className="slot-actions">
-              <button
-                className="slot-save-button slot-load-button"
-                type="button"
-                disabled={
-                  !position ||
-                  loadingSlot !== null ||
-                  savingSlot !== null
-                }
-                onClick={() =>
-                  void loadSavedSlot(
-                    slot,
-                  )
-                }
-              >
-                {loadingSlot === slot
-                  ? "Loading…"
-                  : "Load"}
-              </button>
+                        <div className="slot-menu-divider" />
 
-              <button
-                className="slot-save-button"
-                type="button"
-                disabled={
-                  savingSlot !== null ||
-                  loadingSlot !== null
-                }
-                onClick={() =>
-                  void saveCurrentToSlot(
-                    slot,
-                  )
-                }
-              >
-                {savingSlot === slot
-                  ? "Saving…"
-                  : position
-                    ? "Overwrite"
-                    : "Save"}
-              </button>
+                        <button
+                          className="slot-menu-item"
+                          type="button"
+                          disabled={
+                            loadingSlot !== null ||
+                            savingSlot !== null
+                          }
+                          onClick={(event) => {
+                            event.currentTarget
+                              .closest("details")
+                              ?.removeAttribute("open");
 
-              <button
-                className="slot-save-button slot-rename-button"
-                type="button"
-                disabled={
-                  savingSlot !== null ||
-                  loadingSlot !== null
-                }
-                onClick={() =>
-                  void renameSavedSlot(
-                    slot,
-                    displayName,
-                  )
-                }
-              >
-                Rename
-              </button>
+                            void loadSavedSlot(
+                              slot,
+                            );
+                          }}
+                        >
+                          Load
+                          <span>
+                            {formatHotkey(
+                              hotkeySettings.loadSlots[
+                                slot - 1
+                              ],
+                            )}
+                          </span>
+                        </button>
+                      </>
+                    )}
 
-              {!favoriteMode && position && (
-                <button
-                  className="slot-save-button"
-                  type="button"
-                  disabled={
-                    favoriteCopyWorking ||
-                    savingSlot !== null ||
-                    loadingSlot !== null ||
-                    coloringSlot !== null
-                  }
-                  onClick={() =>
-                    void openSaveToFavorite(
-                      slot,
-                      displayName,
-                    )
-                  }
-                >
-                  To Favorite
-                </button>
-              )}
+                    <button
+                      className="slot-menu-item"
+                      type="button"
+                      disabled={
+                        savingSlot !== null ||
+                        loadingSlot !== null
+                      }
+                      onClick={(event) => {
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
 
-              <button
-                className="slot-save-button slot-clear-button"
-                type="button"
-                disabled={
-                  !canClear ||
-                  savingSlot !== null ||
-                  loadingSlot !== null
-                }
-                onClick={() =>
-                  void clearSavedSlot(
-                    slot,
-                    displayName,
-                  )
-                }
-              >
-                Clear
-              </button>
-            </div>
+                        void saveCurrentToSlot(
+                          slot,
+                        );
+                      }}
+                    >
+                      {position
+                        ? "Overwrite"
+                        : "Save"}
+                      <span>
+                        {formatHotkey(
+                          hotkeySettings.saveSlots[
+                            slot - 1
+                          ],
+                        )}
+                      </span>
+                    </button>
+
+                    <button
+                      className="slot-menu-item"
+                      type="button"
+                      disabled={
+                        savingSlot !== null ||
+                        loadingSlot !== null
+                      }
+                      onClick={(event) => {
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+
+                        void renameSavedSlot(
+                          slot,
+                          displayName,
+                        );
+                      }}
+                    >
+                      Rename
+                    </button>
+
+                    {!favoriteMode && position && (
+                      <button
+                        className="slot-menu-item"
+                        type="button"
+                        disabled={
+                          favoriteCopyWorking ||
+                          savingSlot !== null ||
+                          loadingSlot !== null ||
+                          coloringSlot !== null
+                        }
+                        onClick={(event) => {
+                          event.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+
+                          void openSaveToFavorite(
+                            slot,
+                            displayName,
+                          );
+                        }}
+                      >
+                        Save to Favorite
+                      </button>
+                    )}
+
+                    {position && (
+                      <>
+                        <div className="slot-menu-divider" />
+
+                        <span className="slot-menu-label">
+                          Color
+                        </span>
+
+                        <div className="slot-menu-colors">
+                          {SLOT_COLORS.map(
+                            ({ label, value }) => {
+                              const active =
+                                metadata?.color ===
+                                value;
+
+                              return (
+                                <button
+                                  className={`slot-menu-color ${
+                                    active
+                                      ? "active"
+                                      : ""
+                                  }`}
+                                  type="button"
+                                  key={label}
+                                  title={label}
+                                  aria-label={`${label} slot color`}
+                                  disabled={
+                                    savingSlot !==
+                                      null ||
+                                    loadingSlot !==
+                                      null ||
+                                    coloringSlot !==
+                                      null
+                                  }
+                                  onClick={() =>
+                                    void updateSlotColor(
+                                      slot,
+                                      value,
+                                    )
+                                  }
+                                >
+                                  {value ? (
+                                    <span
+                                      className="slot-menu-color-swatch"
+                                      style={{
+                                        backgroundColor:
+                                          value,
+                                      }}
+                                    />
+                                  ) : (
+                                    <span className="slot-menu-color-none">
+                                      ×
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            },
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    <div className="slot-menu-divider" />
+
+                    <button
+                      className="slot-menu-item danger"
+                      type="button"
+                      disabled={
+                        !canClear ||
+                        savingSlot !== null ||
+                        loadingSlot !== null
+                      }
+                      onClick={(event) => {
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+
+                        void clearSavedSlot(
+                          slot,
+                          displayName,
+                        );
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </details>
+
+                <div className="slot-card-info">
+                  <div className="slot-card-copy">
+                    <strong title={displayName}>
+                      {displayName}
+                    </strong>
+
+                    <span>
+                      {savedAge ??
+                        (position
+                          ? "Saved"
+                          : "No position saved")}
+                    </span>
+                  </div>
+
+                  <div className="slot-card-hotkey">
+                    {position
+                      ? formatHotkey(
+                          hotkeySettings.loadSlots[
+                            slot - 1
+                          ],
+                        )
+                      : formatHotkey(
+                          hotkeySettings.saveSlots[
+                            slot - 1
+                          ],
+                        )}
+                  </div>
+                </div>
               </article>
             );
           },
         )}
       </div>
     </section>
+      )}
 
+      {activeView === "settings" && (
+      <div className="settings-view">
       <section className="hotkey-settings-section">
         <div className="hotkey-settings-heading">
           <div>
@@ -4767,6 +5009,8 @@ function App() {
           )}
         </article>
       </section>
+      </div>
+      )}
 
       {error && (
         <div className="error-box">
@@ -4778,7 +5022,8 @@ function App() {
         Native file notifications with a lightweight
         100 ms safety check.
       </footer>
-    </main>
+      </main>
+    </div>
   );
 }
 
