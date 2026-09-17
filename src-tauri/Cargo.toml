@@ -20,7 +20,7 @@ notify = "8.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.39.6"
-tauri = { version = "2.11.5", features = ["tray-icon"] }
+tauri = { version = "2.11.5", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-fs = "2"
 tauri-plugin-single-instance = "2"

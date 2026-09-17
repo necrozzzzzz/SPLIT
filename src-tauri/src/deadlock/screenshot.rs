@@ -10,15 +10,18 @@ use windows_sys::{
     Win32::{
         Foundation::{HWND, LPARAM, POINT, RECT},
         Graphics::Gdi::{
-            BitBlt, ClientToScreen, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC,
-            DeleteObject, GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER,
-            BI_RGB, DIB_RGB_COLORS, SRCCOPY,
+            ClientToScreen, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
+            GetDC, GetDIBits, ReleaseDC, SelectObject, SetStretchBltMode, StretchBlt, BITMAPINFO,
+            BITMAPINFOHEADER, BI_RGB, COLORONCOLOR, DIB_RGB_COLORS, SRCCOPY,
         },
         UI::WindowsAndMessaging::{
             EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
         },
     },
 };
+
+const THUMB_WIDTH: i32 = 640;
+const THUMB_HEIGHT: i32 = 360;
 
 struct WindowSearch {
     pid: u32,
@@ -116,47 +119,27 @@ fn output_path() -> Result<PathBuf, String> {
     Ok(directory.join(format!("capture-{timestamp}.jpg")))
 }
 
-fn write_thumbnail(
-    path: &PathBuf,
-    width: i32,
-    height: i32,
-    pixels: &mut [u8],
-) -> Result<(), String> {
-    use image::{
-        codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage, ExtendedColorType, RgbaImage,
-    };
+fn write_thumbnail(path: &PathBuf, pixels: &[u8]) -> Result<(), String> {
+    use image::{codecs::jpeg::JpegEncoder, ExtendedColorType};
 
     /*
-     * GetDIBits nous donne du BGRA.
+     * GetDIBits fournit du BGRA.
      *
-     * image attend du RGBA :
-     * on inverse donc B et R.
+     * Le JPEG attend du RGB.
+     *
+     * L'image est déjà en 640x360 grâce
+     * à StretchBlt : aucun resize CPU ici.
      */
-    for pixel in pixels.chunks_exact_mut(4) {
-        pixel.swap(0, 2);
+    let mut rgb = Vec::with_capacity(
+        usize::try_from(THUMB_WIDTH * THUMB_HEIGHT * 3)
+            .map_err(|_| "Invalid thumbnail size.".to_string())?,
+    );
 
-        /*
-         * Alpha opaque.
-         */
-        pixel[3] = 255;
+    for pixel in pixels.chunks_exact(4) {
+        rgb.push(pixel[2]);
+        rgb.push(pixel[1]);
+        rgb.push(pixel[0]);
     }
-
-    let width = u32::try_from(width).map_err(|_| "Invalid screenshot width.".to_string())?;
-
-    let height = u32::try_from(height).map_err(|_| "Invalid screenshot height.".to_string())?;
-
-    let image = RgbaImage::from_raw(width, height, pixels.to_vec())
-        .ok_or_else(|| "Could not build screenshot image.".to_string())?;
-
-    /*
-     * Taille finale des miniatures SPLIT.
-     *
-     * resize_to_fill conserve le ratio visuel
-     * et crop légèrement si nécessaire.
-     */
-    let thumbnail = DynamicImage::ImageRgba8(image)
-        .resize_to_fill(640, 360, FilterType::Triangle)
-        .to_rgb8();
 
     let file =
         fs::File::create(path).map_err(|error| format!("Could not create screenshot: {error}"))?;
@@ -165,9 +148,9 @@ fn write_thumbnail(
 
     encoder
         .encode(
-            thumbnail.as_raw(),
-            thumbnail.width(),
-            thumbnail.height(),
+            &rgb,
+            THUMB_WIDTH as u32,
+            THUMB_HEIGHT as u32,
             ExtendedColorType::Rgb8,
         )
         .map_err(|error| format!("Could not encode screenshot: {error}"))?;
@@ -213,7 +196,7 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
             return Err("CreateCompatibleDC failed.".to_string());
         }
 
-        let bitmap = CreateCompatibleBitmap(screen_dc, width, height);
+        let bitmap = CreateCompatibleBitmap(screen_dc, THUMB_WIDTH, THUMB_HEIGHT);
 
         if bitmap.is_null() {
             DeleteDC(memory_dc);
@@ -248,8 +231,38 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
             return Err("ClientToScreen failed.".to_string());
         }
 
-        let captured = BitBlt(
-            memory_dc, 0, 0, width, height, screen_dc, origin.x, origin.y, SRCCOPY,
+        /*
+         * On croppe la source au ratio 16:9,
+         * puis Windows réduit directement
+         * l'image vers 640x360.
+         */
+        let (source_x, source_y, source_width, source_height) =
+            if i64::from(width) * 9 > i64::from(height) * 16 {
+                let source_width = height * 16 / 9;
+
+                ((width - source_width) / 2, 0, source_width, height)
+            } else if i64::from(width) * 9 < i64::from(height) * 16 {
+                let source_height = width * 9 / 16;
+
+                (0, (height - source_height) / 2, width, source_height)
+            } else {
+                (0, 0, width, height)
+            };
+
+        let _ = SetStretchBltMode(memory_dc, COLORONCOLOR);
+
+        let captured = StretchBlt(
+            memory_dc,
+            0,
+            0,
+            THUMB_WIDTH,
+            THUMB_HEIGHT,
+            screen_dc,
+            origin.x + source_x,
+            origin.y + source_y,
+            source_width,
+            source_height,
+            SRCCOPY,
         );
 
         if captured == 0 {
@@ -260,7 +273,7 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
 
             ReleaseDC(null_mut(), screen_dc);
 
-            return Err("BitBlt could not capture Deadlock.".to_string());
+            return Err("StretchBlt could not capture Deadlock.".to_string());
         }
 
         let mut bitmap_info: BITMAPINFO = zeroed();
@@ -268,9 +281,9 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
         bitmap_info.bmiHeader = BITMAPINFOHEADER {
             biSize: size_of::<BITMAPINFOHEADER>() as u32,
 
-            biWidth: width,
+            biWidth: THUMB_WIDTH,
 
-            biHeight: -height,
+            biHeight: -THUMB_HEIGHT,
 
             biPlanes: 1,
 
@@ -289,10 +302,10 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
             biClrImportant: 0,
         };
 
-        let pixel_count = usize::try_from(width)
+        let pixel_count = usize::try_from(THUMB_WIDTH)
             .ok()
             .and_then(|width| {
-                usize::try_from(height)
+                usize::try_from(THUMB_HEIGHT)
                     .ok()
                     .and_then(|height| width.checked_mul(height))
             })
@@ -305,7 +318,7 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
             memory_dc,
             bitmap,
             0,
-            height as u32,
+            THUMB_HEIGHT as u32,
             pixels.as_mut_ptr().cast(),
             &mut bitmap_info,
             DIB_RGB_COLORS,
@@ -325,7 +338,7 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
 
         let path = output_path()?;
 
-        write_thumbnail(&path, width, height, &mut pixels)?;
+        write_thumbnail(&path, &pixels)?;
 
         println!("[SPLIT] Deadlock thumbnail written to {}", path.display(),);
 

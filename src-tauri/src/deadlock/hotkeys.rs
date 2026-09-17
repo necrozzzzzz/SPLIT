@@ -1472,8 +1472,12 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         /*
                          * Laisse savestate_prepare créer/enregistrer
                          * correctement le nouveau point_teleport.
+                         *
+                         * 20 ms suffit normalement à laisser passer
+                         * au moins une frame sans retarder le Prime
+                         * assez pour provoquer un snap perceptible.
                          */
-                        thread::sleep(Duration::from_millis(50));
+                        thread::sleep(Duration::from_millis(20));
 
                         /*
                          * Prime spécial :

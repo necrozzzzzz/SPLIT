@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import {
+  convertFileSrc,
   invoke,
 } from "@tauri-apps/api/core";
 
@@ -77,6 +78,7 @@ type SlotMetadata = {
   name: string;
   savedAt: number | null;
   color: string | null;
+  screenshot: string | null;
 };
 
 type FavoriteSlotSummary = {
@@ -87,7 +89,10 @@ type FavoriteSlotSummary = {
   color: string | null;
 };
 
-type SlotMetadataExport = SlotMetadata & {
+type SlotMetadataExport = {
+  name: string;
+  savedAt: number | null;
+  color: string | null;
   snapshot: PositionSnapshot | null;
 };
 
@@ -525,6 +530,7 @@ function App() {
           name: `Slot ${index + 1}`,
           savedAt: null,
           color: null,
+          screenshot: null,
         }),
       ),
   );
@@ -3370,7 +3376,11 @@ function App() {
             }}
           >
             <span>Favorites</span>
-            <kbd>F11</kbd>
+            <kbd>
+              {formatHotkey(
+                hotkeySettings.favoriteMode,
+              )}
+            </kbd>
           </button>
           <button
             type="button"
@@ -3424,7 +3434,12 @@ function App() {
               }
               onClick={() => void runHistoryAction("undo_last_action")}
             >
-              Undo <kbd>F9</kbd>
+              Undo{" "}
+              <kbd>
+                {formatHotkey(
+                  hotkeySettings.undo,
+                )}
+              </kbd>
             </button>
             <button
               className="preset-button"
@@ -3436,7 +3451,12 @@ function App() {
               }
               onClick={() => void runHistoryAction("redo_last_action")}
             >
-              Redo <kbd>F10</kbd>
+              Redo{" "}
+              <kbd>
+                {formatHotkey(
+                  hotkeySettings.redo,
+                )}
+              </kbd>
             </button>
           </div>
         ) : (
@@ -3684,7 +3704,10 @@ function App() {
           void toggleFavorites()
         }
       >
-        Favorites · F11
+        Favorites ·{" "}
+        {formatHotkey(
+          hotkeySettings.favoriteMode,
+        )}
       </button>
 
       <div className="history-actions">
@@ -3702,7 +3725,10 @@ function App() {
             )
           }
         >
-          Undo&nbsp;&nbsp;F9
+          Undo&nbsp;&nbsp;
+          {formatHotkey(
+            hotkeySettings.undo,
+          )}
         </button>
 
         <button
@@ -3719,7 +3745,10 @@ function App() {
             )
           }
         >
-          Redo&nbsp;&nbsp;F10
+          Redo&nbsp;&nbsp;
+          {formatHotkey(
+            hotkeySettings.redo,
+          )}
         </button>
       </div>
 
@@ -3808,19 +3837,30 @@ function App() {
 
                   {position ? (
                     <>
-                      <div className="slot-preview-placeholder">
-                        <span>
-                          Position captured
-                        </span>
+                      {metadata?.screenshot ? (
+                        <img
+                          className="slot-preview-image"
+                          src={convertFileSrc(
+                            metadata.screenshot,
+                          )}
+                          alt=""
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="slot-preview-placeholder">
+                          <span>
+                            Position captured
+                          </span>
 
-                        <code>
-                          {position.x.toFixed(0)}
-                          {"  /  "}
-                          {position.y.toFixed(0)}
-                          {"  /  "}
-                          {position.z.toFixed(0)}
-                        </code>
-                      </div>
+                          <code>
+                            {position.x.toFixed(0)}
+                            {"  /  "}
+                            {position.y.toFixed(0)}
+                            {"  /  "}
+                            {position.z.toFixed(0)}
+                          </code>
+                        </div>
+                      )}
 
                       <button
                         className="slot-preview-load"
@@ -5018,10 +5058,7 @@ function App() {
         </div>
       )}
 
-      <footer>
-        Native file notifications with a lightweight
-        100 ms safety check.
-      </footer>
+      
       </main>
     </div>
   );
