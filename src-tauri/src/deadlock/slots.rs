@@ -944,6 +944,293 @@ pub fn import_preset(
     Ok(saved)
 }
 
+pub fn import_preset_archive(
+    preset: u8,
+    source: String,
+) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    const MAX_PRESET_JSON_SIZE: u64 = 1024 * 1024;
+    const MAX_SCREENSHOT_SIZE: u64 = 32 * 1024 * 1024;
+
+    let file = fs::File::open(&source)
+        .map_err(|error| format!("Could not open preset archive: {error}"))?;
+
+    let mut archive = tar::Archive::new(file);
+
+    let mut preset_json: Option<Vec<u8>> = None;
+
+    let mut thumbnails: Vec<Option<Vec<u8>>> = vec![None; SLOT_COUNT];
+
+    let mut full_screenshots: Vec<Option<Vec<u8>>> = vec![None; SLOT_COUNT];
+
+    let archive_entries = archive
+        .entries()
+        .map_err(|error| format!("Could not read preset archive: {error}"))?;
+
+    for entry_result in archive_entries {
+        let mut entry = entry_result
+            .map_err(|error| format!("Could not read preset archive entry: {error}"))?;
+
+        /*
+         * IMPORTANT :
+         *
+         * On n'extrait JAMAIS l'archive entière.
+         *
+         * On lit uniquement les chemins exacts
+         * que SPLIT connaît.
+         *
+         * Donc un chemin du genre :
+         *
+         * ../../fichier
+         *
+         * est simplement ignoré.
+         */
+        let path = entry
+            .path()
+            .map_err(|error| format!("Could not read preset archive path: {error}"))?
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        if path == "preset.json" {
+            if preset_json.is_some() {
+                return Err("Preset archive contains duplicate preset.json".to_string());
+            }
+
+            if entry.size() > MAX_PRESET_JSON_SIZE {
+                return Err("preset.json is unexpectedly large".to_string());
+            }
+
+            let mut bytes = Vec::new();
+
+            std::io::Read::read_to_end(&mut entry, &mut bytes)
+                .map_err(|error| format!("Could not read preset.json: {error}"))?;
+
+            preset_json = Some(bytes);
+
+            continue;
+        }
+
+        let mut screenshot_target: Option<(usize, bool)> = None;
+
+        for index in 0..SLOT_COUNT {
+            let slot_number = index + 1;
+
+            if path == format!("screenshots/slot-{slot_number}.jpg") {
+                screenshot_target = Some((index, false));
+
+                break;
+            }
+
+            if path == format!("screenshots/slot-{slot_number}-full.jpg") {
+                screenshot_target = Some((index, true));
+
+                break;
+            }
+        }
+
+        let Some((index, full_res)) = screenshot_target else {
+            /*
+             * Chemin inconnu :
+             * on ne le lit pas et on ne l'extrait pas.
+             */
+            continue;
+        };
+
+        if entry.size() > MAX_SCREENSHOT_SIZE {
+            return Err(format!(
+                "Screenshot for slot {} is unexpectedly large",
+                index + 1,
+            ));
+        }
+
+        let target = if full_res {
+            &mut full_screenshots[index]
+        } else {
+            &mut thumbnails[index]
+        };
+
+        if target.is_some() {
+            return Err(format!(
+                "Preset archive contains duplicate screenshot for slot {}",
+                index + 1,
+            ));
+        }
+
+        let mut bytes = Vec::new();
+
+        std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|error| {
+            format!("Could not read screenshot for slot {}: {error}", index + 1,)
+        })?;
+
+        /*
+         * Vérification JPEG légère.
+         *
+         * FF D8 = début JPEG
+         * FF D9 = fin JPEG
+         */
+        let valid_jpeg = bytes.len() >= 4
+            && bytes[0] == 0xFF
+            && bytes[1] == 0xD8
+            && bytes[bytes.len() - 2] == 0xFF
+            && bytes[bytes.len() - 1] == 0xD9;
+
+        if !valid_jpeg {
+            return Err(format!("Invalid JPEG for slot {}", index + 1,));
+        }
+
+        *target = Some(bytes);
+    }
+
+    let preset_json =
+        preset_json.ok_or_else(|| "Preset archive does not contain preset.json".to_string())?;
+
+    let imported = serde_json::from_slice::<PresetExport>(&preset_json)
+        .map_err(|error| format!("Could not parse preset.json: {error}"))?;
+
+    /*
+     * Réutilise exactement la validation
+     * de l'import JSON existant :
+     *
+     * - format
+     * - version
+     * - 8 slots
+     * - snapshots finite
+     * - couleurs autorisées
+     * - noms valides
+     */
+    let (name, mut entries) = validate_preset_import(preset, imported)?;
+
+    /*
+     * Vérifie la cohérence entre
+     * snapshots et screenshots.
+     */
+    for index in 0..SLOT_COUNT {
+        let has_thumbnail = thumbnails[index].is_some();
+
+        let has_full = full_screenshots[index].is_some();
+
+        if entries[index].snapshot.is_none() && (has_thumbnail || has_full) {
+            return Err(format!(
+                "Empty slot {} unexpectedly contains screenshots",
+                index + 1,
+            ));
+        }
+
+        if has_full && !has_thumbnail {
+            return Err(format!(
+                "Slot {} contains a full screenshot but no thumbnail",
+                index + 1,
+            ));
+        }
+    }
+
+    let appdata = env::var_os("APPDATA").ok_or_else(|| "APPDATA is unavailable".to_string())?;
+
+    let screenshot_directory = PathBuf::from(appdata).join("SPLIT").join("screenshots");
+
+    fs::create_dir_all(&screenshot_directory)
+        .map_err(|error| format!("Could not create screenshot directory: {error}"))?;
+
+    /*
+     * ID local totalement indépendant
+     * du PC ayant créé le preset.
+     */
+    let import_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("System clock error: {error}"))?
+        .as_nanos();
+
+    let mut written_paths = Vec::<PathBuf>::new();
+
+    for index in 0..SLOT_COUNT {
+        let Some(thumbnail_bytes) = thumbnails[index].as_ref() else {
+            continue;
+        };
+
+        let slot_number = index + 1;
+
+        let local_id = format!("{import_id}-{slot_number}");
+
+        let thumbnail_path = screenshot_directory.join(format!("capture-{local_id}.jpg"));
+
+        if let Err(error) = fs::write(&thumbnail_path, thumbnail_bytes) {
+            for path in &written_paths {
+                let _ = fs::remove_file(path);
+            }
+
+            return Err(format!(
+                "Could not write imported thumbnail for slot {slot_number}: {error}"
+            ));
+        }
+
+        written_paths.push(thumbnail_path.clone());
+
+        if let Some(full_bytes) = full_screenshots[index].as_ref() {
+            let full_path = screenshot_directory.join(format!("capture-full-{local_id}.jpg"));
+
+            if let Err(error) = fs::write(&full_path, full_bytes) {
+                for path in &written_paths {
+                    let _ = fs::remove_file(path);
+                }
+
+                return Err(format!(
+                    "Could not write imported full screenshot for slot {slot_number}: {error}"
+                ));
+            }
+
+            written_paths.push(full_path);
+        }
+
+        entries[index].screenshot = Some(thumbnail_path.to_string_lossy().into_owned());
+    }
+
+    /*
+     * À partir d'ici les JPEG locaux
+     * existent déjà.
+     *
+     * On remplace maintenant le preset
+     * dans slots.json.
+     */
+    let save_result = (|| -> Result<Vec<Option<PositionSnapshot>>, String> {
+        let _guard = STORAGE_LOCK
+            .lock()
+            .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+        let mut state = read_state_unlocked()?;
+
+        apply_preset_import(&mut state, preset, name, entries);
+
+        let saved = snapshots_from_entries(&state.presets[usize::from(preset - 1)]);
+
+        write_state_unlocked(&state)?;
+
+        Ok(saved)
+    })();
+
+    /*
+     * Si slots.json n'a finalement pas
+     * pu être mis à jour, on retire les
+     * JPEG créés par cet import raté.
+     */
+    if save_result.is_err() {
+        for path in &written_paths {
+            let _ = fs::remove_file(path);
+        }
+    }
+
+    if save_result.is_ok() {
+        println!(
+            "[SPLIT] Preset {} imported with screenshots <- {}",
+            preset, source,
+        );
+    }
+
+    save_result
+}
+
 pub(crate) fn load_bank(bank: SlotBank) -> Result<Vec<Option<PositionSnapshot>>, String> {
     let _guard = STORAGE_LOCK
         .lock()

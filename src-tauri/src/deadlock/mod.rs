@@ -356,6 +356,73 @@ pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResul
     })
 }
 
+pub fn import_preset_archive(preset: u8, source: String) -> Result<SlotEditResult, String> {
+    let _operation = SLOT_OPERATION_LOCK
+        .lock()
+        .map_err(|_| "Slot operation lock poisoned".to_string())?;
+
+    ensure_history_action_allowed(watcher::has_pending_save())?;
+
+    if favorite_mode_active() {
+        return Err("Cannot import a preset while Favorite Mode is active".to_string());
+    }
+
+    let active = slots::get_active_preset()?;
+
+    if preset != active {
+        return Err("Only the active preset can be imported".to_string());
+    }
+
+    let saved = slots::import_preset_archive(preset, source)?;
+
+    /*
+     * Le preset actif vient d'être remplacé.
+     * Deadlock doit donc recevoir les nouvelles
+     * positions exactement comme pour
+     * l'import JSON legacy.
+     */
+    let deadlock = paths::configured_deadlock_paths()
+        .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
+
+    cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
+
+    cfg::ensure_autoexec(&deadlock.autoexec)?;
+
+    /*
+     * L'historique actuel ne sait toujours
+     * pas représenter un remplacement complet
+     * de preset en une seule action.
+     */
+    let history_state = history::clear()?;
+
+    /*
+     * L'ancien preset n'est plus référencé
+     * et l'historique vient d'être vidé :
+     * ses anciens screenshots peuvent donc
+     * devenir orphelins.
+     */
+    std::thread::Builder::new()
+        .name("split-screenshot-cleanup".to_string())
+        .spawn(|| {
+            if let Err(error) = screenshot::cleanup_screenshots() {
+                eprintln!("[SPLIT] Screenshot cleanup failed: {error}");
+            }
+        })
+        .map_err(|error| {
+            eprintln!("[SPLIT] Could not start screenshot cleanup: {error}");
+
+            error
+        })
+        .ok();
+
+    Ok(SlotEditResult {
+        preset,
+        slots: saved,
+        history_state,
+        favorite_active: false,
+    })
+}
+
 pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()

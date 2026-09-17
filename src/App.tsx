@@ -633,7 +633,15 @@ function App() {
     preset: number;
     currentName: string;
     importedName: string;
-    imported: unknown;
+    source:
+      | {
+          kind: "archive";
+          path: string;
+        }
+      | {
+          kind: "legacy";
+          imported: unknown;
+        };
   } | null>(null);
 
   const [
@@ -1834,7 +1842,7 @@ function App() {
                     {
                       name: "SPLIT preset",
                       extensions: [
-                        "split-preset.json",
+                        "splitpreset",
                         "json",
                       ],
                     },
@@ -1848,36 +1856,99 @@ function App() {
                 return;
               }
 
-              const imported: unknown =
-                JSON.parse(
-                  await readTextFile(filePath),
-                );
-              const importedName =
-                typeof imported === "object" &&
-                imported !== null &&
-                "name" in imported &&
-                typeof imported.name === "string"
-                  ? imported.name
-                  : "Invalid preset";
               const currentName =
                 presetNames[
                   activePreset - 1
                 ] ??
                 `Preset ${activePreset}`;
 
+              /*
+              * Nouveau format portable :
+              * on ne tente surtout PAS de le lire
+              * comme du texte / JSON côté frontend.
+              *
+              * Le backend Rust ouvrira lui-même
+              * l'archive TAR.
+              */
+              if (
+                filePath
+                  .toLowerCase()
+                  .endsWith(
+                    ".splitpreset",
+                  )
+              ) {
+                const fileName =
+                  filePath
+                    .split(/[\\/]/)
+                    .pop() ??
+                  "Imported preset";
+
+                const importedName =
+                  fileName.replace(
+                    /\.splitpreset$/i,
+                    "",
+                  ) ||
+                  "Imported preset";
+
+                setPendingImportPreset({
+                  preset:
+                    activePreset,
+                  currentName,
+                  importedName,
+                  source: {
+                    kind: "archive",
+                    path: filePath,
+                  },
+                });
+
+                return;
+              }
+
+              /*
+              * Compatibilité avec les anciens
+              * exports JSON.
+              */
+              const imported: unknown =
+                JSON.parse(
+                  await readTextFile(
+                    filePath,
+                  ),
+                );
+
+              const importedName =
+                typeof imported ===
+                  "object" &&
+                imported !== null &&
+                "name" in imported &&
+                typeof imported.name ===
+                  "string"
+                  ? imported.name
+                  : "Invalid preset";
+
               setPendingImportPreset({
-                preset: activePreset,
+                preset:
+                  activePreset,
                 currentName,
                 importedName,
-                imported,
+                source: {
+                  kind: "legacy",
+                  imported,
+                },
               });
             } catch (reason) {
-              setError(String(reason));
+              setError(
+                String(reason),
+              );
             } finally {
-              setImportingPreset(false);
+              setImportingPreset(
+                false,
+              );
             }
           },
-          [activePreset, presetNames],
+          [
+            activePreset,
+            presetNames,
+          ],
         );
 
       const confirmPresetImport =
@@ -1890,31 +1961,70 @@ function App() {
               return;
             }
 
-            setPendingImportPreset(null);
-            setImportingPreset(true);
+            setPendingImportPreset(
+              null,
+            );
+
+            setImportingPreset(
+              true,
+            );
+
             setError(null);
 
             try {
-              const result =
-                await invoke<SlotEditResult>(
-                  "import_preset",
-                  {
-                    preset: target.preset,
-                    imported: target.imported,
-                  },
-                );
+              let result:
+                SlotEditResult;
 
-              await applySlotEditResult(result);
+              if (
+                target.source.kind ===
+                "archive"
+              ) {
+                result =
+                  await invoke<SlotEditResult>(
+                    "import_preset_archive",
+                    {
+                      preset:
+                        target.preset,
+                      source:
+                        target.source.path,
+                    },
+                  );
+              } else {
+                result =
+                  await invoke<SlotEditResult>(
+                    "import_preset",
+                    {
+                      preset:
+                        target.preset,
+                      imported:
+                        target.source
+                          .imported,
+                    },
+                  );
+              }
+
+              await applySlotEditResult(
+                result,
+              );
 
               const names =
-                await invoke<Array<string>>(
+                await invoke<
+                  Array<string>
+                >(
                   "get_preset_names",
                 );
-              setPresetNames(names);
+
+              setPresetNames(
+                names,
+              );
             } catch (reason) {
-              setError(String(reason));
+              setError(
+                String(reason),
+              );
             } finally {
-              setImportingPreset(false);
+              setImportingPreset(
+                false,
+              );
             }
           },
           [
