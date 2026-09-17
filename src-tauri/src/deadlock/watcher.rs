@@ -441,6 +441,33 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
 
+                        /*
+                         * Nettoyage des anciens screenshots.
+                         *
+                         * IMPORTANT :
+                         * on le fait en arrière-plan pour que
+                         * ça n'ajoute aucune latence au Save.
+                         *
+                         * À ce stade :
+                         * - le nouveau slot est persisté
+                         * - Undo/Redo est déjà enregistré
+                         *
+                         * Le cleanup connaît donc tous les
+                         * screenshots qu'il doit protéger.
+                         */
+                        thread::Builder::new()
+                            .name("split-screenshot-cleanup".to_string())
+                            .spawn(|| {
+                                if let Err(error) = super::screenshot::cleanup_screenshots() {
+                                    eprintln!("[SPLIT] Screenshot cleanup failed: {error}");
+                                }
+                            })
+                            .map_err(|error| {
+                                eprintln!("[SPLIT] Could not start screenshot cleanup: {error}");
+                                error
+                            })
+                            .ok();
+
                         super::hotkeys::prepare_teleports_after_cfg_update();
 
                         /*

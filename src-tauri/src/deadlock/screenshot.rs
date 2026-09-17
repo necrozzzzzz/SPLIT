@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     mem::{size_of, zeroed},
     path::PathBuf,
@@ -100,7 +101,7 @@ fn output_path() -> Result<PathBuf, String> {
     Ok(directory.join(format!("capture-{timestamp}.jpg")))
 }
 
-fn full_output_path(thumbnail_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn full_output_path(thumbnail_path: &str) -> Result<PathBuf, String> {
     let thumbnail = PathBuf::from(thumbnail_path);
 
     let parent = thumbnail
@@ -119,39 +120,128 @@ fn full_output_path(thumbnail_path: &str) -> Result<PathBuf, String> {
     Ok(parent.join(format!("capture-full-{suffix}")))
 }
 
+pub(crate) fn cleanup_screenshots() -> Result<(), String> {
+    let appdata =
+        std::env::var_os("APPDATA").ok_or_else(|| "APPDATA is unavailable.".to_string())?;
+
+    let directory = PathBuf::from(appdata).join("SPLIT").join("screenshots");
+
+    /*
+     * Aucun dossier = rien à nettoyer.
+     */
+    if !directory.is_dir() {
+        return Ok(());
+    }
+
+    let mut protected = HashSet::<PathBuf>::new();
+
+    /*
+     * 1. Screenshots encore référencés
+     * par les presets + Favorites.
+     */
+    let mut thumbnail_paths = super::slots::referenced_screenshot_paths()?;
+
+    /*
+     * 2. Screenshots encore nécessaires
+     * pour Undo / Redo.
+     */
+    thumbnail_paths.extend(super::history::referenced_screenshot_paths()?);
+
+    for thumbnail_path in thumbnail_paths {
+        let thumbnail = PathBuf::from(&thumbnail_path);
+
+        /*
+         * On protège le thumbnail.
+         */
+        protected.insert(thumbnail.clone());
+
+        /*
+         * Et automatiquement son
+         * full-res associé.
+         *
+         * capture-123.jpg
+         * devient
+         * capture-full-123.jpg
+         */
+        if let Ok(full_path) = full_output_path(&thumbnail_path) {
+            protected.insert(full_path);
+        }
+    }
+
+    let entries = fs::read_dir(&directory)
+        .map_err(|error| format!("Could not read screenshot directory: {error}"))?;
+
+    let mut removed = 0usize;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Could not read screenshot entry: {error}"))?;
+
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        /*
+         * SPLIT ne touche qu'à SES
+         * propres JPEG.
+         */
+        if !filename.starts_with("capture-") || !filename.ends_with(".jpg") {
+            continue;
+        }
+
+        /*
+         * Encore utilisé par un slot,
+         * Favorites, Undo ou Redo :
+         * surtout ne pas supprimer.
+         */
+        if protected.contains(&path) {
+            continue;
+        }
+
+        fs::remove_file(&path).map_err(|error| {
+            format!(
+                "Could not remove orphan screenshot {}: {error}",
+                path.display(),
+            )
+        })?;
+
+        removed += 1;
+    }
+
+    if removed > 0 {
+        println!(
+            "[SPLIT] Screenshot cleanup removed {} orphan file(s)",
+            removed,
+        );
+    }
+
+    Ok(())
+}
+
 fn write_full_res_jpeg(
     path: &PathBuf,
     width: i32,
     height: i32,
     pixels: &[u8],
 ) -> Result<(), String> {
-    use image::{
-        codecs::jpeg::JpegEncoder,
-        ExtendedColorType,
-    };
+    use image::{codecs::jpeg::JpegEncoder, ExtendedColorType};
 
-    let pixel_count =
-        usize::try_from(width)
-            .ok()
-            .and_then(|width| {
-                usize::try_from(height)
-                    .ok()
-                    .and_then(|height| {
-                        width.checked_mul(height)
-                    })
-            })
-            .and_then(|pixels| {
-                pixels.checked_mul(3)
-            })
-            .ok_or_else(|| {
-                "Full screenshot dimensions overflow."
-                    .to_string()
-            })?;
+    let pixel_count = usize::try_from(width)
+        .ok()
+        .and_then(|width| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| width.checked_mul(height))
+        })
+        .and_then(|pixels| pixels.checked_mul(3))
+        .ok_or_else(|| "Full screenshot dimensions overflow.".to_string())?;
 
-    let mut rgb =
-        Vec::with_capacity(
-            pixel_count,
-        );
+    let mut rgb = Vec::with_capacity(pixel_count);
 
     /*
      * GetDIBits fournit du BGRA.
@@ -170,28 +260,14 @@ fn write_full_res_jpeg(
      * Le fichier final n'existe donc PAS
      * pendant l'encodage.
      */
-    let mut jpeg =
-        Vec::<u8>::new();
+    let mut jpeg = Vec::<u8>::new();
 
     {
-        let mut encoder =
-            JpegEncoder::new_with_quality(
-                &mut jpeg,
-                95,
-            );
+        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg, 95);
 
         encoder
-            .encode(
-                &rgb,
-                width as u32,
-                height as u32,
-                ExtendedColorType::Rgb8,
-            )
-            .map_err(|error| {
-                format!(
-                    "Could not encode full screenshot: {error}"
-                )
-            })?;
+            .encode(&rgb, width as u32, height as u32, ExtendedColorType::Rgb8)
+            .map_err(|error| format!("Could not encode full screenshot: {error}"))?;
     }
 
     /*
@@ -200,15 +276,7 @@ fn write_full_res_jpeg(
      *
      * Aucun fichier .tmp nécessaire.
      */
-    fs::write(
-        path,
-        &jpeg,
-    )
-    .map_err(|error| {
-        format!(
-            "Could not write full screenshot: {error}"
-        )
-    })?;
+    fs::write(path, &jpeg).map_err(|error| format!("Could not write full screenshot: {error}"))?;
 
     Ok(())
 }
@@ -218,11 +286,10 @@ fn write_thumbnail(path: &PathBuf, pixels: &[u8]) -> Result<(), String> {
 
     /*
      * GetDIBits fournit du BGRA.
-     *
-     * Le JPEG attend du RGB.
+     * JPEG attend du RGB.
      *
      * L'image est déjà en 640x360 grâce
-     * à StretchBlt : aucun resize CPU ici.
+     * à StretchBlt.
      */
     let mut rgb = Vec::with_capacity(
         usize::try_from(THUMB_WIDTH * THUMB_HEIGHT * 3)
@@ -235,28 +302,44 @@ fn write_thumbnail(path: &PathBuf, pixels: &[u8]) -> Result<(), String> {
         rgb.push(pixel[0]);
     }
 
-    let file =
-        fs::File::create(path).map_err(|error| format!("Could not create screenshot: {error}"))?;
+    /*
+     * IMPORTANT :
+     *
+     * On encode entièrement le JPEG
+     * en mémoire.
+     *
+     * Le fichier capture-....jpg
+     * n'existe donc pas pendant
+     * l'encodage.
+     */
+    let mut jpeg = Vec::<u8>::new();
 
-    let mut encoder = JpegEncoder::new_with_quality(file, 82);
+    {
+        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg, 82);
 
-    encoder
-        .encode(
-            &rgb,
-            THUMB_WIDTH as u32,
-            THUMB_HEIGHT as u32,
-            ExtendedColorType::Rgb8,
-        )
-        .map_err(|error| format!("Could not encode screenshot: {error}"))?;
+        encoder
+            .encode(
+                &rgb,
+                THUMB_WIDTH as u32,
+                THUMB_HEIGHT as u32,
+                ExtendedColorType::Rgb8,
+            )
+            .map_err(|error| format!("Could not encode screenshot: {error}"))?;
+    }
+
+    /*
+     * Le JPEG est maintenant complet.
+     *
+     * Comme le thumbnail est très petit,
+     * cette écriture finale est quasiment
+     * instantanée.
+     */
+    fs::write(path, &jpeg).map_err(|error| format!("Could not write screenshot: {error}"))?;
 
     Ok(())
 }
 
 pub(crate) fn capture_deadlock_full_res_async(thumbnail_path: &str) -> Result<String, String> {
-
-
-    let full_capture_started = std::time::Instant::now();
-
     let hwnd = find_deadlock_window()?;
 
     let mut rect: RECT = unsafe { zeroed() };
@@ -390,11 +473,6 @@ pub(crate) fn capture_deadlock_full_res_async(thumbnail_path: &str) -> Result<St
         pixels
     };
 
-    println!(
-        "[SPLIT] TIMING full native capture = {:.2?}",
-        full_capture_started.elapsed(),
-    );
-
     /*
      * Le chemin est connu immédiatement,
      * mais l'encodage du gros JPEG est lancé
@@ -431,10 +509,6 @@ pub(crate) fn capture_deadlock_full_res_async(thumbnail_path: &str) -> Result<St
 }
 
 pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
-
-
-    let thumbnail_started = std::time::Instant::now();
-
     let hwnd = find_deadlock_window()?;
 
     let mut rect: RECT = unsafe { zeroed() };
@@ -453,11 +527,14 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
 
     println!("[SPLIT] Deadlock capture target: {}x{}", width, height,);
 
-    unsafe {
-        /*
-         * DC utilisé uniquement pour créer
-         * un bitmap compatible.
-         */
+    /*
+     * Seule la récupération des pixels
+     * reste synchrone.
+     *
+     * L'encodage JPEG sera lancé ensuite
+     * sur un thread séparé.
+     */
+    let pixels = unsafe {
         let screen_dc = GetDC(null_mut());
 
         if screen_dc.is_null() {
@@ -484,16 +561,6 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
 
         let old_object = SelectObject(memory_dc, bitmap);
 
-        /*
-         * Au moment d'un Save, Deadlock est déjà
-         * au premier plan.
-         *
-         * On copie donc directement les pixels
-         * visibles de son client depuis l'écran.
-         *
-         * BitBlt est beaucoup plus léger que
-         * PrintWindow sur une fenêtre de jeu.
-         */
         let mut origin = POINT { x: 0, y: 0 };
 
         if ClientToScreen(hwnd, &mut origin) == 0 {
@@ -508,9 +575,8 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
         }
 
         /*
-         * On croppe la source au ratio 16:9,
-         * puis Windows réduit directement
-         * l'image vers 640x360.
+         * Crop 16:9 avant la réduction
+         * Windows vers 640x360.
          */
         let (source_x, source_y, source_width, source_height) =
             if i64::from(width) * 9 > i64::from(height) * 16 {
@@ -570,7 +636,6 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
             biSizeImage: 0,
 
             biXPelsPerMeter: 0,
-
             biYPelsPerMeter: 0,
 
             biClrUsed: 0,
@@ -603,7 +668,6 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
         SelectObject(memory_dc, old_object);
 
         DeleteObject(bitmap);
-
         DeleteDC(memory_dc);
 
         ReleaseDC(null_mut(), screen_dc);
@@ -612,19 +676,37 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
             return Err("GetDIBits failed.".to_string());
         }
 
-        let path = output_path()?;
+        pixels
+    };
 
-        write_thumbnail(&path, &pixels)?;
+    /*
+     * À partir d'ici, les pixels 640x360
+     * sont déjà capturés.
+     *
+     * On connaît donc immédiatement le
+     * chemin du screenshot.
+     */
+    let path = output_path()?;
 
-        println!("[SPLIT] Deadlock thumbnail written to {}", path.display(),);
+    let background_path = path.clone();
 
-        println!(
-            "[SPLIT] TIMING thumbnail total = {:.2?}",
-            thumbnail_started.elapsed(),
-        );
+    std::thread::Builder::new()
+        .name("split-thumbnail".to_string())
+        .spawn(move || match write_thumbnail(&background_path, &pixels) {
+            Ok(()) => {
+                println!(
+                    "[SPLIT] Deadlock thumbnail written to {}",
+                    background_path.display(),
+                );
+            }
 
-        Ok(path.to_string_lossy().into_owned())
-    }
+            Err(error) => {
+                eprintln!("[SPLIT] Thumbnail encode failed: {error}");
+            }
+        })
+        .map_err(|error| format!("Could not start thumbnail encoder: {error}"))?;
+
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

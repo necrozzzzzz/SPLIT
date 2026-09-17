@@ -129,6 +129,10 @@ pub fn export_preset(preset: u8) -> Result<PresetExport, String> {
     slots::export_preset(preset)
 }
 
+pub fn export_preset_archive(preset: u8, destination: String) -> Result<(), String> {
+    slots::export_preset_archive(preset, destination)
+}
+
 pub fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()
@@ -269,6 +273,27 @@ pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
      */
     let history_state = history::clear()?;
 
+    /*
+     * Le Clear Preset vient de retirer les
+     * screenshots des 8 slots et de vider
+     * l'historique Undo/Redo.
+     *
+     * On peut donc nettoyer les fichiers
+     * devenus orphelins sans bloquer l'UI.
+     */
+    std::thread::Builder::new()
+        .name("split-screenshot-cleanup".to_string())
+        .spawn(|| {
+            if let Err(error) = screenshot::cleanup_screenshots() {
+                eprintln!("[SPLIT] Screenshot cleanup failed: {error}");
+            }
+        })
+        .map_err(|error| {
+            eprintln!("[SPLIT] Could not start screenshot cleanup: {error}");
+            error
+        })
+        .ok();
+
     Ok(SlotEditResult {
         preset,
         slots: saved,
@@ -301,6 +326,27 @@ pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResul
     cfg::ensure_autoexec(&deadlock.autoexec)?;
 
     let history_state = history::clear()?;
+
+    /*
+     * L'import remplace complètement les
+     * 8 slots du preset actif.
+     *
+     * Les screenshots de l'ancien preset
+     * qui ne sont plus utilisés ailleurs
+     * peuvent maintenant être supprimés.
+     */
+    std::thread::Builder::new()
+        .name("split-screenshot-cleanup".to_string())
+        .spawn(|| {
+            if let Err(error) = screenshot::cleanup_screenshots() {
+                eprintln!("[SPLIT] Screenshot cleanup failed: {error}");
+            }
+        })
+        .map_err(|error| {
+            eprintln!("[SPLIT] Could not start screenshot cleanup: {error}");
+            error
+        })
+        .ok();
 
     Ok(SlotEditResult {
         preset,

@@ -58,6 +58,11 @@ fn export_preset(preset: u8) -> Result<deadlock::PresetExport, String> {
 }
 
 #[tauri::command]
+fn export_preset_archive(preset: u8, destination: String) -> Result<(), String> {
+    deadlock::export_preset_archive(preset, destination)
+}
+
+#[tauri::command]
 fn import_preset(
     preset: u8,
     imported: deadlock::PresetExport,
@@ -334,6 +339,7 @@ pub fn run() {
             copy_slot_to_favorite,
             get_preset_names,
             export_preset,
+            export_preset_archive,
             import_preset,
             rename_preset,
             clear_preset,

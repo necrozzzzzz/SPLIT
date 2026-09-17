@@ -713,6 +713,126 @@ pub fn export_preset(preset: u8) -> Result<PresetExport, String> {
     export_preset_from_state(&state, preset)
 }
 
+pub fn export_preset_archive(preset: u8, destination: String) -> Result<(), String> {
+    if !(1..=PRESET_COUNT as u8).contains(&preset) {
+        return Err(format!("Invalid preset {preset}"));
+    }
+
+    /*
+     * On ne garde le lock stockage que
+     * le temps de récupérer les données.
+     *
+     * La copie des JPEG peut ensuite se
+     * faire sans bloquer les slots.
+     */
+    let (exported, screenshot_paths) = {
+        let _guard = STORAGE_LOCK
+            .lock()
+            .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+        let state = read_state_unlocked_with_migration(false)?;
+
+        let index = usize::from(preset - 1);
+
+        let exported = export_preset_from_state(&state, preset)?;
+
+        let screenshot_paths = state.presets[index]
+            .iter()
+            .map(|entry| entry.screenshot.clone())
+            .collect::<Vec<_>>();
+
+        (exported, screenshot_paths)
+    };
+
+    let destination_path = PathBuf::from(&destination);
+
+    let Some(parent) = destination_path.parent() else {
+        return Err("Preset export destination has no parent directory.".to_string());
+    };
+
+    if !parent.as_os_str().is_empty() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create preset export directory: {error}"))?;
+    }
+
+    let file = fs::File::create(&destination_path)
+        .map_err(|error| format!("Could not create preset archive: {error}"))?;
+
+    let mut archive = tar::Builder::new(file);
+
+    /*
+     * Métadonnées / positions du preset.
+     */
+    let preset_json = serde_json::to_vec_pretty(&exported)
+        .map_err(|error| format!("Could not serialize preset: {error}"))?;
+
+    let mut header = tar::Header::new_gnu();
+
+    header.set_size(preset_json.len() as u64);
+
+    header.set_mode(0o644);
+
+    header.set_cksum();
+
+    archive
+        .append_data(&mut header, "preset.json", preset_json.as_slice())
+        .map_err(|error| format!("Could not add preset.json to archive: {error}"))?;
+
+    /*
+     * Chaque slot utilise des noms
+     * indépendants du PC d'origine :
+     *
+     * screenshots/slot-1.jpg
+     * screenshots/slot-1-full.jpg
+     */
+    for (index, screenshot) in screenshot_paths.iter().enumerate() {
+        let Some(thumbnail_path) = screenshot else {
+            continue;
+        };
+
+        let thumbnail = PathBuf::from(thumbnail_path);
+
+        let slot_number = index + 1;
+
+        if thumbnail.is_file() {
+            archive
+                .append_path_with_name(&thumbnail, format!("screenshots/slot-{slot_number}.jpg"))
+                .map_err(|error| {
+                    format!("Could not add thumbnail for slot {slot_number}: {error}")
+                })?;
+        }
+
+        /*
+         * Le full-res possède le même ID
+         * que le thumbnail.
+         */
+        if let Ok(full_path) = super::screenshot::full_output_path(thumbnail_path) {
+            if full_path.is_file() {
+                archive
+                    .append_path_with_name(
+                        &full_path,
+                        format!("screenshots/slot-{slot_number}-full.jpg"),
+                    )
+                    .map_err(|error| {
+                        format!("Could not add full screenshot for slot {slot_number}: {error}")
+                    })?;
+            }
+        }
+    }
+
+    archive
+        .finish()
+        .map_err(|error| format!("Could not finalize preset archive: {error}"))?;
+
+    println!(
+        "[SPLIT] Preset {} exported with screenshots -> {}",
+        preset,
+        destination_path.display(),
+    );
+
+    Ok(())
+}
+
 fn validate_preset_import(
     preset: u8,
     imported: PresetExport,
@@ -840,6 +960,40 @@ pub(crate) fn load_bank(bank: SlotBank) -> Result<Vec<Option<PositionSnapshot>>,
 
         SlotBank::Preset(preset) => Err(format!("Invalid preset {preset}")),
     }
+}
+
+pub(crate) fn referenced_screenshot_paths() -> Result<Vec<String>, String> {
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+
+    let state = read_state_unlocked()?;
+
+    let mut paths = Vec::new();
+
+    /*
+     * Screenshots actuellement utilisés
+     * par les 4 presets.
+     */
+    for preset in &state.presets {
+        for entry in preset {
+            if let Some(path) = &entry.screenshot {
+                paths.push(path.clone());
+            }
+        }
+    }
+
+    /*
+     * Screenshots actuellement utilisés
+     * par Favorites.
+     */
+    for entry in &state.favorites {
+        if let Some(path) = &entry.screenshot {
+            paths.push(path.clone());
+        }
+    }
+
+    Ok(paths)
 }
 
 pub(crate) fn load_metadata(bank: SlotBank) -> Result<Vec<SlotMetadata>, String> {

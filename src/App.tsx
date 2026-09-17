@@ -20,7 +20,6 @@ import {
 
 import {
   readTextFile,
-  writeTextFile,
 } from "@tauri-apps/plugin-fs";
 
 type DeadlockStatus = {
@@ -1751,21 +1750,23 @@ function App() {
             setError(null);
 
             try {
-              const exported =
-                await invoke<PresetExport>(
-                  "export_preset",
-                  {
-                    preset:
-                      activePreset,
-                  },
-                );
+              const presetName =
+                presetNames[
+                  activePreset - 1
+                ] ??
+                `Preset ${activePreset}`;
+
               const sanitizedName =
-                exported.name
+                presetName
                   .replace(
                     /[<>:"/\\|?*\u0000-\u001f]/g,
                     "_",
                   )
-                  .replace(/[. ]+$/g, "");
+                  .replace(
+                    /[. ]+$/g,
+                    "",
+                  );
+
               const safeName =
                 /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(
                   sanitizedName,
@@ -1773,14 +1774,18 @@ function App() {
                   ? `_${sanitizedName}`
                   : sanitizedName ||
                     `Preset ${activePreset}`;
+
               const filePath =
                 await save({
                   defaultPath:
-                    `${safeName}.split-preset.json`,
+                    `${safeName}.splitpreset`,
                   filters: [
                     {
-                      name: "SPLIT preset",
-                      extensions: ["json"],
+                      name:
+                        "SPLIT preset",
+                      extensions: [
+                        "splitpreset",
+                      ],
                     },
                   ],
                 });
@@ -1789,17 +1794,29 @@ function App() {
                 return;
               }
 
-              await writeTextFile(
-                filePath,
-                `${JSON.stringify(exported, null, 2)}\n`,
+              await invoke(
+                "export_preset_archive",
+                {
+                  preset:
+                    activePreset,
+                  destination:
+                    filePath,
+                },
               );
             } catch (reason) {
-              setError(String(reason));
+              setError(
+                String(reason),
+              );
             } finally {
-              setExportingPreset(false);
+              setExportingPreset(
+                false,
+              );
             }
           },
-          [activePreset],
+          [
+            activePreset,
+            presetNames,
+          ],
         );
 
       const selectPresetImport =
@@ -4005,6 +4022,48 @@ function App() {
                           )}
                           alt=""
                           draggable={false}
+                          onLoad={(event) => {
+                            event.currentTarget.dataset.retryAttempts =
+                              "0";
+                          }}
+                          onError={(event) => {
+                            const image =
+                              event.currentTarget;
+
+                            const attempts =
+                              Number(
+                                image.dataset
+                                  .retryAttempts ?? "0",
+                              );
+
+                            /*
+                            * Le thumbnail peut être encore
+                            * en cours d'encodage au moment où
+                            * React essaye de l'afficher.
+                            *
+                            * On retente pendant 2 secondes max.
+                            */
+                            if (attempts >= 20) {
+                              return;
+                            }
+
+                            image.dataset.retryAttempts =
+                              String(attempts + 1);
+
+                            const screenshotPath =
+                              metadata.screenshot!;
+
+                            window.setTimeout(() => {
+                              if (!image.isConnected) {
+                                return;
+                              }
+
+                              image.src =
+                                `${convertFileSrc(
+                                  screenshotPath,
+                                )}?retry=${Date.now()}`;
+                            }, 100);
+                          }}
                         />
                       ) : (
                         <div className="slot-preview-placeholder">

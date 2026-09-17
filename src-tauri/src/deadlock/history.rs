@@ -100,6 +100,43 @@ static HISTORY: Mutex<History> = Mutex::new(History {
     redo_stack: Vec::new(),
 });
 
+pub(crate) fn referenced_screenshot_paths() -> Result<Vec<String>, String> {
+    let history = HISTORY
+        .lock()
+        .map_err(|_| "History lock poisoned".to_string())?;
+
+    let mut paths = Vec::new();
+
+    /*
+     * Un screenshot peut encore être
+     * nécessaire pour un Undo.
+     */
+    for action in &history.undo_stack {
+        if let Some(path) = &action.before.screenshot {
+            paths.push(path.clone());
+        }
+
+        if let Some(path) = &action.after.screenshot {
+            paths.push(path.clone());
+        }
+    }
+
+    /*
+     * Même chose pour Redo.
+     */
+    for action in &history.redo_stack {
+        if let Some(path) = &action.before.screenshot {
+            paths.push(path.clone());
+        }
+
+        if let Some(path) = &action.after.screenshot {
+            paths.push(path.clone());
+        }
+    }
+
+    Ok(paths)
+}
+
 pub fn state() -> Result<HistoryState, String> {
     HISTORY
         .lock()
