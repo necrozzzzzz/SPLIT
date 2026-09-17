@@ -228,6 +228,24 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
   favoriteMode: { key: "F11", ctrl: false, alt: false, shift: false },
 };
 
+function getFullScreenshotPath(
+  thumbnailPath: string,
+): string | null {
+  const match =
+    thumbnailPath.match(
+      /^(.*[\\/])capture-([^\\/]+)$/,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  return (
+    `${match[1]}` +
+    `capture-full-${match[2]}`
+  );
+}
+
 function formatHotkey(hotkey: Hotkey): string {
   return [
     hotkey.ctrl ? "Ctrl" : null,
@@ -534,6 +552,41 @@ function App() {
         }),
       ),
   );
+
+  const [
+    screenshotViewer,
+    setScreenshotViewer,
+  ] = useState<{
+    name: string;
+    thumbnailPath: string;
+  } | null>(null);
+
+
+  useEffect(() => {
+    if (!screenshotViewer) {
+      return;
+    }
+
+    const onKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (event.key === "Escape") {
+        setScreenshotViewer(null);
+      }
+    };
+
+    window.addEventListener(
+      "keydown",
+      onKeyDown,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        onKeyDown,
+      );
+    };
+  }, [screenshotViewer]);
 
   const [
     relativeTimeNow,
@@ -2865,8 +2918,94 @@ function App() {
         ? `No critical issues · ${warningText}.`
         : "All monitored SPLIT systems are ready.";
 
+  const screenshotViewerFullPath =
+    screenshotViewer
+      ? getFullScreenshotPath(
+          screenshotViewer.thumbnailPath,
+        )
+      : null;      
+
   return (
     <div className="shell">
+
+      {screenshotViewer && (
+        <div
+          className="screenshot-viewer-backdrop"
+          onClick={() =>
+            setScreenshotViewer(null)
+          }
+        >
+          <section
+            className="screenshot-viewer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Screenshot for ${screenshotViewer.name}`}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <header className="screenshot-viewer-header">
+              <div>
+                <strong>
+                  {screenshotViewer.name}
+                </strong>
+
+                <span>
+                  Saved screenshot
+                </span>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close screenshot"
+                title="Close"
+                onClick={() =>
+                  setScreenshotViewer(null)
+                }
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="screenshot-viewer-image">
+              <img
+                src={convertFileSrc(
+                  screenshotViewerFullPath ??
+                    screenshotViewer.thumbnailPath,
+                )}
+                alt={`Screenshot for ${screenshotViewer.name}`}
+                draggable={false}
+                onError={(event) => {
+                  /*
+                  * Ancien Save ou full-res pas encore
+                  * écrit : fallback vers le thumbnail.
+                  */
+                  if (
+                    screenshotViewerFullPath ===
+                      null ||
+                    event.currentTarget.dataset
+                      .fallback === "true"
+                  ) {
+                    return;
+                  }
+
+                  event.currentTarget.dataset.fallback =
+                    "true";
+
+                  event.currentTarget.src =
+                    convertFileSrc(
+                      screenshotViewer.thumbnailPath,
+                    );
+                }}
+              />
+            </div>
+
+            <footer className="screenshot-viewer-footer">
+              Right click a saved slot to open its screenshot · Esc to close
+            </footer>
+          </section>
+        </div>
+      )}
       
       {pendingGameplayHotkey && (
         <div className="confirmation-backdrop">
@@ -3830,6 +3969,27 @@ function App() {
                   className={`slot-preview ${
                     position ? "filled" : "empty"
                   }`}
+                  title={
+                    position && metadata?.screenshot
+                      ? "Right click to view screenshot"
+                      : undefined
+                  }
+                  onContextMenu={(event) => {
+                    if (
+                      !position ||
+                      !metadata?.screenshot
+                    ) {
+                      return;
+                    }
+
+                    event.preventDefault();
+
+                    setScreenshotViewer({
+                      name: displayName,
+                      thumbnailPath:
+                        metadata.screenshot,
+                    });
+                  }}
                 >
                   <span className="slot-preview-number">
                     {String(slot).padStart(2, "0")}
@@ -3966,6 +4126,33 @@ function App() {
                         </button>
                       </>
                     )}
+
+                    {position &&
+                      metadata?.screenshot && (
+                        <button
+                          className="slot-menu-item"
+                          type="button"
+                          onClick={(event) => {
+                            event.currentTarget
+                              .closest("details")
+                              ?.removeAttribute(
+                                "open",
+                              );
+
+                            setScreenshotViewer({
+                              name: displayName,
+                              thumbnailPath:
+                                metadata.screenshot!,
+                            });
+                          }}
+                        >
+                          View screenshot
+
+                          <span>
+                            Right click
+                          </span>
+                        </button>
+                      )}
 
                     <button
                       className="slot-menu-item"

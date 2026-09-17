@@ -77,27 +77,8 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
 }
 
 fn find_deadlock_window() -> Result<HWND, String> {
-    let pid =
-        super::process::deadlock_pid().ok_or_else(|| "Deadlock is not running.".to_string())?;
-
-    let mut search = WindowSearch {
-        pid,
-        hwnd: null_mut(),
-        area: 0,
-    };
-
-    unsafe {
-        EnumWindows(
-            Some(enum_window_callback),
-            &mut search as *mut WindowSearch as LPARAM,
-        );
-    }
-
-    if search.hwnd.is_null() {
-        return Err("Could not find a visible Deadlock window.".to_string());
-    }
-
-    Ok(search.hwnd)
+    super::foreground_deadlock_window()
+        .ok_or_else(|| "Could not find the foreground Deadlock window.".to_string())
 }
 
 fn output_path() -> Result<PathBuf, String> {
@@ -119,23 +100,23 @@ fn output_path() -> Result<PathBuf, String> {
     Ok(directory.join(format!("capture-{timestamp}.jpg")))
 }
 
-fn full_output_path() -> Result<PathBuf, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
+fn full_output_path(thumbnail_path: &str) -> Result<PathBuf, String> {
+    let thumbnail = PathBuf::from(thumbnail_path);
 
-    let appdata =
-        std::env::var_os("APPDATA").ok_or_else(|| "APPDATA is unavailable.".to_string())?;
+    let parent = thumbnail
+        .parent()
+        .ok_or_else(|| "Thumbnail has no parent directory.".to_string())?;
 
-    let directory = PathBuf::from(appdata).join("SPLIT").join("screenshots");
+    let filename = thumbnail
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Thumbnail filename is invalid.".to_string())?;
 
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Could not create screenshot directory: {error}"))?;
+    let suffix = filename
+        .strip_prefix("capture-")
+        .ok_or_else(|| format!("Unexpected thumbnail filename: {filename}"))?;
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("System clock error: {error}"))?
-        .as_millis();
-
-    Ok(directory.join(format!("capture-full-{timestamp}.jpg")))
+    Ok(parent.join(format!("capture-full-{suffix}")))
 }
 
 fn write_full_res_jpeg(
@@ -144,19 +125,33 @@ fn write_full_res_jpeg(
     height: i32,
     pixels: &[u8],
 ) -> Result<(), String> {
-    use image::{codecs::jpeg::JpegEncoder, ExtendedColorType};
+    use image::{
+        codecs::jpeg::JpegEncoder,
+        ExtendedColorType,
+    };
 
-    let pixel_count = usize::try_from(width)
-        .ok()
-        .and_then(|width| {
-            usize::try_from(height)
-                .ok()
-                .and_then(|height| width.checked_mul(height))
-        })
-        .and_then(|pixels| pixels.checked_mul(3))
-        .ok_or_else(|| "Full screenshot dimensions overflow.".to_string())?;
+    let pixel_count =
+        usize::try_from(width)
+            .ok()
+            .and_then(|width| {
+                usize::try_from(height)
+                    .ok()
+                    .and_then(|height| {
+                        width.checked_mul(height)
+                    })
+            })
+            .and_then(|pixels| {
+                pixels.checked_mul(3)
+            })
+            .ok_or_else(|| {
+                "Full screenshot dimensions overflow."
+                    .to_string()
+            })?;
 
-    let mut rgb = Vec::with_capacity(pixel_count);
+    let mut rgb =
+        Vec::with_capacity(
+            pixel_count,
+        );
 
     /*
      * GetDIBits fournit du BGRA.
@@ -168,14 +163,52 @@ fn write_full_res_jpeg(
         rgb.push(pixel[0]);
     }
 
-    let file = fs::File::create(path)
-        .map_err(|error| format!("Could not create full screenshot: {error}"))?;
+    /*
+     * Le JPEG est d'abord entièrement
+     * encodé en mémoire.
+     *
+     * Le fichier final n'existe donc PAS
+     * pendant l'encodage.
+     */
+    let mut jpeg =
+        Vec::<u8>::new();
 
-    let mut encoder = JpegEncoder::new_with_quality(file, 90);
+    {
+        let mut encoder =
+            JpegEncoder::new_with_quality(
+                &mut jpeg,
+                95,
+            );
 
-    encoder
-        .encode(&rgb, width as u32, height as u32, ExtendedColorType::Rgb8)
-        .map_err(|error| format!("Could not encode full screenshot: {error}"))?;
+        encoder
+            .encode(
+                &rgb,
+                width as u32,
+                height as u32,
+                ExtendedColorType::Rgb8,
+            )
+            .map_err(|error| {
+                format!(
+                    "Could not encode full screenshot: {error}"
+                )
+            })?;
+    }
+
+    /*
+     * Seulement une fois le JPEG terminé,
+     * on écrit le fichier final.
+     *
+     * Aucun fichier .tmp nécessaire.
+     */
+    fs::write(
+        path,
+        &jpeg,
+    )
+    .map_err(|error| {
+        format!(
+            "Could not write full screenshot: {error}"
+        )
+    })?;
 
     Ok(())
 }
@@ -219,7 +252,11 @@ fn write_thumbnail(path: &PathBuf, pixels: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn capture_deadlock_full_res_async() -> Result<String, String> {
+pub(crate) fn capture_deadlock_full_res_async(thumbnail_path: &str) -> Result<String, String> {
+
+
+    let full_capture_started = std::time::Instant::now();
+
     let hwnd = find_deadlock_window()?;
 
     let mut rect: RECT = unsafe { zeroed() };
@@ -353,6 +390,11 @@ pub(crate) fn capture_deadlock_full_res_async() -> Result<String, String> {
         pixels
     };
 
+    println!(
+        "[SPLIT] TIMING full native capture = {:.2?}",
+        full_capture_started.elapsed(),
+    );
+
     /*
      * Le chemin est connu immédiatement,
      * mais l'encodage du gros JPEG est lancé
@@ -361,7 +403,7 @@ pub(crate) fn capture_deadlock_full_res_async() -> Result<String, String> {
      * Le Save ne doit donc pas attendre
      * plusieurs secondes.
      */
-    let path = full_output_path()?;
+    let path = full_output_path(thumbnail_path)?;
 
     let background_path = path.clone();
 
@@ -389,6 +431,10 @@ pub(crate) fn capture_deadlock_full_res_async() -> Result<String, String> {
 }
 
 pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
+
+
+    let thumbnail_started = std::time::Instant::now();
+
     let hwnd = find_deadlock_window()?;
 
     let mut rect: RECT = unsafe { zeroed() };
@@ -571,6 +617,11 @@ pub(crate) fn capture_deadlock_thumbnail() -> Result<String, String> {
         write_thumbnail(&path, &pixels)?;
 
         println!("[SPLIT] Deadlock thumbnail written to {}", path.display(),);
+
+        println!(
+            "[SPLIT] TIMING thumbnail total = {:.2?}",
+            thumbnail_started.elapsed(),
+        );
 
         Ok(path.to_string_lossy().into_owned())
     }

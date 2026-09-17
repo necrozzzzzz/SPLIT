@@ -194,13 +194,15 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
      * Pour l'instant ce chemin n'est toujours
      * pas persisté dans SlotEntry.
      */
-    match super::screenshot::capture_deadlock_full_res_async() {
-        Ok(path) => {
-            println!("[SPLIT] Full screenshot queued -> {}", path,);
-        }
+    if let Some(thumbnail_path) = screenshot.as_deref() {
+        match super::screenshot::capture_deadlock_full_res_async(thumbnail_path) {
+            Ok(path) => {
+                println!("[SPLIT] Full screenshot queued -> {}", path,);
+            }
 
-        Err(error) => {
-            eprintln!("[SPLIT] Full screenshot unavailable: {error}");
+            Err(error) => {
+                eprintln!("[SPLIT] Full screenshot unavailable: {error}");
+            }
         }
     }
 
