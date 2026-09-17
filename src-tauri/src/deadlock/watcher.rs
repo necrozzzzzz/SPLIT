@@ -163,31 +163,10 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
     };
 
     /*
-     * TEST full-res :
+     * Le thumbnail SPLIT reste PRIORITAIRE.
      *
-     * On capture les pixels natifs immédiatement,
-     * puis le JPEG est encodé en arrière-plan.
-     *
-     * Pour l'instant le chemin n'est PAS encore
-     * persisté dans SlotEntry.
-     */
-    match super::screenshot::capture_deadlock_full_res_async() {
-        Ok(path) => {
-            println!("[SPLIT] Full screenshot queued -> {}", path,);
-        }
-
-        Err(error) => {
-            eprintln!("[SPLIT] Full screenshot unavailable: {error}");
-        }
-    }
-
-    /*
-     * Le screenshot est pris au même moment logique
-     * que la caméra : dès que l'utilisateur déclenche Save.
-     *
-     * IMPORTANT :
-     * une panne de screenshot ne doit JAMAIS empêcher
-     * le savestate classique de fonctionner.
+     * C'est le chemin déjà validé pour l'affichage
+     * immédiat dans les cartes.
      */
     let screenshot = match super::screenshot::capture_deadlock_thumbnail() {
         Ok(path) => {
@@ -202,6 +181,28 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
             None
         }
     };
+
+    /*
+     * TEST full-res :
+     *
+     * IMPORTANT :
+     * on ne lance cette capture qu'APRÈS
+     * le thumbnail afin qu'elle ne puisse
+     * jamais perturber le screenshot utilisé
+     * actuellement par SPLIT.
+     *
+     * Pour l'instant ce chemin n'est toujours
+     * pas persisté dans SlotEntry.
+     */
+    match super::screenshot::capture_deadlock_full_res_async() {
+        Ok(path) => {
+            println!("[SPLIT] Full screenshot queued -> {}", path,);
+        }
+
+        Err(error) => {
+            eprintln!("[SPLIT] Full screenshot unavailable: {error}");
+        }
+    }
 
     let mut pending = PENDING_SAVE
         .lock()
