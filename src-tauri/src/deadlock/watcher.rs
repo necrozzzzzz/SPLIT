@@ -163,6 +163,25 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
     };
 
     /*
+     * TEST full-res :
+     *
+     * On capture les pixels natifs immédiatement,
+     * puis le JPEG est encodé en arrière-plan.
+     *
+     * Pour l'instant le chemin n'est PAS encore
+     * persisté dans SlotEntry.
+     */
+    match super::screenshot::capture_deadlock_full_res_async() {
+        Ok(path) => {
+            println!("[SPLIT] Full screenshot queued -> {}", path,);
+        }
+
+        Err(error) => {
+            eprintln!("[SPLIT] Full screenshot unavailable: {error}");
+        }
+    }
+
+    /*
      * Le screenshot est pris au même moment logique
      * que la caméra : dès que l'utilisateur déclenche Save.
      *
