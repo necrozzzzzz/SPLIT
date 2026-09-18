@@ -25,6 +25,48 @@ impl SlotAction {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PresetAction {
+    pub preset: u8,
+
+    pub before_name: String,
+    pub after_name: String,
+
+    pub before: Vec<SlotEntry>,
+    pub after: Vec<SlotEntry>,
+}
+
+impl PresetAction {
+    pub fn snapshot_changed(&self) -> bool {
+        if self.before.len() != self.after.len() {
+            return true;
+        }
+
+        self.before
+            .iter()
+            .zip(&self.after)
+            .any(|(before, after)| before.snapshot != after.snapshot)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HistoryAction {
+    Slot(SlotAction),
+    Preset(PresetAction),
+}
+
+impl HistoryAction {
+    fn changed(&self) -> bool {
+        match self {
+            Self::Slot(action) => action.before != action.after,
+
+            Self::Preset(action) => {
+                action.before_name != action.after_name || action.before != action.after
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryState {
@@ -34,9 +76,9 @@ pub struct HistoryState {
 
 #[derive(Default)]
 struct History {
-    undo_stack: Vec<SlotAction>,
+    undo_stack: Vec<HistoryAction>,
 
-    redo_stack: Vec<SlotAction>,
+    redo_stack: Vec<HistoryAction>,
 }
 
 impl History {
@@ -48,7 +90,7 @@ impl History {
         }
     }
 
-    fn push_bounded(stack: &mut Vec<SlotAction>, action: SlotAction) {
+    fn push_bounded(stack: &mut Vec<HistoryAction>, action: HistoryAction) {
         if stack.len() == HISTORY_LIMIT {
             stack.remove(0);
         }
@@ -56,8 +98,8 @@ impl History {
         stack.push(action);
     }
 
-    fn record(&mut self, action: SlotAction) -> bool {
-        if action.before == action.after {
+    fn record_action(&mut self, action: HistoryAction) -> bool {
+        if !action.changed() {
             return false;
         }
 
@@ -68,11 +110,47 @@ impl History {
         true
     }
 
+    /*
+     * Compatibilité avec toutes les actions
+     * de slot existantes.
+     */
+    fn record(&mut self, action: SlotAction) -> bool {
+        self.record_action(HistoryAction::Slot(action))
+    }
+
+    fn record_preset(&mut self, action: PresetAction) -> bool {
+        self.record_action(HistoryAction::Preset(action))
+    }
+
+    /*
+     * Compatibilité temporaire avec le code
+     * Undo/Redo actuel.
+     *
+     * Tant qu'aucune PresetAction n'est encore
+     * enregistrée, le comportement reste
+     * strictement identique.
+     */
     fn peek_undo(&self) -> Option<SlotAction> {
-        self.undo_stack.last().cloned()
+        match self.undo_stack.last()? {
+            HistoryAction::Slot(action) => Some(action.clone()),
+
+            HistoryAction::Preset(_) => None,
+        }
     }
 
     fn peek_redo(&self) -> Option<SlotAction> {
+        match self.redo_stack.last()? {
+            HistoryAction::Slot(action) => Some(action.clone()),
+
+            HistoryAction::Preset(_) => None,
+        }
+    }
+
+    fn peek_undo_action(&self) -> Option<HistoryAction> {
+        self.undo_stack.last().cloned()
+    }
+
+    fn peek_redo_action(&self) -> Option<HistoryAction> {
         self.redo_stack.last().cloned()
     }
 
@@ -100,6 +178,28 @@ static HISTORY: Mutex<History> = Mutex::new(History {
     redo_stack: Vec::new(),
 });
 
+fn collect_action_screenshot_paths(action: &HistoryAction, paths: &mut Vec<String>) {
+    let mut collect_entry = |entry: &SlotEntry| {
+        if let Some(path) = &entry.screenshot {
+            paths.push(path.clone());
+        }
+    };
+
+    match action {
+        HistoryAction::Slot(action) => {
+            collect_entry(&action.before);
+
+            collect_entry(&action.after);
+        }
+
+        HistoryAction::Preset(action) => {
+            for entry in action.before.iter().chain(action.after.iter()) {
+                collect_entry(entry);
+            }
+        }
+    }
+}
+
 pub(crate) fn referenced_screenshot_paths() -> Result<Vec<String>, String> {
     let history = HISTORY
         .lock()
@@ -107,31 +207,12 @@ pub(crate) fn referenced_screenshot_paths() -> Result<Vec<String>, String> {
 
     let mut paths = Vec::new();
 
-    /*
-     * Un screenshot peut encore être
-     * nécessaire pour un Undo.
-     */
     for action in &history.undo_stack {
-        if let Some(path) = &action.before.screenshot {
-            paths.push(path.clone());
-        }
-
-        if let Some(path) = &action.after.screenshot {
-            paths.push(path.clone());
-        }
+        collect_action_screenshot_paths(action, &mut paths);
     }
 
-    /*
-     * Même chose pour Redo.
-     */
     for action in &history.redo_stack {
-        if let Some(path) = &action.before.screenshot {
-            paths.push(path.clone());
-        }
-
-        if let Some(path) = &action.after.screenshot {
-            paths.push(path.clone());
-        }
+        collect_action_screenshot_paths(action, &mut paths);
     }
 
     Ok(paths)
@@ -154,6 +235,16 @@ pub fn record(action: SlotAction) -> Result<(bool, HistoryState), String> {
     Ok((changed, history.state()))
 }
 
+pub fn record_preset(action: PresetAction) -> Result<(bool, HistoryState), String> {
+    let mut history = HISTORY
+        .lock()
+        .map_err(|_| "History lock poisoned".to_string())?;
+
+    let changed = history.record_preset(action);
+
+    Ok((changed, history.state()))
+}
+
 pub fn peek_undo() -> Result<Option<SlotAction>, String> {
     HISTORY
         .lock()
@@ -165,6 +256,20 @@ pub fn peek_redo() -> Result<Option<SlotAction>, String> {
     HISTORY
         .lock()
         .map(|history| history.peek_redo())
+        .map_err(|_| "History lock poisoned".to_string())
+}
+
+pub fn peek_undo_action() -> Result<Option<HistoryAction>, String> {
+    HISTORY
+        .lock()
+        .map(|history| history.peek_undo_action())
+        .map_err(|_| "History lock poisoned".to_string())
+}
+
+pub fn peek_redo_action() -> Result<Option<HistoryAction>, String> {
+    HISTORY
+        .lock()
+        .map(|history| history.peek_redo_action())
         .map_err(|_| "History lock poisoned".to_string())
 }
 
@@ -319,7 +424,15 @@ mod tests {
 
         assert_eq!(history.undo_stack.len(), HISTORY_LIMIT,);
 
-        assert_eq!(history.undo_stack[0].slot, 1,);
+        match &history.undo_stack[0] {
+            HistoryAction::Slot(action) => {
+                assert_eq!(action.slot, 1,);
+            }
+
+            HistoryAction::Preset(_) => {
+                panic!("Expected slot history action");
+            }
+        }
     }
 
     #[test]

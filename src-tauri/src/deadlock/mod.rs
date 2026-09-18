@@ -654,31 +654,63 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
     ensure_history_action_allowed(watcher::has_pending_save())?;
 
     let action = if undo {
-        history::peek_undo()?
+        history::peek_undo_action()?
     } else {
-        history::peek_redo()?
+        history::peek_redo_action()?
     };
 
     let Some(action) = action else {
         return Ok(HistoryOperationResult {
             preset: slots::get_active_preset()?,
+
             slots: slots::load_bank(current_slot_bank()?)?,
+
             history_state: history::state()?,
+
             favorite_active: favorite_mode_active(),
+
             performed: false,
         });
     };
 
-    let snapshot_changed = action.snapshot_changed();
+    let (saved, favorite_active, snapshot_changed) = match &action {
+        history::HistoryAction::Slot(action) => {
+            let snapshot_changed = action.snapshot_changed();
 
-    let value = if undo {
-        action.before.clone()
-    } else {
-        action.after.clone()
+            let value = if undo {
+                action.before.clone()
+            } else {
+                action.after.clone()
+            };
+
+            let saved = slots::restore_slot(action.bank, action.slot, value)?;
+
+            (saved, favorite_mode_for_bank(action.bank), snapshot_changed)
+        }
+
+        history::HistoryAction::Preset(action) => {
+            let snapshot_changed = action.snapshot_changed();
+
+            let (name, entries) = if undo {
+                (action.before_name.clone(), action.before.clone())
+            } else {
+                (action.after_name.clone(), action.after.clone())
+            };
+
+            let saved = slots::apply_preset_history_snapshot(action.preset, name, entries)?;
+
+            (saved, false, snapshot_changed)
+        }
     };
 
-    let saved = slots::restore_slot(action.bank, action.slot, value)?;
-
+    /*
+     * On ne régénère les CFG que si
+     * les snapshots eux-mêmes ont changé.
+     *
+     * Un Undo portant uniquement sur un nom,
+     * une couleur ou une autre métadonnée
+     * n'a pas besoin de toucher Deadlock.
+     */
     if snapshot_changed {
         let deadlock = paths::configured_deadlock_paths()
             .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
@@ -688,20 +720,31 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
         cfg::ensure_autoexec(&deadlock.autoexec)?;
     }
 
+    /*
+     * L'action ne change de pile qu'après
+     * restauration réussie.
+     *
+     * Si slots.json ou les CFG échouent,
+     * l'Undo/Redo reste donc disponible
+     * pour être retenté.
+     */
     let history_state = if undo {
         history::complete_undo()?
     } else {
         history::complete_redo()?
     };
 
-    let favorite_active = favorite_mode_for_bank(action.bank);
     FAVORITE_MODE.store(favorite_active, Ordering::SeqCst);
 
     Ok(HistoryOperationResult {
         preset: slots::get_active_preset()?,
+
         slots: saved,
+
         history_state,
+
         favorite_active,
+
         performed: true,
     })
 }
