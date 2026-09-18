@@ -248,14 +248,21 @@ pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
         return Err("Only the active preset can be cleared".to_string());
     }
 
+    /*
+     * Preset complet AVANT Clear.
+     */
+    let (before_name, before_entries) = slots::preset_history_snapshot(preset)?;
+
     let saved = slots::clear_preset(preset)?;
 
     /*
-     * Le preset actif vient réellement
-     * de changer côté snapshots :
-     * Deadlock doit donc recevoir le
-     * nouveau savestate.cfg vide.
+     * Preset complet APRÈS Clear :
+     *
+     * - nom remis à "Preset N"
+     * - 8 slots vides
      */
+    let (after_name, after_entries) = slots::preset_history_snapshot(preset)?;
+
     let deadlock = paths::configured_deadlock_paths()
         .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
 
@@ -264,22 +271,23 @@ pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
     cfg::ensure_autoexec(&deadlock.autoexec)?;
 
     /*
-     * Un Clear Preset porte sur 8 slots.
-     *
-     * L'historique actuel ne sait gérer
-     * qu'un SlotAction unique : on le
-     * réinitialise pour empêcher un
-     * Undo/Redo partiel après le Clear.
+     * Clear Preset devient UNE seule
+     * action Undo/Redo.
      */
-    let history_state = history::clear()?;
+    let (_history_changed, history_state) = history::record_preset(history::PresetAction {
+        preset,
+
+        before_name,
+        after_name,
+
+        before: before_entries,
+        after: after_entries,
+    })?;
 
     /*
-     * Le Clear Preset vient de retirer les
-     * screenshots des 8 slots et de vider
-     * l'historique Undo/Redo.
-     *
-     * On peut donc nettoyer les fichiers
-     * devenus orphelins sans bloquer l'UI.
+     * Les anciens screenshots restent
+     * protégés par l'historique tant
+     * qu'un Undo peut les restaurer.
      */
     std::thread::Builder::new()
         .name("split-screenshot-cleanup".to_string())
@@ -290,6 +298,7 @@ pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
         })
         .map_err(|error| {
             eprintln!("[SPLIT] Could not start screenshot cleanup: {error}");
+
             error
         })
         .ok();
@@ -314,26 +323,59 @@ pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResul
     }
 
     let active = slots::get_active_preset()?;
+
     if preset != active {
         return Err("Only the active preset can be imported".to_string());
     }
 
+    /*
+     * Etat complet AVANT import.
+     */
+    let (before_name, before_entries) = slots::preset_history_snapshot(preset)?;
+
+    /*
+     * Import JSON legacy.
+     *
+     * Ce format ne contient pas de
+     * screenshots, contrairement au
+     * nouveau .splitpreset.
+     */
     let saved = slots::import_preset(preset, imported)?;
+
+    /*
+     * Etat complet APRÈS import.
+     */
+    let (after_name, after_entries) = slots::preset_history_snapshot(preset)?;
+
     let deadlock = paths::configured_deadlock_paths()
         .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
 
     cfg::write_savestate_cfg(&deadlock.cfg_file, &saved)?;
+
     cfg::ensure_autoexec(&deadlock.autoexec)?;
 
-    let history_state = history::clear()?;
+    /*
+     * Même principe que .splitpreset :
+     * l'import complet représente UNE
+     * seule action Undo/Redo.
+     */
+    let (_history_changed, history_state) = history::record_preset(history::PresetAction {
+        preset,
+
+        before_name,
+        after_name,
+
+        before: before_entries,
+        after: after_entries,
+    })?;
 
     /*
-     * L'import remplace complètement les
-     * 8 slots du preset actif.
+     * Les anciens screenshots sont encore
+     * référencés par PresetAction.before.
      *
-     * Les screenshots de l'ancien preset
-     * qui ne sont plus utilisés ailleurs
-     * peuvent maintenant être supprimés.
+     * Ils restent donc disponibles pour
+     * Undo même si le JSON importé n'en
+     * contient aucun.
      */
     std::thread::Builder::new()
         .name("split-screenshot-cleanup".to_string())
@@ -344,6 +386,7 @@ pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResul
         })
         .map_err(|error| {
             eprintln!("[SPLIT] Could not start screenshot cleanup: {error}");
+
             error
         })
         .ok();
@@ -373,14 +416,22 @@ pub fn import_preset_archive(preset: u8, source: String) -> Result<SlotEditResul
         return Err("Only the active preset can be imported".to_string());
     }
 
+    /*
+     * Etat complet AVANT import.
+     */
+    let (before_name, before_entries) = slots::preset_history_snapshot(preset)?;
+
     let saved = slots::import_preset_archive(preset, source)?;
 
     /*
-     * Le preset actif vient d'être remplacé.
-     * Deadlock doit donc recevoir les nouvelles
-     * positions exactement comme pour
-     * l'import JSON legacy.
+     * Etat complet APRÈS import.
+     *
+     * Les chemins des screenshots importés
+     * sont maintenant les chemins locaux
+     * définitifs.
      */
+    let (after_name, after_entries) = slots::preset_history_snapshot(preset)?;
+
     let deadlock = paths::configured_deadlock_paths()
         .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
 
@@ -389,17 +440,25 @@ pub fn import_preset_archive(preset: u8, source: String) -> Result<SlotEditResul
     cfg::ensure_autoexec(&deadlock.autoexec)?;
 
     /*
-     * L'historique actuel ne sait toujours
-     * pas représenter un remplacement complet
-     * de preset en une seule action.
+     * Un import de preset représente
+     * UNE seule action utilisateur.
      */
-    let history_state = history::clear()?;
+    let (_history_changed, history_state) = history::record_preset(history::PresetAction {
+        preset,
+
+        before_name,
+        after_name,
+
+        before: before_entries,
+        after: after_entries,
+    })?;
 
     /*
-     * L'ancien preset n'est plus référencé
-     * et l'historique vient d'être vidé :
-     * ses anciens screenshots peuvent donc
-     * devenir orphelins.
+     * Le cleanup arrive après l'enregistrement
+     * dans l'historique.
+     *
+     * Les anciens screenshots restent donc
+     * protégés s'ils sont nécessaires à Undo.
      */
     std::thread::Builder::new()
         .name("split-screenshot-cleanup".to_string())
