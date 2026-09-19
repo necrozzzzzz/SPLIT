@@ -423,6 +423,12 @@ type StatusTone =
 
 type AppView = "slots" | "settings";
 
+type SettingsSection =
+  | "general"
+  | "hotkeys"
+  | "notifications"
+  | "diagnostics";
+
 function formatSavedAge(
   savedAt: number | null,
   nowMs: number,
@@ -487,6 +493,13 @@ function StatusDot({
 function App() {
   const [activeView, setActiveView] =
     useState<AppView>("slots");
+
+  const [
+    activeSettingsSection,
+    setActiveSettingsSection,
+  ] = useState<SettingsSection>(
+    "general",
+  );  
 
   const [
     setup,
@@ -3705,7 +3718,7 @@ function App() {
               ? "Settings"
               : favoriteMode
                 ? "Favorites"
-                : "Position slots"}
+                : "Savestates"}
           </h1>
 
           {(activeView === "settings" || !favoriteMode) && (
@@ -3755,39 +3768,115 @@ function App() {
             </button>
           </div>
         ) : (
-          <div className="topbar-actions">
-          <button
-            className="refresh-button"
-            type="button"
-            onClick={() =>
-              void copyDiagnosticReport()
-            }
-            disabled={diagnosticCopying}
-          >
-            {diagnosticCopying
-              ? "Copying…"
-              : diagnosticCopied
-                ? "Copied!"
-                : "Copy diagnostic"}
-          </button>
+          activeSettingsSection === "diagnostics" && (
+            <div className="topbar-actions">
+              <button
+                className="refresh-button"
+                type="button"
+                onClick={() =>
+                  void copyDiagnosticReport()
+                }
+                disabled={diagnosticCopying}
+              >
+                {diagnosticCopying
+                  ? "Copying…"
+                  : diagnosticCopied
+                    ? "Copied!"
+                    : "Copy diagnostic"}
+              </button>
 
-          <button
-            className="refresh-button"
-            type="button"
-            onClick={() =>
-              void refresh()
-            }
-            disabled={loading}
-          >
-            {loading
-              ? "Checking…"
-              : "Refresh"}
-          </button>
-          </div>
+              <button
+                className="refresh-button"
+                type="button"
+                onClick={() =>
+                  void refresh()
+                }
+                disabled={loading}
+              >
+                {loading
+                  ? "Checking…"
+                  : "Refresh"}
+              </button>
+            </div>
+          )
         )}
       </header>
 
       {activeView === "settings" && (
+        <nav
+          className="settings-subnav"
+          aria-label="Settings sections"
+        >
+          <button
+            type="button"
+            className={
+              activeSettingsSection === "general"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveSettingsSection(
+                "general",
+              )
+            }
+          >
+            General
+          </button>
+
+          <button
+            type="button"
+            className={
+              activeSettingsSection === "hotkeys"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveSettingsSection(
+                "hotkeys",
+              )
+            }
+          >
+            Hotkeys
+          </button>
+
+          <button
+            type="button"
+            className={
+              activeSettingsSection ===
+              "notifications"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveSettingsSection(
+                "notifications",
+              )
+            }
+          >
+            In-Game Notifications
+          </button>
+
+          <button
+            type="button"
+            className={
+              activeSettingsSection ===
+              "diagnostics"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveSettingsSection(
+                "diagnostics",
+              )
+            }
+          >
+            Diagnostics
+          </button>
+        </nav>
+      )}
+
+      {activeView === "settings" &&
+        activeSettingsSection === "diagnostics" && (
       <section
         className={`hero-card health-summary ${healthTone}`}
       >
@@ -4594,6 +4683,106 @@ function App() {
 
       {activeView === "settings" && (
       <div className="settings-view">
+        {activeSettingsSection === "general" && (
+          <section className="general-settings-section">
+            <div className="general-settings-heading">
+              <div>
+                <p className="label">
+                  GENERAL
+                </p>
+
+                <h2>
+                  Behavior & confirmations
+                </h2>
+
+                <p>
+                  Restore warnings or confirmations
+                  that you previously chose not to
+                  show again.
+                </p>
+              </div>
+            </div>
+
+            <div className="general-settings-list">
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Clear preset confirmation
+                  </strong>
+
+                  <span>
+                    Show the confirmation dialog
+                    before clearing an entire preset.
+                  </span>
+                </div>
+
+                <button
+                  className="general-restore-button"
+                  type="button"
+                  onClick={
+                    restoreClearPresetConfirmation
+                  }
+                >
+                  {clearPresetConfirmationRestored
+                    ? "Restored"
+                    : "Restore"}
+                </button>
+              </div>
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Gameplay hotkey warning
+                  </strong>
+
+                  <span>
+                    Warn when a shortcut may interfere
+                    with Deadlock controls.
+                  </span>
+                </div>
+
+                <button
+                  className="general-restore-button"
+                  type="button"
+                  onClick={
+                    restoreGameplayHotkeyWarning
+                  }
+                >
+                  {gameplayHotkeyWarningRestored
+                    ? "Restored"
+                    : "Restore"}
+                </button>
+              </div>
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Favorite Mode warning
+                  </strong>
+
+                  <span>
+                    Show the information dialog when
+                    entering Favorite Mode.
+                  </span>
+                </div>
+
+                <button
+                  className="general-restore-button"
+                  type="button"
+                  onClick={
+                    restoreFavoriteModeWarning
+                  }
+                >
+                  {favoriteModeWarningRestored
+                    ? "Restored"
+                    : "Restore"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+    {activeSettingsSection === "hotkeys" && (    
       <section className="hotkey-settings-section">
         <div className="hotkey-settings-heading">
           <div>
@@ -4676,7 +4865,10 @@ function App() {
 
         {hotkeyMessage && <p className="hotkey-message" role="alert">{hotkeyMessage}</p>}
       </section>
+    )}
+    
 
+    {activeSettingsSection === "notifications" && (
       <section className="notification-settings-section">
         <div className="notification-settings-heading">
           <div>
@@ -4751,52 +4943,11 @@ function App() {
               <option value={3000}>3.0 s</option>
             </select>
           </label>
-
-          <div className="notification-setting-row">
-            <span>Clear preset confirmation</span>
-            <button
-              className="notification-toggle"
-              type="button"
-              onClick={restoreClearPresetConfirmation}
-            >
-              {clearPresetConfirmationRestored
-                ? "Restored"
-                : "Restore"}
-            </button>
-          </div>
-
-          <div className="notification-setting-row">
-            <span>Gameplay hotkey warning</span>
-
-            <button
-              className="notification-toggle"
-              type="button"
-              onClick={restoreGameplayHotkeyWarning}
-            >
-              {gameplayHotkeyWarningRestored
-                ? "Restored"
-                : "Restore"}
-            </button>
-          </div>
-
-          <div className="notification-setting-row">
-            <span>Favorite Mode warning</span>
-
-            <button
-              className="notification-toggle"
-              type="button"
-              onClick={restoreFavoriteModeWarning}
-            >
-              {favoriteModeWarningRestored
-                ? "Restored"
-                : "Restore"}
-            </button>
-          </div>      
-
-
         </div>
       </section>
+    )}  
 
+    {activeSettingsSection === "diagnostics" && ( 
       <section
         className="status-grid"
         aria-label="Deadlock diagnostics"
@@ -5475,6 +5626,7 @@ function App() {
           )}
         </article>
       </section>
+    )}  
       </div>
       )}
 

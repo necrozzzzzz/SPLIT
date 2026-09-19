@@ -2797,9 +2797,11 @@ button:hover {
 .sidebar-status {
   position: relative;
 
-  display: grid;
+  display: flex;
 
-  gap: 7px;
+  align-items: center;
+
+  gap: 8px;
 
   margin-top: auto;
 
@@ -2808,17 +2810,17 @@ button:hover {
     rgba(79, 209, 197, 0.13);
 
   padding:
-    16px 8px 4px 10px;
+    17px 8px 4px 0;
 }
 
 
-/* Petit label incrusté dans la ligne */
+/* Label RUNTIME dans la ligne */
 
 .sidebar-status::before {
   position: absolute;
 
   top: -5px;
-  left: 7px;
+  left: 22px;
 
   padding: 0 5px;
 
@@ -2835,6 +2837,8 @@ button:hover {
 }
 
 
+/* Ligne Deadlock */
+
 .sidebar-status > div {
   display: flex;
 
@@ -2844,7 +2848,12 @@ button:hover {
 }
 
 
+/* Point de connexion remonté
+   au niveau de la ligne RUNTIME */
+
 .sidebar-status .status-dot {
+  position: static;
+
   width: 7px;
   height: 7px;
 
@@ -2871,12 +2880,14 @@ button:hover {
 }
 
 
+/* Badge CONNECTED à droite de Deadlock */
+
 .sidebar-status > span {
   width: max-content;
 
-  margin-left: 15px;
+  margin: 0;
 
-  justify-self: start;
+  transform: translateY(0.55px);
 
   border:
     1px solid
@@ -2898,6 +2909,1125 @@ button:hover {
 
   text-transform: uppercase;
 }
+
+
+/* =========================================
+   SPLIT — WORKSPACE HEADER / PHASE 2I
+   ========================================= */
+
+.topbar.slots-topbar {
+  min-height: 68px;
+
+  align-items: center;
+
+  margin-bottom: 10px;
+
+  padding:
+    4px 2px 8px;
+
+  border-bottom:
+    1px solid
+    rgba(79, 209, 197, 0.06);
+}
+
+
+/* Bloc titre */
+
+.topbar.slots-topbar > div:first-child {
+  position: relative;
+
+  display: grid;
+
+  gap: 3px;
+
+  padding-left: 14px;
+}
+
+
+/* Petit repère vertical */
+
+.topbar.slots-topbar > div:first-child::after {
+  position: absolute;
+
+  top: 3px;
+  bottom: 2px;
+  left: 0;
+
+  width: 2px;
+
+  border-radius: 999px;
+
+  background:
+    linear-gradient(
+      to bottom,
+      #4fd1c5,
+      rgba(79, 209, 197, 0.14)
+    );
+
+  box-shadow:
+    0 0 9px
+    rgba(79, 209, 197, 0.18);
+
+  content: "";
+}
+
+
+/* Micro-label au-dessus du titre */
+
+.topbar.slots-topbar > div:first-child::before {
+  display: none;
+}
+
+
+.topbar.slots-topbar h1 {
+  margin: 1px 0 0;
+
+  color: #f1f8f7;
+
+  font-size: 22px;
+  font-weight: 760;
+
+  letter-spacing: -0.025em;
+
+  line-height: 1.05;
+}
+
+
+.topbar.slots-topbar .subtitle {
+  margin: 0;
+
+  color: #67918a;
+
+  font-size: 9px;
+  font-weight: 650;
+
+  letter-spacing: 0.045em;
+}
+
+/* =========================================
+   SPLIT — HISTORY ACTIONS / PHASE 2J
+   ========================================= */
+
+.header-history-actions {
+  display: flex;
+
+  align-items: center;
+
+  gap: 4px;
+
+  margin: 0;
+}
+
+
+.header-history-actions .preset-button {
+  display: inline-flex;
+
+  min-width: 0;
+  min-height: 30px;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 7px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.12);
+
+  border-radius: 6px;
+
+  padding:
+    0 8px 0 10px;
+
+  color: #9db1ad;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  font-size: 9px;
+  font-weight: 650;
+
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.header-history-actions
+.preset-button:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.32);
+
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+}
+
+
+.header-history-actions kbd {
+  display: inline-flex;
+
+  min-width: 22px;
+  height: 18px;
+
+  align-items: center;
+  justify-content: center;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 4px;
+
+  padding: 0 5px;
+
+  color: #71948e;
+
+  background:
+    rgba(79, 209, 197, 0.045);
+
+  font-family: inherit;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+
+.header-history-actions
+.preset-button:disabled {
+  border-color: transparent;
+
+  color: #465b57;
+
+  background: transparent;
+
+  opacity: 1;
+}
+
+
+.header-history-actions
+.preset-button:disabled kbd {
+  border-color:
+    rgba(79, 209, 197, 0.06);
+
+  color: #455d58;
+
+  background:
+    rgba(79, 209, 197, 0.015);
+}
+
+/* =========================================
+   SPLIT — SYSTEM HEALTH / PHASE 2K
+   ========================================= */
+
+.health-summary {
+  position: relative;
+
+  overflow: hidden;
+
+  min-height: 92px;
+
+  border-radius: 8px;
+
+  padding:
+    18px 18px 18px 20px;
+
+  background:
+    linear-gradient(
+      110deg,
+      rgba(19, 34, 36, 0.96),
+      rgba(14, 26, 28, 0.96)
+    );
+}
+
+
+/* petite barre d'état à gauche */
+
+.health-summary::before {
+  position: absolute;
+
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+
+  width: 2px;
+
+  border-radius: 999px;
+
+  content: "";
+}
+
+
+.health-summary.ok::before {
+  background: #62ffd9;
+
+  box-shadow:
+    0 0 10px
+    rgba(98, 255, 217, 0.25);
+}
+
+
+.health-summary.warning::before {
+  background: #d8a84f;
+
+  box-shadow:
+    0 0 10px
+    rgba(216, 168, 79, 0.22);
+}
+
+
+.health-summary.error::before {
+  background: #eb6969;
+
+  box-shadow:
+    0 0 10px
+    rgba(235, 105, 105, 0.22);
+}
+
+
+/* On calme les grosses bordures colorées */
+
+.health-summary.ok {
+  border-color:
+    rgba(98, 255, 217, 0.12);
+}
+
+.health-summary.warning {
+  border-color:
+    rgba(216, 168, 79, 0.17);
+}
+
+.health-summary.error {
+  border-color:
+    rgba(235, 105, 105, 0.18);
+}
+
+
+.health-summary .label {
+  color: #5e8e88;
+
+  font-size: 7px;
+
+  letter-spacing: 0.17em;
+}
+
+
+.health-summary .hero-status strong {
+  margin-top: 5px;
+
+  color: #edf7f5;
+
+  font-size: 17px;
+  font-weight: 720;
+}
+
+
+.health-summary-description {
+  margin-top: 5px;
+
+  color: #708984;
+
+  font-size: 10.5px;
+}
+
+
+/* Badge warnings / issues */
+
+.health-summary-counts {
+  align-items: center;
+}
+
+
+.health-count {
+  border-radius: 5px;
+
+  padding: 5px 7px;
+
+  background:
+    rgba(0, 0, 0, 0.12);
+
+  font-size: 8px;
+  font-weight: 750;
+
+  letter-spacing: 0.04em;
+}
+
+/* =========================================
+   SPLIT — SETTINGS SUBNAV / PHASE 2L
+   ========================================= */
+
+.settings-subnav {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 4px;
+
+  margin:
+    -3px 0 16px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.09);
+
+  border-radius: 7px;
+
+  padding: 5px;
+
+  background:
+    rgba(9, 18, 19, 0.38);
+}
+
+
+.settings-subnav button {
+  position: relative;
+
+  min-height: 36px;
+
+  border:
+    1px solid transparent;
+
+  border-radius: 5px;
+
+  color: #718985;
+
+  background: transparent;
+
+  cursor: pointer;
+
+  font-size: 10.5px;
+  font-weight: 700;
+
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.settings-subnav
+button:hover:not(.active) {
+  border-color:
+    rgba(79, 209, 197, 0.08);
+
+  color: #b6c9c5;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+}
+
+
+.settings-subnav button.active {
+  border-color:
+    rgba(79, 209, 197, 0.20);
+
+  color: #edf7f5;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(79, 209, 197, 0.095),
+      rgba(79, 209, 197, 0.035)
+    );
+}
+
+
+.settings-subnav
+button.active::after {
+  position: absolute;
+
+  right: 25%;
+  bottom: -1px;
+  left: 25%;
+
+  height: 2px;
+
+  border-radius: 999px;
+
+  background: #4fd1c5;
+
+  box-shadow:
+    0 0 7px
+    rgba(79, 209, 197, 0.28);
+
+  content: "";
+}
+
+/* =========================================
+   SPLIT — GENERAL SETTINGS / PHASE 2M
+   ========================================= */
+
+.general-settings-section {
+  border:
+    1px solid #2a3a3d;
+
+  border-radius: 8px;
+
+  padding: 18px;
+
+  background: #172426;
+}
+
+
+.general-settings-heading {
+  margin-bottom: 18px;
+}
+
+
+.general-settings-heading h2 {
+  margin:
+    4px 0 6px;
+
+  color: #edf7f5;
+
+  font-size: 19px;
+  font-weight: 700;
+}
+
+
+.general-settings-heading > div > p:last-child {
+  max-width: 520px;
+
+  margin: 0;
+
+  color: #718884;
+
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+
+.general-settings-list {
+  display: grid;
+
+  gap: 7px;
+}
+
+
+.general-setting-row {
+  display: flex;
+
+  min-height: 62px;
+
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.09);
+
+  border-radius: 7px;
+
+  padding:
+    10px 11px 10px 13px;
+
+  background:
+    rgba(9, 18, 19, 0.20);
+
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.general-setting-row:hover {
+  border-color:
+    rgba(79, 209, 197, 0.16);
+
+  background:
+    rgba(79, 209, 197, 0.025);
+}
+
+
+.general-setting-row > div {
+  display: grid;
+
+  gap: 4px;
+}
+
+
+.general-setting-row strong {
+  color: #cbdad7;
+
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+
+.general-setting-row span {
+  color: #667f7a;
+
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+
+.general-restore-button {
+  min-width: 72px;
+  min-height: 29px;
+
+  flex: 0 0 auto;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 6px;
+
+  padding: 0 9px;
+
+  color: #8eaaa5;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  cursor: pointer;
+
+  font-size: 10px;
+  font-weight: 700;
+
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+/* =========================================
+   SPLIT — HOTKEY SETTINGS / PHASE 2N
+   ========================================= */
+
+.hotkey-settings-section {
+  border-radius: 8px;
+
+  padding: 18px;
+
+  background: #172426;
+}
+
+
+.hotkey-settings-heading h2 {
+  margin:
+    4px 0 7px;
+
+  color: #edf7f5;
+
+  font-size: 19px;
+  font-weight: 700;
+}
+
+
+.hotkey-settings-note {
+  margin:
+    0 0 18px;
+
+  color: #718884;
+
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+
+.hotkey-categories {
+  gap: 22px;
+}
+
+
+.hotkey-category h3 {
+  margin-bottom: 8px;
+
+  color: #4fd1c5;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  letter-spacing: 0.16em;
+}
+
+
+.hotkey-row {
+  min-height: 44px;
+
+  grid-template-columns:
+    minmax(110px, 1fr)
+    minmax(95px, auto)
+    70px;
+
+  gap: 10px;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.10);
+
+  color: #b2c5c1;
+
+  font-size: 11px;
+}
+
+
+.hotkey-row > span {
+  font-weight: 550;
+}
+
+
+.hotkey-row kbd {
+  color: #edf7f5;
+
+  font-size: 10px;
+  font-weight: 750;
+}
+
+
+.hotkey-row button {
+  min-height: 29px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 6px;
+
+  color: #8eaaa5;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  font-size: 9px;
+  font-weight: 700;
+}
+
+
+.hotkey-row button:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.34);
+
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+}
+
+.general-restore-button:hover {
+  border-color:
+    rgba(79, 209, 197, 0.34);
+
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+}
+
+/* =========================================
+   SPLIT — HOTKEY ACTIONS / PHASE 2O
+   ========================================= */
+
+.hotkey-actions-category {
+  margin-top: 2px;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.08);
+
+  padding-top: 16px;
+}
+
+
+.hotkey-actions-category h3 {
+  margin-bottom: 8px;
+}
+
+
+/*
+ * Actions globales :
+ * un peu moins "tableau",
+ * un peu plus "commandes SPLIT".
+ */
+
+.hotkey-actions-category .hotkey-row {
+  min-height: 42px;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.075);
+}
+
+
+.hotkey-actions-category
+.hotkey-row > span {
+  color: #b8cbc7;
+
+  font-weight: 650;
+}
+
+
+/* Reset to defaults */
+
+.hotkey-settings-heading
+> .preset-button {
+  min-height: 31px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.14);
+
+  border-radius: 6px;
+
+  padding: 0 10px;
+
+  color: #7f9c97;
+
+  background:
+    rgba(79, 209, 197, 0.018);
+
+  font-size: 9px;
+  font-weight: 700;
+
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.hotkey-settings-heading
+> .preset-button:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.30);
+
+  color: #e8f3f1;
+
+  background:
+    rgba(79, 209, 197, 0.055);
+}
+
+/* =========================================
+   SPLIT — IN-GAME NOTIFICATIONS / PHASE 2P
+   ========================================= */
+
+.notification-settings-section {
+  border-radius: 8px;
+
+  padding: 18px;
+
+  background: #172426;
+}
+
+
+.notification-settings-heading h2 {
+  margin:
+    4px 0 7px;
+
+  color: #edf7f5;
+
+  font-size: 19px;
+  font-weight: 700;
+}
+
+
+.notification-settings-grid {
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 8px;
+
+  margin-top: 16px;
+}
+
+
+.notification-setting-row {
+  position: relative;
+
+  min-height: 58px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.10);
+
+  border-radius: 7px;
+
+  padding:
+    10px 10px 10px 12px;
+
+  color: #b6c9c5;
+
+  background:
+    rgba(9, 18, 19, 0.22);
+
+  font-size: 10.5px;
+  font-weight: 650;
+
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.notification-setting-row:hover {
+  border-color:
+    rgba(79, 209, 197, 0.18);
+
+  background:
+    rgba(79, 209, 197, 0.025);
+}
+
+
+.notification-setting-row > span {
+  color: #9ab0ac;
+}
+
+
+/* ON / OFF */
+
+.notification-toggle {
+  min-width: 58px;
+  min-height: 30px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 6px;
+
+  color: #819e99;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  font-size: 10px;
+  font-weight: 750;
+
+  letter-spacing: 0.04em;
+}
+
+
+.notification-toggle.active {
+  border-color:
+    rgba(79, 209, 197, 0.45);
+
+  color: #c9f5ef;
+
+  background:
+    rgba(79, 209, 197, 0.10);
+
+  box-shadow:
+    inset 0 0 0 1px
+    rgba(79, 209, 197, 0.025);
+}
+
+
+/* Dropdowns */
+
+.notification-setting-row select {
+  min-width: 112px;
+  min-height: 30px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.14);
+
+  border-radius: 6px;
+
+  padding:
+    0 28px 0 9px;
+
+  color: #c4d6d2;
+
+  background: #122022;
+
+  font-size: 10.5px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+
+.notification-setting-row
+select:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.30);
+}
+
+/* =========================================
+   SPLIT — DIAGNOSTICS / PHASE 2Q
+   ========================================= */
+
+.status-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+
+.status-card {
+  position: relative;
+
+  min-width: 0;
+  min-height: 92px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.09);
+
+  border-radius: 7px;
+
+  padding:
+    14px 15px;
+
+  background:
+    rgba(9, 18, 19, 0.22);
+
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.status-card:hover {
+  border-color:
+    rgba(79, 209, 197, 0.16);
+
+  background:
+    rgba(79, 209, 197, 0.025);
+}
+
+
+/* Les cartes qui contiennent une vraie erreur
+   continuent à prendre toute la largeur */
+
+.status-card.wide {
+  grid-column:
+    1 / -1;
+}
+
+
+.status-heading {
+  display: flex;
+
+  align-items: center;
+
+  gap: 7px;
+
+  margin-bottom: 9px;
+
+  color: #819a95;
+
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+
+.status-heading .status-dot {
+  width: 6px;
+  height: 6px;
+
+  flex: 0 0 6px;
+}
+
+
+.status-card > strong {
+  display: block;
+
+  overflow: hidden;
+
+  color: #dce8e5;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.status-card > code {
+  display: block;
+
+  margin-top: 5px;
+
+  overflow: hidden;
+
+  color: #627c77;
+
+  font-size: 10px;
+  line-height: 1.45;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* Cartes avec problème réel */
+
+.status-card.diagnostic-card {
+  min-height: auto;
+
+  border-color:
+    rgba(235, 105, 105, 0.18);
+
+  background:
+    linear-gradient(
+      110deg,
+      rgba(42, 25, 27, 0.32),
+      rgba(13, 24, 26, 0.92)
+    );
+}
+
+
+.diagnostic-details {
+  margin-top: 13px;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.08);
+
+  padding-top: 13px;
+
+
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #8ea6a2;
+
+}
+
+.diagnostic-details button,
+.diagnostic-card button {
+  min-height: 31px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 6px;
+
+  padding: 0 10px;
+
+  color: #8eaaa5;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+
+.diagnostic-details button:hover:not(:disabled),
+.diagnostic-card button:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.34);
+
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+}
+
 
 /* Responsive */
 
