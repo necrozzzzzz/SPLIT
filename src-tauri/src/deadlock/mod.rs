@@ -140,7 +140,39 @@ pub fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
 
     ensure_history_action_allowed(watcher::has_pending_save())?;
 
-    slots::rename_preset(preset, name)
+    /*
+     * Etat complet AVANT renommage.
+     *
+     * Les slots ne vont pas changer,
+     * mais PresetAction nous permet de
+     * conserver une seule mécanique
+     * Undo/Redo pour tout le preset.
+     */
+    let (before_name, before_entries) = slots::preset_history_snapshot(preset)?;
+
+    let names = slots::rename_preset(preset, name)?;
+
+    /*
+     * Etat complet APRÈS renommage.
+     */
+    let (after_name, after_entries) = slots::preset_history_snapshot(preset)?;
+
+    /*
+     * Pas de CFG à régénérer :
+     * seule l'étiquette du preset change,
+     * aucune position Deadlock.
+     */
+    history::record_preset(history::PresetAction {
+        preset,
+
+        before_name,
+        after_name,
+
+        before: before_entries,
+        after: after_entries,
+    })?;
+
+    Ok(names)
 }
 
 pub fn get_active_preset() -> Result<u8, String> {
@@ -198,7 +230,20 @@ pub fn copy_slot_to_favorite(
 
     let preset = slots::get_active_preset()?;
 
-    slots::copy_preset_slot_to_favorite(preset, source_slot, favorite_slot, overwrite)
+    let (summary, changed) =
+        slots::copy_preset_slot_to_favorite(preset, source_slot, favorite_slot, overwrite)?;
+
+    history::record(history::SlotAction {
+        bank: changed.bank,
+
+        slot: changed.slot,
+
+        before: changed.before,
+
+        after: changed.after,
+    })?;
+
+    Ok(summary)
 }
 
 pub fn get_notification_settings() -> crate::notifications::NotificationSettings {
@@ -712,6 +757,8 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
 
     ensure_history_action_allowed(watcher::has_pending_save())?;
 
+    let current_bank = current_slot_bank()?;
+
     let action = if undo {
         history::peek_undo_action()?
     } else {
@@ -732,7 +779,7 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
         });
     };
 
-    let (saved, favorite_active, snapshot_changed) = match &action {
+    let (saved, favorite_active, snapshot_changed, target_bank) = match &action {
         history::HistoryAction::Slot(action) => {
             let snapshot_changed = action.snapshot_changed();
 
@@ -744,7 +791,12 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
 
             let saved = slots::restore_slot(action.bank, action.slot, value)?;
 
-            (saved, favorite_mode_for_bank(action.bank), snapshot_changed)
+            (
+                saved,
+                favorite_mode_for_bank(action.bank),
+                snapshot_changed,
+                action.bank,
+            )
         }
 
         history::HistoryAction::Preset(action) => {
@@ -758,9 +810,16 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
 
             let saved = slots::apply_preset_history_snapshot(action.preset, name, entries)?;
 
-            (saved, false, snapshot_changed)
+            (
+                saved,
+                false,
+                snapshot_changed,
+                slots::SlotBank::Preset(action.preset),
+            )
         }
     };
+
+    let bank_changed = current_bank != target_bank;
 
     /*
      * On ne régénère les CFG que si
@@ -770,7 +829,7 @@ fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
      * une couleur ou une autre métadonnée
      * n'a pas besoin de toucher Deadlock.
      */
-    if snapshot_changed {
+    if snapshot_changed || bank_changed {
         let deadlock = paths::configured_deadlock_paths()
             .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
 

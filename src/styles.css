@@ -147,7 +147,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 
   border-radius: 999px;
 
-  background: #4fd1c5;
+  background: #63ded2;
 
   box-shadow:
     0 0 8px
@@ -1832,6 +1832,1073 @@ button:hover {
 }
 
 
+/* =========================================
+   SPLIT — PRESET BAR / PHASE 2B
+   ========================================= */
+
+.preset-toolbar {
+  position: relative;
+
+  display: block;
+
+  margin-bottom: 14px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.09);
+
+  border-radius: 7px;
+
+  padding: 5px;
+
+  background:
+    rgba(9, 18, 19, 0.38);
+}
+
+
+.preset-toolbar .preset-switcher {
+  display: grid;
+
+  width: 100%;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 4px;
+
+  margin: 0;
+}
+
+
+.preset-toolbar
+.preset-switcher
+.preset-button {
+  position: relative;
+
+  min-width: 0;
+  min-height: 32px;
+
+  overflow: hidden;
+
+  border:
+    1px solid transparent;
+
+  border-radius: 5px;
+
+  padding: 0 10px;
+
+  color: #718985;
+
+  background: transparent;
+
+  font-size: 10px;
+  font-weight: 650;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+
+.preset-toolbar
+.preset-switcher
+.preset-button:not(.active):hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.09);
+
+  color: #b6c9c5;
+
+  background:
+    rgba(79, 209, 197, 0.035);
+}
+
+
+.preset-toolbar
+.preset-switcher
+.preset-button.active {
+  border-color:
+    rgba(79, 209, 197, 0.20);
+
+  color: #edf7f5;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(79, 209, 197, 0.095),
+      rgba(79, 209, 197, 0.035)
+    );
+
+  box-shadow:
+    inset 0 0 0 1px
+      rgba(79, 209, 197, 0.025);
+}
+
+
+.preset-toolbar
+.preset-switcher
+.preset-button.active::after {
+  position: absolute;
+
+  right: 22%;
+  bottom: -1px;
+  left: 22%;
+
+  height: 2px;
+
+  border-radius: 999px;
+
+  background: #4fd1c5;
+
+  box-shadow:
+    0 0 7px
+      rgba(79, 209, 197, 0.32);
+
+  content: "";
+}
+
+
+.preset-tab {
+  position: relative;
+
+  min-width: 0;
+}
+
+
+.preset-tab > .preset-button {
+  width: 100%;
+}
+
+
+.preset-tab.active > .preset-button {
+  padding-right: 36px;
+}
+
+
+.preset-toolbar .preset-actions-menu {
+  position: absolute;
+
+  z-index: 5;
+
+  top: 50%;
+  right: 5px;
+
+  width: 26px;
+  height: 26px;
+
+  transform:
+    translateY(-50%);
+}
+
+
+.preset-toolbar
+.preset-actions-menu > summary {
+  display: flex;
+
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+
+  align-items: center;
+  justify-content: center;
+
+  border-color: transparent;
+
+  padding: 0;
+
+  color: #657c78;
+
+  background: transparent;
+
+  font-size: 0;
+  line-height: 1;
+}
+
+.preset-toolbar
+.preset-actions-menu > summary::before {
+  content: "...";
+
+  color: currentColor;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  line-height: 1;
+
+  transform: translateY(-3px);
+}
+
+
+.preset-toolbar
+.preset-actions-menu > summary:hover,
+.preset-toolbar
+.preset-actions-menu[open] > summary {
+  border-color:
+    rgba(79, 209, 197, 0.10);
+
+  color: #c5d6d3;
+
+  background:
+    rgba(79, 209, 197, 0.035);
+}
+
+
+/* Preset actions dropdown */
+
+.preset-toolbar
+.preset-actions-menu
+.preset-management {
+  position: absolute;
+
+  z-index: 40;
+
+  top: calc(100% + 7px);
+  right: -3px;
+
+  display: grid;
+
+  width: max-content;
+  min-width: 0;
+
+  gap: 0;
+
+  padding: 5px;
+
+  margin: 0;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 9px;
+
+  
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(18, 32, 34, 0.98),
+      rgba(11, 21, 22, 0.99)
+    );
+
+  box-shadow:
+    0 16px 34px
+      rgba(0, 0, 0, 0.42),
+    inset 0 1px
+      rgba(255, 255, 255, 0.018);
+
+  backdrop-filter:
+    blur(10px);
+}
+
+
+.preset-toolbar
+.preset-actions-menu
+.preset-management
+.preset-button {
+  position: relative;
+
+  display: flex;
+
+  width: 100%;
+  min-height: 32px;
+
+
+  justify-content: flex-end;
+  text-align: right;
+
+  padding-left: 8px;
+  padding-right: 8px;
+
+  align-items: center;
+
+  border: 0;
+  border-radius: 6px;
+
+  padding: 0 7px;
+
+  color: #95aaa6;
+
+  background: transparent;
+
+  font-size: 10px;
+  font-weight: 650;
+
+  letter-spacing: 0.015em;
+
+  cursor: pointer;
+
+  transition:
+    color 130ms ease,
+    background 130ms ease,
+    box-shadow 130ms ease;
+}
+
+
+.preset-toolbar
+.preset-actions-menu
+.preset-management
+.preset-button:hover:not(:disabled) {
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+
+  box-shadow:
+    inset 2px 0
+      rgba(79, 209, 197, 0.60);
+}
+
+
+.preset-toolbar
+.preset-actions-menu
+.preset-management
+.preset-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+
+/* Séparation visuelle avant Clear */
+
+.preset-toolbar
+.preset-actions-menu
+.preset-management
+.preset-clear-button {
+  min-height: 31px;
+
+  margin-top: 4px;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.10);
+
+  border-radius:
+    0 0 6px 6px;
+
+  padding-top: 3px;
+
+  color: #c98282;
+
+  background:
+    rgba(217, 140, 140, 0.025);
+}
+
+
+.preset-toolbar
+.preset-actions-menu
+.preset-management
+.preset-clear-button:hover:not(:disabled) {
+  color: #f0a3a3;
+
+  background:
+    rgba(217, 140, 140, 0.075);
+
+  box-shadow:
+    inset 2px 0
+      rgba(217, 140, 140, 0.65);
+}
+
+/* =========================================
+   SPLIT — SLOTS HEADER / PHASE 2C
+   ========================================= */
+
+.topbar.slots-topbar {
+  min-height: 58px;
+
+  align-items: center;
+
+  margin-bottom: 10px;
+
+  padding: 0 2px;
+}
+
+
+.topbar.slots-topbar > div:first-child {
+  display: grid;
+
+  gap: 2px;
+}
+
+
+.topbar.slots-topbar h1 {
+  margin: 0;
+
+  color: #edf7f5;
+
+  font-size: 22px;
+  font-weight: 720;
+
+  letter-spacing: -0.025em;
+
+  line-height: 1.05;
+}
+
+
+.topbar.slots-topbar .subtitle {
+  margin: 0;
+
+  color: #64817d;
+
+  font-size: 9px;
+  font-weight: 650;
+
+  letter-spacing: 0.055em;
+}
+
+
+.header-history-actions {
+  align-self: center;
+
+  margin: 0;
+}
+
+/* =========================================
+   SPLIT — SLOT MENUS / PHASE 2D
+   ========================================= */
+
+.slot-card-menu-panel {
+  top: 32px;
+  right: 0;
+
+  width: 176px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 9px;
+
+  padding: 5px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(18, 32, 34, 0.98),
+      rgba(11, 21, 22, 0.99)
+    );
+
+  box-shadow:
+    0 16px 34px
+      rgba(0, 0, 0, 0.42),
+    inset 0 1px
+      rgba(255, 255, 255, 0.018);
+
+  backdrop-filter:
+    blur(10px);
+}
+
+
+.slot-menu-item {
+  min-height: 31px;
+
+  border-radius: 6px;
+
+  padding: 0 8px;
+
+  color: #95aaa6;
+
+  font-size: 10px;
+  font-weight: 650;
+
+  transition:
+    color 130ms ease,
+    background 130ms ease,
+    box-shadow 130ms ease;
+}
+
+
+.slot-menu-item:hover:not(:disabled) {
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+
+  box-shadow:
+    inset 2px 0
+      rgba(79, 209, 197, 0.60);
+}
+
+
+.slot-menu-item span {
+  color: #5f7d78;
+
+  font-size: 8px;
+  font-weight: 600;
+}
+
+
+.slot-menu-divider {
+  height: 1px;
+
+  margin: 5px 5px;
+
+  background:
+    rgba(79, 209, 197, 0.10);
+}
+
+
+.slot-menu-label {
+  padding:
+    3px 7px 6px;
+
+  color: #66827e;
+
+  font-size: 8px;
+  font-weight: 750;
+
+  letter-spacing: 0.11em;
+}
+
+
+.slot-menu-colors {
+  gap: 5px;
+
+  padding:
+    0 6px 6px;
+}
+
+
+.slot-menu-color {
+  width: 21px;
+  height: 21px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.12);
+
+  border-radius: 5px;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+}
+
+
+.slot-menu-color:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.35);
+
+  background:
+    rgba(79, 209, 197, 0.06);
+}
+
+
+.slot-menu-color.active {
+  border-color:
+    rgba(79, 209, 197, 0.72);
+
+  background:
+    rgba(79, 209, 197, 0.09);
+
+  box-shadow:
+    0 0 7px
+      rgba(79, 209, 197, 0.12);
+}
+
+
+.slot-menu-item.danger {
+  color: #c98282;
+}
+
+
+.slot-menu-item.danger:hover:not(:disabled) {
+  color: #f0a3a3;
+
+  background:
+    rgba(217, 140, 140, 0.075);
+
+  box-shadow:
+    inset 2px 0
+      rgba(217, 140, 140, 0.65);
+}
+
+/* =========================================
+   SPLIT — SIDEBAR NAV / PHASE 2E
+   ========================================= */
+
+.sidebar-nav {
+  gap: 5px;
+
+  margin-top: 36px;
+}
+
+
+.sidebar-nav button {
+  min-height: 38px;
+
+  border:
+    1px solid transparent;
+
+  border-radius: 7px;
+
+  padding:
+    0 10px 0 12px;
+
+  color: #78908c;
+
+  background: transparent;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.sidebar-nav button:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.08);
+
+  color: #c8d8d5;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+}
+
+
+.sidebar-nav button.active {
+  border-color:
+    rgba(79, 209, 197, 0.20);
+
+  color: #edf7f5;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(79, 209, 197, 0.085),
+      rgba(79, 209, 197, 0.025)
+    );
+
+  box-shadow:
+    inset 0 0 0 1px
+      rgba(79, 209, 197, 0.015);
+}
+
+
+.sidebar-nav button.active::before {
+  top: 7px;
+  bottom: 7px;
+  left: -1px;
+
+  width: 2px;
+
+  background: #4fd1c5;
+
+  box-shadow:
+    0 0 8px
+      rgba(79, 209, 197, 0.28);
+}
+
+
+.sidebar-nav kbd {
+  min-width: 24px;
+
+  color: #58716d;
+
+  font-size: 8px;
+  font-weight: 750;
+
+  text-align: right;
+}
+
+
+.sidebar-nav button.active kbd {
+  color: #789d98;
+}
+
+/* =========================================
+   SPLIT — SIDEBAR NAV / PHASE 2F
+   ========================================= */
+
+.sidebar-nav {
+  position: relative;
+
+  gap: 3px;
+
+  padding-left: 0;
+}
+
+
+/* Ligne verticale de navigation */
+.sidebar-nav button:not(:last-child)::before {
+  position: absolute;
+
+  z-index: 0;
+
+  left: 13px;
+  top: calc(50% + 10px);
+
+  width: 1px;
+  height: 25px;
+
+  background:
+    rgba(79, 209, 197, 0.14);
+
+  content: "";
+}
+
+
+.sidebar-nav button {
+  position: relative;
+
+  min-height: 42px;
+
+  border: 0;
+  border-radius: 6px;
+
+  padding:
+    0 9px
+    0 38px;
+
+  color: #829b97;
+
+  background: transparent;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  text-align: left;
+}
+
+
+/* 01 / 02 / 03 */
+
+.sidebar-nav button::after {
+  position: absolute;
+
+  left: 4px;
+
+  display: flex;
+
+  width: 19px;
+  height: 19px;
+
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  color: #67837f;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+
+  align-items: center;
+  justify-content: center;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.10);
+
+  border-radius: 4px;
+
+  color: #4f6965;
+
+  background: #0f1a1b;
+
+  font-size: 7px;
+  font-weight: 800;
+
+  letter-spacing: 0.04em;
+}
+
+
+.sidebar-nav button:nth-child(1)::after {
+  content: "01";
+}
+
+.sidebar-nav button:nth-child(2)::after {
+  content: "02";
+}
+
+.sidebar-nav button:nth-child(3)::after {
+  content: "03";
+}
+
+
+.sidebar-nav button:hover:not(:disabled) {
+  border: 0;
+
+  color: #c5d6d3;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(79, 209, 197, 0.045),
+      transparent 80%
+    );
+}
+
+
+.sidebar-nav button.active {
+  border: 0;
+
+  color: #f1faf8;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(79, 209, 197, 0.16),
+      rgba(79, 209, 197, 0.055) 72%,
+      transparent
+    );
+}
+
+
+/* On remplace l'ancienne barre active */
+.sidebar-nav button.active::before {
+  display: block;
+}
+
+
+.sidebar-nav button.active::after {
+  border-color:
+    rgba(79, 209, 197, 0.62);
+
+  color: #b4f2ec;
+
+  background:
+    rgba(79, 209, 197, 0.12);
+
+  box-shadow:
+    0 0 12px
+    rgba(79, 209, 197, 0.10);
+}
+
+
+.sidebar-nav kbd {
+  margin-left: auto;
+
+  color: #55706b;
+
+  font-size: 8px;
+}
+
+.sidebar-nav button.active kbd {
+  color: #779b96;
+}
+
+
+/* =========================================
+   SPLIT — SIDEBAR BRAND / PHASE 2G
+   ========================================= */
+
+.brand {
+  position: relative;
+
+  display: grid;
+
+  grid-template-columns:
+    34px minmax(0, 1fr);
+
+  grid-template-rows:
+    auto auto;
+
+  align-items: center;
+
+  column-gap: 17px;
+  row-gap: 7px;
+
+  padding:
+    8px 8px 8px 4px;
+
+  margin-bottom: 18px;
+}
+
+
+.brand::before {
+  grid-column: 1;
+  grid-row: 1 / 3;
+
+  display: grid;
+
+  width: 34px;
+  height: 34px;
+
+  place-items: center;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.34);
+
+  border-radius: 7px;
+
+  color: #b7f4ee;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(79, 209, 197, 0.13),
+      rgba(79, 209, 197, 0.035)
+    );
+
+  box-shadow:
+    inset 0 0 0 1px
+      rgba(255, 255, 255, 0.018),
+    0 0 16px
+      rgba(79, 209, 197, 0.07);
+
+  content: "S";
+
+  font-size: 12px;
+  font-weight: 900;
+
+  letter-spacing: -0.04em;
+}
+
+
+.brand strong {
+  grid-column: 2;
+  grid-row: 1;
+
+  margin: 0;
+
+  color: #f4fbfa;
+
+  font-size: 18px;
+  font-weight: 850;
+
+  letter-spacing: 0.19em;
+
+  line-height: 1.1;
+}
+
+
+.brand span {
+  grid-column: 2;
+  grid-row: 2;
+
+  margin-top: 3px;
+
+  color: #63a098;
+
+  font-size: 8px;
+  font-weight: 800;
+
+  letter-spacing: 0.18em;
+
+  line-height: 1;
+
+  text-transform: uppercase;
+}
+
+
+/* =========================================
+   SPLIT — SIDEBAR STATUS / PHASE 2H
+   ========================================= */
+
+.sidebar-status {
+  position: relative;
+
+  display: grid;
+
+  gap: 7px;
+
+  margin-top: auto;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.13);
+
+  padding:
+    16px 8px 4px 10px;
+}
+
+
+/* Petit label incrusté dans la ligne */
+
+.sidebar-status::before {
+  position: absolute;
+
+  top: -5px;
+  left: 7px;
+
+  padding: 0 5px;
+
+  color: #4f7772;
+
+  background: #0d181a;
+
+  content: "RUNTIME";
+
+  font-size: 7px;
+  font-weight: 800;
+
+  letter-spacing: 0.14em;
+}
+
+
+.sidebar-status > div {
+  display: flex;
+
+  align-items: center;
+
+  gap: 8px;
+}
+
+
+.sidebar-status .status-dot {
+  width: 7px;
+  height: 7px;
+
+  flex: 0 0 7px;
+}
+
+
+.sidebar-status .status-dot.ok {
+  background: #62ffd9;
+
+  box-shadow:
+    0 0 8px
+    rgba(98, 255, 217, 0.32);
+}
+
+
+.sidebar-status strong {
+  color: #d9e7e4;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  letter-spacing: 0.015em;
+}
+
+
+.sidebar-status > span {
+  width: max-content;
+
+  margin-left: 15px;
+
+  justify-self: start;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.12);
+
+  border-radius: 4px;
+
+  padding: 3px 6px;
+
+  color: #68a39b;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  font-size: 7px;
+  font-weight: 750;
+
+  letter-spacing: 0.08em;
+
+  text-transform: uppercase;
+}
+
 /* Responsive */
 
 @media (max-width: 850px) {
@@ -1849,3 +2916,5 @@ button:hover {
     grid-template-columns: 1fr;
   }
 }
+
+

@@ -767,6 +767,12 @@ pub(crate) fn apply_preset_history_snapshot(
 
     let mut state = read_state_unlocked()?;
 
+    /*
+     * Un Undo/Redo global revient sur
+     * le preset auquel appartient l'action.
+     */
+    state.active_preset = preset;
+
     apply_preset_import(&mut state, preset, name, entries);
 
     let saved = snapshots_from_entries(&state.presets[usize::from(preset - 1)]);
@@ -1434,12 +1440,12 @@ pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, St
     Ok(snapshots_from_entries(&state.presets[index]))
 }
 
-pub fn copy_preset_slot_to_favorite(
+pub(crate) fn copy_preset_slot_to_favorite(
     preset: u8,
     source_slot: u8,
     favorite_slot: u8,
     overwrite: bool,
-) -> Result<FavoriteSlotSummary, String> {
+) -> Result<(FavoriteSlotSummary, SlotChangeResult), String> {
     if !(1..=PRESET_COUNT as u8).contains(&preset) {
         return Err(format!("Invalid preset {preset}"));
     }
@@ -1459,21 +1465,11 @@ pub fn copy_preset_slot_to_favorite(
     let mut state = read_state_unlocked()?;
 
     let preset_index = usize::from(preset - 1);
+
     let source_index = usize::from(source_slot - 1);
+
     let favorite_index = usize::from(favorite_slot - 1);
 
-    /*
-     * Cloner l'entrée ENTIÈRE :
-     *
-     * - snapshot
-     * - camera incluse dans le snapshot
-     * - name
-     * - savedAt
-     * - color
-     *
-     * La copie Favorite devient donc totalement
-     * indépendante du slot source après cette opération.
-     */
     let source_entry = state.presets[preset_index]
         .get(source_index)
         .ok_or_else(|| format!("Invalid source slot index {source_index}"))?
@@ -1492,7 +1488,27 @@ pub fn copy_preset_slot_to_favorite(
         return Err(format!("Favorite {favorite_slot} is already occupied."));
     }
 
+    /*
+     * Etat AVANT la copie.
+     */
+    let before = favorite_entry.clone();
+
+    /*
+     * Copie complète :
+     *
+     * - position
+     * - caméra
+     * - nom
+     * - timestamp
+     * - couleur
+     * - screenshot
+     */
     *favorite_entry = source_entry;
+
+    /*
+     * Etat APRÈS la copie.
+     */
+    let after = favorite_entry.clone();
 
     let summary = FavoriteSlotSummary {
         slot: favorite_slot,
@@ -1502,6 +1518,8 @@ pub fn copy_preset_slot_to_favorite(
         color: favorite_entry.color.clone(),
     };
 
+    let saved = snapshots_from_entries(&state.favorites);
+
     write_state_unlocked(&state)?;
 
     println!(
@@ -1509,7 +1527,19 @@ pub fn copy_preset_slot_to_favorite(
         preset, source_slot, favorite_slot,
     );
 
-    Ok(summary)
+    Ok((
+        summary,
+        SlotChangeResult {
+            bank: SlotBank::Favorites,
+
+            slot: favorite_slot,
+
+            before,
+            after,
+
+            slots: saved,
+        },
+    ))
 }
 
 pub fn save_slot(

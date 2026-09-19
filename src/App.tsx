@@ -1687,8 +1687,17 @@ function App() {
                   },
                 );
 
+              const history =
+                await invoke<HistoryState>(
+                  "get_history_state",
+                );
+
               setPresetNames(
                 names,
+              );
+
+              setHistoryState(
+                history,
               );
             } catch (reason) {
               setError(
@@ -2212,6 +2221,13 @@ function App() {
               "get_slot_metadata",
             );
 
+          const names =
+            await invoke<
+              Array<string>
+            >(
+              "get_preset_names",
+            );  
+
           setActivePreset(
             result.preset,
           );
@@ -2222,6 +2238,10 @@ function App() {
 
           setSlotMetadata(
             metadata,
+          );
+
+          setPresetNames(
+            names,
           );
 
           setRelativeTimeNow(
@@ -2376,6 +2396,15 @@ function App() {
               favoriteSlot,
               overwrite,
             },
+          );
+
+          const history =
+            await invoke<HistoryState>(
+              "get_history_state",
+            );
+
+          setHistoryState(
+            history,
           );
 
           setPendingFavoriteCopy(null);
@@ -3824,138 +3853,179 @@ function App() {
       </div>
 
 
-      {!favoriteMode && <div className="preset-toolbar">
-      <div className="preset-switcher">
-        {[1, 2, 3, 4].map(
-          (preset) => (
-            <button
-              key={preset}
-              type="button"
-              className={`preset-button ${
-                activePreset === preset
-                  && !favoriteMode
-                  ? "active"
-                  : ""
-              }`}
-              disabled={
-                savingSlot !== null ||
-                loadingSlot !== null
-              }
-              onClick={() =>
-                void switchPreset(
-                  preset,
-                )
-              }
-            >
-              {presetNames[
-                preset - 1
-              ] ??
-                `Preset ${preset}`}
-            </button>
-          ),
-        )}
-      </div>
+      {!favoriteMode && (
+        <div className="preset-toolbar">
+          <div className="preset-switcher">
+            {[1, 2, 3, 4].map(
+              (preset) => {
+                const isActive =
+                  activePreset === preset;
 
-      <details className="preset-actions-menu">
-        <summary aria-label="Preset actions" title="Preset actions">...</summary>
-        <div
-          className="preset-management"
-          onClick={(event) => {
-            if (event.target instanceof HTMLButtonElement) {
-              event.currentTarget.closest("details")?.removeAttribute("open");
-            }
-          }}
-        >
-        <button
-          className="preset-button"
-          type="button"
-          disabled={
-            favoriteMode ||
-            renamingPreset ||
-            clearingPreset ||
-            exportingPreset ||
-            importingPreset ||
-            savingSlot !== null ||
-            loadingSlot !== null ||
-            coloringSlot !== null
-          }
-          onClick={() =>
-            void renameActivePreset()
-          }
-        >
-          {renamingPreset
-            ? "Renaming…"
-            : "Rename preset"}
-        </button>
+                return (
+                  <div
+                    key={preset}
+                    className={`preset-tab ${
+                      isActive ? "active" : ""
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className={`preset-button ${
+                        isActive
+                          ? "active"
+                          : ""
+                      }`}
+                      disabled={
+                        savingSlot !== null ||
+                        loadingSlot !== null
+                      }
+                      onClick={() =>
+                        void switchPreset(
+                          preset,
+                        )
+                      }
+                    >
+                      {presetNames[
+                        preset - 1
+                      ] ??
+                        `Preset ${preset}`}
+                    </button>
 
-        <button
-          className="preset-button"
-          type="button"
-          disabled={
-            favoriteMode ||
-            renamingPreset ||
-            clearingPreset ||
-            exportingPreset ||
-            importingPreset ||
-            savingSlot !== null ||
-            loadingSlot !== null ||
-            coloringSlot !== null
-          }
-          onClick={() =>
-            void exportActivePreset()
-          }
-        >
-          {exportingPreset
-            ? "Exporting…"
-            : "Export preset"}
-        </button>
+                    {isActive && (
+                      <details
+                        className="preset-actions-menu"
+                        onMouseLeave={(event) => {
+                          const details =
+                            event.currentTarget;
 
-        <button
-          className="preset-button"
-          type="button"
-          disabled={
-            favoriteMode ||
-            renamingPreset ||
-            clearingPreset ||
-            exportingPreset ||
-            importingPreset ||
-            savingSlot !== null ||
-            loadingSlot !== null ||
-            coloringSlot !== null
-          }
-          onClick={() =>
-            void selectPresetImport()
-          }
-        >
-          {importingPreset
-            ? "Importing…"
-            : "Import preset"}
-        </button>
+                          window.setTimeout(() => {
+                            if (!details.matches(":hover")) {
+                              details.removeAttribute(
+                                "open",
+                              );
+                            }
+                          }, 90);
+                        }}
+                      >
+                        <summary
+                          aria-label="Preset actions"
+                          title="Preset actions"
+                        >
+                          ...
+                        </summary>
 
-        <button
-          className="preset-button preset-clear-button"
-          type="button"
-          disabled={
-            favoriteMode ||
-            renamingPreset ||
-            clearingPreset ||
-            exportingPreset ||
-            importingPreset ||
-            savingSlot !== null ||
-            loadingSlot !== null ||
-            coloringSlot !== null
-          }
-          onClick={() =>
-            void clearActivePreset()
-          }
-        >
-          {clearingPreset
-            ? "Clearing…"
-            : "Clear preset"}
-        </button>
+                        <div
+                          className="preset-management"
+                          onClick={(event) => {
+                            if (
+                              event.target instanceof
+                              HTMLButtonElement
+                            ) {
+                              event.currentTarget
+                                .closest("details")
+                                ?.removeAttribute(
+                                  "open",
+                                );
+                            }
+                          }}
+                        >
+                          <button
+                            className="preset-button"
+                            type="button"
+                            disabled={
+                              favoriteMode ||
+                              renamingPreset ||
+                              clearingPreset ||
+                              exportingPreset ||
+                              importingPreset ||
+                              savingSlot !== null ||
+                              loadingSlot !== null ||
+                              coloringSlot !== null
+                            }
+                            onClick={() =>
+                              void renameActivePreset()
+                            }
+                          >
+                            {renamingPreset
+                              ? "Renaming…"
+                              : "Rename preset"}
+                          </button>
+
+                          <button
+                            className="preset-button"
+                            type="button"
+                            disabled={
+                              favoriteMode ||
+                              renamingPreset ||
+                              clearingPreset ||
+                              exportingPreset ||
+                              importingPreset ||
+                              savingSlot !== null ||
+                              loadingSlot !== null ||
+                              coloringSlot !== null
+                            }
+                            onClick={() =>
+                              void exportActivePreset()
+                            }
+                          >
+                            {exportingPreset
+                              ? "Exporting…"
+                              : "Export preset"}
+                          </button>
+
+                          <button
+                            className="preset-button"
+                            type="button"
+                            disabled={
+                              favoriteMode ||
+                              renamingPreset ||
+                              clearingPreset ||
+                              exportingPreset ||
+                              importingPreset ||
+                              savingSlot !== null ||
+                              loadingSlot !== null ||
+                              coloringSlot !== null
+                            }
+                            onClick={() =>
+                              void selectPresetImport()
+                            }
+                          >
+                            {importingPreset
+                              ? "Importing…"
+                              : "Import preset"}
+                          </button>
+
+                          <button
+                            className="preset-button preset-clear-button"
+                            type="button"
+                            disabled={
+                              favoriteMode ||
+                              renamingPreset ||
+                              clearingPreset ||
+                              exportingPreset ||
+                              importingPreset ||
+                              savingSlot !== null ||
+                              loadingSlot !== null ||
+                              coloringSlot !== null
+                            }
+                            onClick={() =>
+                              void clearActivePreset()
+                            }
+                          >
+                            {clearingPreset
+                              ? "Clearing…"
+                              : "Clear preset"}
+                          </button>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              },
+            )}
+          </div>
         </div>
-      </details>
-      </div>}
+      )}
 
       <button
         className={`favorite-mode-button ${
