@@ -2900,21 +2900,45 @@ function App() {
   ) {
     return (
       <main className="shell setup-shell">
-        <section className="setup-card">
-          <p className="eyebrow">
-            SPLIT 2
-          </p>
+        <section className="setup-card setup-loading-card">
+          <div className="setup-loading-content">
+            <p className="eyebrow">
+              SPLIT 2
+            </p>
 
-          <h1>
-            Detecting Deadlock
-          </h1>
+            <div className="setup-loading-heading">
+              <div className="setup-loading-icon">
+                <span />
+              </div>
 
-          <p className="setup-description">
-            Scanning your Steam
-            libraries…
-          </p>
+              <div>
+                <h1>
+                  Detecting Deadlock
+                </h1>
 
-          <div className="scan-loader" />
+                <p className="setup-description">
+                  Scanning your Steam libraries for a
+                  Deadlock installation.
+                </p>
+              </div>
+            </div>
+
+            <div className="setup-scan-status">
+              <div className="setup-scan-status-header">
+                <span>INSTALLATION SCAN</span>
+                <strong>Searching…</strong>
+              </div>
+
+              <div className="setup-scan-track">
+                <span />
+              </div>
+
+              <p>
+                Checking Steam libraries and known
+                installation locations.
+              </p>
+            </div>
+          </div>
         </section>
       </main>
     );
@@ -2929,123 +2953,230 @@ function App() {
 
     return (
       <main className="shell setup-shell">
-        <section className="setup-card">
-          <p className="eyebrow">
-            SPLIT 2 · FIRST SETUP
-          </p>
-
-          <h1>
-            Deadlock installation
-          </h1>
-
-          {detected ? (
-            <>
-              <p className="setup-description">
-                SPLIT detected a
-                Deadlock installation.
+        <section className="setup-card setup-onboarding-card">
+          <div className="setup-onboarding-grid">
+            <div className="setup-onboarding-main">
+              <p className="eyebrow">
+                SPLIT 2 · FIRST SETUP
               </p>
 
-              <div className="detected-folder">
-                <span>
-                  DETECTED FOLDER
+              <h1>
+                Deadlock installation
+              </h1>
+
+              {detected ? (
+                <>
+                  <p className="setup-description">
+                    SPLIT detected a
+                    Deadlock installation.
+                  </p>
+
+                  <div className="detected-folder">
+                    <span>
+                      DETECTED FOLDER
+                    </span>
+
+                    <code>
+                      {detected}
+                    </code>
+                  </div>
+
+                  <h2 className="setup-question">
+                    Is this the correct
+                    Deadlock folder?
+                  </h2>
+
+                  <div className="setup-actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={setupWorking}
+                      onClick={() =>
+                        void confirmPath(
+                          detected,
+                        )
+                      }
+                    >
+                      {setupWorking
+                        ? "Configuring…"
+                        : "Yes, continue"}
+                    </button>
+
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={setupWorking}
+                      onClick={() =>
+                        void chooseFolder()
+                      }
+                    >
+                      No, choose folder
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="setup-description">
+                    SPLIT couldn't detect a Deadlock installation
+                    in your Steam libraries.
+                  </p>
+
+                  <div className="setup-manual-folder">
+                    <div className="setup-manual-folder-icon">
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3.75 6.75A1.75 1.75 0 0 1 5.5 5h4.1c.46 0 .9.18 1.22.5l1.18 1.18c.19.2.46.32.74.32h5.76a1.75 1.75 0 0 1 1.75 1.75v7.75a1.75 1.75 0 0 1-1.75 1.75h-13A1.75 1.75 0 0 1 3.75 16.5V6.75Z"
+                        />
+                      </svg>
+                    </div>
+
+                    <div className="setup-manual-folder-content">
+                      <span>MANUAL SELECTION</span>
+
+                      <strong>
+                        Select your Deadlock folder
+                      </strong>
+
+                      <p>
+                        Choose the main installation directory,
+                        usually located inside:
+                      </p>
+
+                      <code>
+                        steamapps\common\Deadlock
+                      </code>
+                    </div>
+                  </div>
+
+                  <div className="setup-actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={setupWorking}
+                      onClick={() => void chooseFolder()}
+                    >
+                      Choose Deadlock folder
+                    </button>
+
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={setupWorking}
+                      onClick={() => void rescan()}
+                    >
+                      Scan again
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {setupWorking && (
+                <p className="setup-working">
+                  Setting up SPLIT integration…
+                </p>
+              )}
+
+              {error && (
+                <div className="error-box">
+                  {error}
+                </div>
+              )}
+            </div>
+
+            <aside
+              className="setup-progress-panel"
+              aria-label="Setup progress"
+            >
+              <span className="setup-progress-label">
+                SETUP
+              </span>
+
+              <div
+                className={`setup-progress-step ${
+                  detected
+                    ? "complete"
+                    : "warning"
+                }`}
+              >
+                <span className="setup-step-index">
+                  01
                 </span>
 
-                <code>
-                  {detected}
-                </code>
+                <div>
+                  <strong>
+                    Deadlock detection
+                  </strong>
+
+                  <small>
+                    {detected
+                      ? "Installation found"
+                      : "Not detected automatically"}
+                  </small>
+                </div>
               </div>
 
-              <h2 className="setup-question">
-                Is this the correct
-                Deadlock folder?
-              </h2>
+              <div
+                className={`setup-progress-step ${
+                  setupWorking ? "complete" : "active"
+                }`}
+              >
+                <span className="setup-step-index">
+                  02
+                </span>
 
-              <div className="setup-actions">
-                <button
-                  className="primary-button"
-                  type="button"
-                  disabled={
-                    setupWorking
-                  }
-                  onClick={() =>
-                    void confirmPath(
-                      detected,
-                    )
-                  }
-                >
-                  Yes, continue
-                </button>
+                <div>
+                  <strong>
+                    {detected
+                      ? "Confirm folder"
+                      : "Choose folder"}
+                  </strong>
 
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={
-                    setupWorking
-                  }
-                  onClick={() =>
-                    void chooseFolder()
-                  }
-                >
-                  No, choose folder
-                </button>
+                  <small>
+                    {setupWorking
+                      ? "Installation path verified"
+                      : "Verify the installation path"}
+                  </small>
+                </div>
               </div>
-            </>
-          ) : (
-            <>
-              <p className="setup-description">
-                SPLIT couldn't find
-                Deadlock automatically.
-              </p>
 
-              <p className="setup-description">
-                Select the main
-                <strong>
-                  {" "}Deadlock{" "}
-                </strong>
-                installation folder.
-              </p>
+              <div
+                className={`setup-progress-step ${
+                  setupWorking ? "active" : ""
+                }`}
+              >
+                <span className="setup-step-index">
+                  03
+                </span>
 
-              <div className="setup-actions">
-                <button
-                  className="primary-button"
-                  type="button"
-                  disabled={
-                    setupWorking
-                  }
-                  onClick={() =>
-                    void chooseFolder()
-                  }
-                >
-                  Choose Deadlock folder
-                </button>
+                <div>
+                  <strong>
+                    SPLIT integration
+                  </strong>
 
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={
-                    setupWorking
-                  }
-                  onClick={() =>
-                    void rescan()
-                  }
-                >
-                  Scan again
-                </button>
+                  <small>
+                    {setupWorking
+                      ? "Configuring Deadlock…"
+                      : "Configure Deadlock automatically"}
+                  </small>
+                </div>
               </div>
-            </>
-          )}
 
-          {setupWorking && (
-            <p className="setup-working">
-              Checking installation…
-            </p>
-          )}
+              <div className="setup-progress-info">
+                <span aria-hidden="true">
+                  i
+                </span>
 
-          {error && (
-            <div className="error-box">
-              {error}
-            </div>
-          )}
+                <p>
+                  SPLIT will configure the required
+                  Deadlock integration automatically
+                  after confirmation.
+                </p>
+              </div>
+            </aside>
+          </div>
         </section>
       </main>
     );
@@ -3218,20 +3349,20 @@ function App() {
       {pendingGameplayHotkey && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog clear-preset-dialog"
+            className="confirmation-dialog gameplay-hotkey-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="gameplay-hotkey-warning-title"
           >
             <div className="confirmation-content">
               <span
-                className="confirmation-warning"
+                className="confirmation-warning gameplay-hotkey-warning"
                 aria-hidden="true"
               >
                 !
               </span>
 
-              <div>
+              <div className="gameplay-hotkey-content">
                 <h3
                   id="gameplay-hotkey-warning-title"
                   className="confirmation-title"
@@ -3239,27 +3370,25 @@ function App() {
                   This shortcut may interfere with gameplay
                 </h3>
 
-                <p className="confirmation-message">
-                  While this shortcut is active, SPLIT captures
-                  its key combination before Deadlock receives it.
-                  If these keys are also used for movement or other
-                  in-game actions, those actions may not work while
-                  the shortcut is being triggered.
+                <p className="confirmation-description">
+                  SPLIT captures this key combination before
+                  Deadlock receives it.
                 </p>
 
-                <p className="confirmation-description">
-                  For example, assigning Ctrl + Z may prevent Z
-                  movement while Ctrl is held (if Ctrl is also used
-                  for an in-game action, such as crouch).
-                </p>
+                <div className="gameplay-hotkey-selected">
+                  <span>Selected shortcut</span>
 
-                <p className="confirmation-description">
-                  Selected shortcut:{" "}
                   <strong>
                     {formatHotkey(
                       pendingGameplayHotkey.hotkey,
                     )}
                   </strong>
+                </div>
+
+                <p className="gameplay-hotkey-note">
+                  If these keys are also used in-game, those
+                  actions may not work while the shortcut is
+                  being triggered.
                 </p>
               </div>
             </div>
@@ -3308,40 +3437,47 @@ function App() {
       {favoriteModeWarningOpen && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog"
+            className="confirmation-dialog favorite-mode-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="favorite-mode-warning-title"
           >
             <div className="confirmation-content">
               <span
-                className="confirmation-warning"
+                className="confirmation-warning favorite-mode-warning"
                 aria-hidden="true"
               >
-                !
+                ★
               </span>
 
-              <div>
+              <div className="favorite-mode-content">
                 <h3
                   id="favorite-mode-warning-title"
                   className="confirmation-title"
                 >
-                  Favorite Mode has no presets
+                  Enter Favorite Mode?
                 </h3>
 
-                <p className="confirmation-message">
-                  Favorite Mode uses a single set of
-                  8 Favorites.
+                <p className="confirmation-description">
+                  Favorite Mode uses one shared bank of
+                  8 Favorites instead of presets.
                 </p>
 
-                <p className="confirmation-description">
-                  Presets do not apply while Favorite
-                  Mode is active.
-                </p>
+                <div className="favorite-mode-summary">
+                  <div>
+                    <span>Presets</span>
+                    <strong>Disabled</strong>
+                  </div>
 
-                <p className="confirmation-description">
-                  Any changes you make here affect
-                  these same 8 Favorites.
+                  <div>
+                    <span>Favorites</span>
+                    <strong>8 shared slots</strong>
+                  </div>
+                </div>
+
+                <p className="favorite-mode-note">
+                  Changes made here affect these same
+                  Favorites every time you return.
                 </p>
               </div>
             </div>
@@ -3671,33 +3807,39 @@ function App() {
           >
             <div className="confirmation-content">
               <span
-                className="confirmation-warning"
+                className="confirmation-warning clear-preset-warning"
                 aria-hidden="true"
               >
                 !
               </span>
 
-              <div>
+              <div className="clear-preset-content">
                 <h3
                   id="clear-preset-title"
                   className="confirmation-title"
                 >
-                  Clear preset
+                  Clear preset?
                 </h3>
 
-                <p className="confirmation-message">
-                  Are you sure you want to clear{" "}
-                  <strong>
-                    &quot;
-                    {pendingClearPreset.name}
-                    &quot;
-                  </strong>
-                  ?
+                <p className="confirmation-description">
+                  All savestates in this preset will be
+                  cleared.
                 </p>
 
-                <p className="confirmation-description">
-                  This will erase all 8 slots
-                  and reset the preset name.
+                <div className="clear-preset-target">
+                  <span>Preset</span>
+
+                  <strong>
+                    {pendingClearPreset.name}
+                  </strong>
+
+                  <small>
+                    8 savestate slots
+                  </small>
+                </div>
+
+                <p className="clear-preset-undo">
+                  This change can be undone afterwards.
                 </p>
               </div>
             </div>
