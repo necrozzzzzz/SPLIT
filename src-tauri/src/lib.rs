@@ -320,6 +320,12 @@ fn hide_quick_access(
     quick_access::hide(&app)
 }
 
+#[tauri::command]
+fn get_quick_access_state(
+) -> quick_access::QuickAccessState {
+    quick_access::state()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -485,6 +491,7 @@ pub fn run() {
             set_close_to_tray,
             reset_main_window,
             hide_quick_access,
+            get_quick_access_state,
             get_last_position,
             get_slots,
             get_slot_metadata,

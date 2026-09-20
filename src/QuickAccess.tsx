@@ -50,6 +50,12 @@ type QuickHotkeys = {
 };
 
 
+type QuickAccessState = {
+  visible: boolean;
+  interactive: boolean;
+};
+
+
 function formatHotkey(
   hotkey: Hotkey | undefined,
 ): string {
@@ -205,43 +211,89 @@ export default function QuickAccess() {
   useEffect(() => {
     void refresh();
 
-    let unlisten:
-      | (() => void)
-      | undefined;
+    let disposed = false;
+    let cleanups: Array<() => void> = [];
 
-    void listen(
+    const refreshEvents = [
       "quick-access-refresh",
-      () => {
-        void refresh();
-      },
-    ).then((cleanup) => {
-      unlisten =
-        cleanup;
+      "deadlock-slots",
+      "deadlock-preset",
+      "deadlock-favorite-mode",
+    ];
+
+    void Promise.all(
+      refreshEvents.map(
+        (event) => listen(
+          event,
+          () => {
+            void refresh();
+          },
+        ),
+      ),
+    ).then((nextCleanups) => {
+      if (disposed) {
+        nextCleanups.forEach(
+          (cleanup) => cleanup(),
+        );
+      } else {
+        cleanups = nextCleanups;
+      }
     });
 
     return () => {
-      unlisten?.();
+      disposed = true;
+      cleanups.forEach(
+        (cleanup) => cleanup(),
+      );
     };
   }, [refresh]);
 
 
   useEffect(() => {
+    let disposed = false;
+    let receivedLiveEvent = false;
     let unlisten:
       | (() => void)
       | undefined;
 
-    void listen<boolean>(
-      "quick-access-interaction",
-      (event) => {
-        setInteractionMode(
-          event.payload,
-        );
-      },
-    ).then((cleanup) => {
+    void (async () => {
+      const cleanup = await listen<boolean>(
+        "quick-access-interaction",
+        (event) => {
+          receivedLiveEvent = true;
+          setInteractionMode(
+            event.payload,
+          );
+        },
+      );
+
+      if (disposed) {
+        cleanup();
+        return;
+      }
+
       unlisten = cleanup;
-    });
+
+      try {
+        const state = await invoke<QuickAccessState>(
+          "get_quick_access_state",
+        );
+
+        if (
+          !disposed &&
+          !receivedLiveEvent
+        ) {
+          setInteractionMode(
+            state.interactive,
+          );
+        }
+      } catch (reason) {
+        console.error(reason);
+      }
+    })();
 
     return () => {
+      disposed = true;
       unlisten?.();
     };
   }, []);

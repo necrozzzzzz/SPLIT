@@ -9,6 +9,8 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+use serde::Serialize;
+
 use std::sync::atomic::{
     AtomicBool,
     Ordering,
@@ -30,6 +32,13 @@ static QUICK_ACCESS_VISIBLE: AtomicBool =
 static QUICK_ACCESS_INTERACTIVE: AtomicBool =
     AtomicBool::new(false);
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickAccessState {
+    visible: bool,
+    interactive: bool,
+}
+
 
 pub fn is_visible() -> bool {
     QUICK_ACCESS_VISIBLE.load(Ordering::SeqCst)
@@ -38,6 +47,14 @@ pub fn is_visible() -> bool {
 
 pub fn is_interactive() -> bool {
     QUICK_ACCESS_INTERACTIVE.load(Ordering::SeqCst)
+}
+
+
+pub fn state() -> QuickAccessState {
+    QuickAccessState {
+        visible: is_visible(),
+        interactive: is_interactive(),
+    }
 }
 
 
@@ -54,10 +71,14 @@ fn emit_interaction_mode(
     window: &WebviewWindow,
     active: bool,
 ) {
-    let _ = window.emit(
+    if let Err(error) = window.emit(
         "quick-access-interaction",
         active,
-    );
+    ) {
+        eprintln!(
+            "[SPLIT][QA] Could not emit interaction={active}: {error}"
+        );
+    }
 }
 
 
@@ -279,14 +300,21 @@ pub fn hide(
         false,
         Ordering::SeqCst,
     );
+    println!("[SPLIT][QA] interaction=false");
 
     QUICK_ACCESS_VISIBLE.store(
         false,
         Ordering::SeqCst,
     );
 
-    let _ = crate::deadlock::
-        focus_deadlock_window();
+    match crate::deadlock::focus_deadlock_window() {
+        Ok(()) => println!(
+            "[SPLIT][QA] focus returned to Deadlock"
+        ),
+        Err(error) => eprintln!(
+            "[SPLIT][QA] Could not return focus to Deadlock: {error}"
+        ),
+    }
 
     Ok(())
 }
@@ -295,6 +323,8 @@ pub fn hide(
 pub fn enter_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
+    println!("[SPLIT][QA] enter_interaction_mode()");
+
     let window = app
         .get_webview_window(
             QUICK_ACCESS_LABEL,
@@ -339,22 +369,6 @@ pub fn enter_interaction_mode(
             )
         })?;
 
-    if let Err(error) = window.set_focus() {
-        let _ = window.set_focusable(false);
-        QUICK_ACCESS_INTERACTIVE.store(
-            false,
-            Ordering::SeqCst,
-        );
-        emit_interaction_mode(
-            &window,
-            false,
-        );
-
-        return Err(format!(
-            "Could not focus Quick Access: {error}"
-        ));
-    }
-
     QUICK_ACCESS_INTERACTIVE.store(
         true,
         Ordering::SeqCst,
@@ -364,6 +378,47 @@ pub fn enter_interaction_mode(
         &window,
         true,
     );
+    println!("[SPLIT][QA] interaction=true");
+
+    let focus_window = window.clone();
+
+    if let Err(error) = window.run_on_main_thread(
+        move || {
+            if let Err(error) = focus_window.set_focus() {
+                let _ = focus_window.set_focusable(false);
+
+                QUICK_ACCESS_INTERACTIVE.store(
+                    false,
+                    Ordering::SeqCst,
+                );
+
+                emit_interaction_mode(
+                    &focus_window,
+                    false,
+                );
+
+                eprintln!(
+                    "[SPLIT][QA] Could not focus Quick Access: {error}"
+                );
+            }
+        },
+    ) {
+        let _ = window.set_focusable(false);
+
+        QUICK_ACCESS_INTERACTIVE.store(
+            false,
+            Ordering::SeqCst,
+        );
+
+        emit_interaction_mode(
+            &window,
+            false,
+        );
+
+        return Err(format!(
+            "Could not schedule Quick Access focus: {error}"
+        ));
+    }
 
     Ok(())
 }
@@ -372,6 +427,8 @@ pub fn enter_interaction_mode(
 pub fn exit_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
+    println!("[SPLIT][QA] exit_interaction_mode()");
+
     let mut error = None;
 
     QUICK_ACCESS_INTERACTIVE.store(
@@ -398,11 +455,16 @@ pub fn exit_interaction_mode(
         );
     }
 
-    if let Err(reason) =
-        crate::deadlock::focus_deadlock_window()
-    {
-        if error.is_none() {
-            error = Some(reason);
+    println!("[SPLIT][QA] interaction=false");
+
+    match crate::deadlock::focus_deadlock_window() {
+        Ok(()) => println!(
+            "[SPLIT][QA] focus returned to Deadlock"
+        ),
+        Err(reason) => {
+            if error.is_none() {
+                error = Some(reason);
+            }
         }
     }
 

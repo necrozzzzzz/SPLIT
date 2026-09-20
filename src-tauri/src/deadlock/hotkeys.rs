@@ -86,9 +86,7 @@ enum CapsLockState {
         started_at: Instant,
         overlay_was_visible: bool,
     },
-    Interaction {
-        activation_key_down: bool,
-    },
+    Interaction,
     SuppressUntilRelease,
 }
 
@@ -1426,6 +1424,8 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
             CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
         }
         HookDecision::QuickAccessPressed => {
+            println!("[SPLIT][QA] CapsLock DOWN");
+
             if let Some(sender) = HOTKEY_SENDER.get() {
                 let _ = sender.send(HotkeyAction::QuickAccessPressed {
                     overlay_was_visible: crate::quick_access::is_visible(),
@@ -1435,6 +1435,8 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
             1
         }
         HookDecision::QuickAccessReleased => {
+            println!("[SPLIT][QA] CapsLock UP");
+
             if let Some(sender) = HOTKEY_SENDER.get() {
                 let _ = sender.send(HotkeyAction::QuickAccessReleased {
                     released_at: Instant::now(),
@@ -1443,6 +1445,8 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
             1
         }
         HookDecision::QuickAccessEscapePressed => {
+            println!("[SPLIT][QA] Escape DOWN");
+
             if let Some(sender) = HOTKEY_SENDER.get() {
                 let _ = sender.send(HotkeyAction::QuickAccessEscapePressed);
             }
@@ -1489,9 +1493,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             Ok(action) => action,
 
                             Err(mpsc::RecvTimeoutError::Timeout) => {
-                                caps_lock_state = CapsLockState::Interaction {
-                                    activation_key_down: true,
-                                };
+                                println!(
+                                    "[SPLIT][QA] state Pressed -> Interaction"
+                                );
+
+                                caps_lock_state = CapsLockState::Interaction;
 
                                 if let Err(error) =
                                     crate::quick_access::enter_interaction_mode(&app)
@@ -1557,23 +1563,29 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                     } => {
                         if matches!(
                             &caps_lock_state,
-                            CapsLockState::Interaction { .. }
+                            CapsLockState::Interaction
                         ) && !crate::quick_access::is_interactive()
                         {
                             caps_lock_state = CapsLockState::Idle;
                         }
 
                         if matches!(&caps_lock_state, CapsLockState::Idle) {
+                            println!(
+                                "[SPLIT][QA] state Idle -> Pressed"
+                            );
+
                             caps_lock_state = CapsLockState::Pressed {
                                 started_at: pressed_at,
                                 overlay_was_visible,
                             };
                         } else if matches!(
                             &caps_lock_state,
-                            CapsLockState::Interaction {
-                                activation_key_down: false,
-                            }
+                            CapsLockState::Interaction
                         ) {
+                            println!(
+                                "[SPLIT][QA] state Interaction -> Passive"
+                            );
+
                             caps_lock_state = CapsLockState::SuppressUntilRelease;
 
                             if let Err(error) =
@@ -1607,9 +1619,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                                         >= QUICK_ACCESS_HOLD_DURATION;
 
                                 if held_long_enough {
-                                    caps_lock_state = CapsLockState::Interaction {
-                                        activation_key_down: false,
-                                    };
+                                    println!(
+                                        "[SPLIT][QA] state Pressed -> Interaction"
+                                    );
+
+                                    caps_lock_state = CapsLockState::Interaction;
 
                                     if let Err(error) =
                                         crate::quick_access::enter_interaction_mode(&app)
@@ -1618,26 +1632,24 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                                             "[SPLIT] Could not enter Quick Access interaction mode: {error}"
                                         );
                                     }
-                                } else if let Err(error) = crate::quick_access::toggle(&app) {
-                                    eprintln!(
-                                        "[SPLIT] Could not toggle Quick Access: {error}"
-                                    );
+                                } else {
+                                    if overlay_was_visible {
+                                        println!(
+                                            "[SPLIT][QA] state Passive -> Hidden"
+                                        );
+                                    }
+
+                                    if let Err(error) = crate::quick_access::toggle(&app) {
+                                        eprintln!(
+                                            "[SPLIT] Could not toggle Quick Access: {error}"
+                                        );
+                                    }
                                 }
                             }
 
-                            CapsLockState::Interaction {
-                                activation_key_down: true,
-                            } => {
-                                if crate::quick_access::is_interactive() {
-                                    caps_lock_state = CapsLockState::Interaction {
-                                        activation_key_down: false,
-                                    };
-                                }
+                            CapsLockState::Interaction => {
+                                caps_lock_state = CapsLockState::Interaction;
                             }
-
-                            CapsLockState::Interaction {
-                                activation_key_down: false,
-                            } => {}
 
                             CapsLockState::SuppressUntilRelease => {}
                         }
@@ -1650,14 +1662,12 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         );
 
                         match previous {
-                            CapsLockState::Interaction {
-                                activation_key_down,
-                            } => {
-                                caps_lock_state = if activation_key_down {
-                                    CapsLockState::SuppressUntilRelease
-                                } else {
-                                    CapsLockState::Idle
-                                };
+                            CapsLockState::Interaction => {
+                                println!(
+                                    "[SPLIT][QA] state Interaction -> Passive"
+                                );
+
+                                caps_lock_state = CapsLockState::Idle;
 
                                 if let Err(error) =
                                     crate::quick_access::exit_interaction_mode(&app)
@@ -1669,6 +1679,10 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             }
 
                             CapsLockState::Pressed { .. } => {
+                                println!(
+                                    "[SPLIT][QA] state Passive -> Hidden"
+                                );
+
                                 caps_lock_state = CapsLockState::SuppressUntilRelease;
 
                                 if let Err(error) = crate::quick_access::hide(&app) {
@@ -1679,6 +1693,10 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             }
 
                             CapsLockState::SuppressUntilRelease => {
+                                println!(
+                                    "[SPLIT][QA] state Passive -> Hidden"
+                                );
+
                                 caps_lock_state = CapsLockState::SuppressUntilRelease;
 
                                 if let Err(error) = crate::quick_access::hide(&app) {
@@ -1689,6 +1707,10 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             }
 
                             CapsLockState::Idle => {
+                                println!(
+                                    "[SPLIT][QA] state Passive -> Hidden"
+                                );
+
                                 if let Err(error) = crate::quick_access::hide(&app) {
                                     eprintln!(
                                         "[SPLIT] Could not hide Quick Access: {error}"
@@ -1942,7 +1964,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
 
 
                     HotkeyAction::Shutdown => {
-                        if matches!(&caps_lock_state, CapsLockState::Interaction { .. }) {
+                        if matches!(&caps_lock_state, CapsLockState::Interaction) {
                             let _ = crate::quick_access::exit_interaction_mode(&app);
                         }
                         break;
