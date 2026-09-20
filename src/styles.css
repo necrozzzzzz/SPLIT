@@ -4501,6 +4501,11 @@ select:hover:not(:disabled) {
 
 .favorite-copy-dialog {
   width: min(560px, 92vw);
+  padding-bottom: 16px;
+}
+
+.favorite-copy-dialog .confirmation-actions {
+  margin-top: 13px;
 }
 
 
@@ -4655,6 +4660,255 @@ select:hover:not(:disabled) {
 
   font-size: 9px;
   line-height: 1.4;
+}
+
+.favorite-overwrite-dialog {
+  width: min(460px, 92vw);
+}
+
+
+.favorite-overwrite-content {
+  min-width: 0;
+  flex: 1;
+}
+
+
+.favorite-overwrite-dialog .confirmation-title {
+  margin: 0;
+
+  color: #edf7f5;
+
+  font-size: 15px;
+  font-weight: 750;
+
+  letter-spacing: -0.015em;
+}
+
+
+.favorite-overwrite-dialog
+.confirmation-description {
+  margin-top: 7px;
+
+  color: #819793;
+
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+
+.favorite-overwrite-comparison {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    minmax(0, 1fr);
+
+  align-items: center;
+
+  gap: 9px;
+
+  margin-top: 15px;
+}
+
+
+.favorite-overwrite-comparison > div {
+  display: grid;
+
+  min-width: 0;
+  min-height: 58px;
+
+  align-content: center;
+
+  gap: 5px;
+
+  border:
+    1px solid
+    rgba(216, 168, 79, 0.16);
+
+  border-radius: 7px;
+
+  padding: 9px 10px;
+
+  background:
+    rgba(216, 168, 79, 0.035);
+}
+
+
+.favorite-overwrite-comparison
+> div:last-child {
+  border-color:
+    rgba(79, 209, 197, 0.18);
+
+  background:
+    rgba(79, 209, 197, 0.04);
+}
+
+
+.favorite-overwrite-comparison span {
+  color: #728984;
+
+  font-size: 8px;
+  font-weight: 800;
+
+  letter-spacing: 0.07em;
+
+  text-transform: uppercase;
+}
+
+
+.favorite-overwrite-comparison strong {
+  overflow: hidden;
+
+  color: #e8f3f0;
+
+  font-size: 11px;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.favorite-overwrite-arrow {
+  color: #5f7772 !important;
+
+  font-size: 14px !important;
+}
+
+
+.favorite-overwrite-undo {
+  margin: 10px 0 0;
+
+  color: #66807b;
+
+  font-size: 9px;
+}
+
+
+/* =========================================
+   SPLIT — IMPORT PRESET DIALOG
+   ========================================= */
+
+.preset-import-dialog {
+  width: min(460px, 92vw);
+}
+
+
+.preset-import-content {
+  min-width: 0;
+  flex: 1;
+}
+
+
+.preset-import-dialog .confirmation-title {
+  margin: 0;
+
+  color: #edf7f5;
+
+  font-size: 15px;
+  font-weight: 750;
+
+  letter-spacing: -0.015em;
+}
+
+
+.preset-import-dialog
+.confirmation-description {
+  margin-top: 7px;
+
+  color: #819793;
+
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+
+.preset-import-comparison {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    minmax(0, 1fr);
+
+  align-items: center;
+
+  gap: 9px;
+
+  margin-top: 15px;
+}
+
+
+.preset-import-comparison > div {
+  display: grid;
+
+  min-width: 0;
+  min-height: 58px;
+
+  align-content: center;
+
+  gap: 5px;
+
+  border:
+    1px solid
+    rgba(216, 168, 79, 0.16);
+
+  border-radius: 7px;
+
+  padding: 9px 10px;
+
+  background:
+    rgba(216, 168, 79, 0.035);
+}
+
+
+.preset-import-comparison
+> div:last-child {
+  border-color:
+    rgba(79, 209, 197, 0.18);
+
+  background:
+    rgba(79, 209, 197, 0.04);
+}
+
+
+.preset-import-comparison span {
+  color: #728984;
+
+  font-size: 8px;
+  font-weight: 800;
+
+  letter-spacing: 0.07em;
+
+  text-transform: uppercase;
+}
+
+
+.preset-import-comparison strong {
+  overflow: hidden;
+
+  color: #e8f3f0;
+
+  font-size: 11px;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.preset-import-arrow {
+  color: #5f7772 !important;
+
+  font-size: 14px !important;
+}
+
+
+.preset-import-undo {
+  margin: 10px 0 0;
+
+  color: #66807b;
+
+  font-size: 9px;
 }
 
 /* Responsive */

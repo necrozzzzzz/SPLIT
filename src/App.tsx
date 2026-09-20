@@ -3218,7 +3218,7 @@ function App() {
       {pendingGameplayHotkey && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog"
+            className="confirmation-dialog clear-preset-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="gameplay-hotkey-warning-title"
@@ -3406,18 +3406,13 @@ function App() {
                   id="save-favorite-title"
                   className="confirmation-title"
                 >
-                  Save to Favorite
-                </h3>
-
-                <p className="confirmation-message">
-                  Save{" "}
+                  Choose a Favorite slot for{" "}
                   <strong>
                     &quot;
                     {pendingFavoriteCopy.sourceName}
                     &quot;
-                  </strong>{" "}
-                  to which Favorite slot?
-                </p>
+                  </strong>
+                </h3>
 
                 <p className="confirmation-description">
                   The complete save will be copied,
@@ -3496,7 +3491,7 @@ function App() {
       {pendingFavoriteOverwrite && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog"
+            className="confirmation-dialog favorite-overwrite-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="overwrite-favorite-title"
@@ -3509,35 +3504,48 @@ function App() {
                 !
               </span>
 
-              <div>
+              <div className="favorite-overwrite-content">
                 <h3
                   id="overwrite-favorite-title"
                   className="confirmation-title"
                 >
-                  Replace Favorite?
+                  Replace Favorite{" "}
+                  {pendingFavoriteOverwrite.target.slot}?
                 </h3>
 
-                <p className="confirmation-message">
-                  Favorite{" "}
-                  {pendingFavoriteOverwrite.target.slot}
-                  {" "}
-                  currently contains{" "}
-                  <strong>
-                    &quot;
-                    {pendingFavoriteOverwrite.target.name}
-                    &quot;
-                  </strong>
-                  .
+                <p className="confirmation-description">
+                  This slot already contains a Favorite.
+                  Choose whether to replace it with the
+                  selected savestate.
                 </p>
 
-                <p className="confirmation-description">
-                  Replace it with{" "}
-                  <strong>
-                    &quot;
-                    {pendingFavoriteOverwrite.sourceName}
-                    &quot;
-                  </strong>
-                  ? This action cannot be undone.
+                <div className="favorite-overwrite-comparison">
+                  <div>
+                    <span>Current</span>
+
+                    <strong>
+                      {pendingFavoriteOverwrite.target.name}
+                    </strong>
+                  </div>
+
+                  <span
+                    className="favorite-overwrite-arrow"
+                    aria-hidden="true"
+                  >
+                    →
+                  </span>
+
+                  <div>
+                    <span>Replace with</span>
+
+                    <strong>
+                      {pendingFavoriteOverwrite.sourceName}
+                    </strong>
+                  </div>
+                </div>
+
+                <p className="favorite-overwrite-undo">
+                  This change can be undone afterwards.
                 </p>
               </div>
             </div>
@@ -3573,7 +3581,7 @@ function App() {
       {pendingImportPreset && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog"
+            className="confirmation-dialog preset-import-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="import-preset-title"
@@ -3583,36 +3591,49 @@ function App() {
                 className="confirmation-warning"
                 aria-hidden="true"
               >
-                !
+                ↓
               </span>
 
-              <div>
+              <div className="preset-import-content">
                 <h3
                   id="import-preset-title"
                   className="confirmation-title"
                 >
-                  Import preset
+                  Import preset?
                 </h3>
 
-                <p className="confirmation-message">
-                  Import{" "}
-                  <strong>
-                    &quot;
-                    {pendingImportPreset.importedName}
-                    &quot;
-                  </strong>{" "}
-                  into{" "}
-                  <strong>
-                    &quot;
-                    {pendingImportPreset.currentName}
-                    &quot;
-                  </strong>
-                  ?
+                <p className="confirmation-description">
+                  The current preset will be replaced by
+                  the imported preset.
                 </p>
 
-                <p className="confirmation-description">
-                  This will replace all 8 slots
-                  and the current preset name.
+                <div className="preset-import-comparison">
+                  <div>
+                    <span>Current</span>
+
+                    <strong>
+                      {pendingImportPreset.currentName}
+                    </strong>
+                  </div>
+
+                  <span
+                    className="preset-import-arrow"
+                    aria-hidden="true"
+                  >
+                    →
+                  </span>
+
+                  <div>
+                    <span>Import</span>
+
+                    <strong>
+                      {pendingImportPreset.importedName}
+                    </strong>
+                  </div>
+                </div>
+
+                <p className="preset-import-undo">
+                  This change can be undone afterwards.
                 </p>
               </div>
             </div>
@@ -3643,7 +3664,7 @@ function App() {
       {pendingClearPreset && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog"
+            className="confirmation-dialog clear-preset-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="clear-preset-title"
