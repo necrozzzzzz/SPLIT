@@ -9,6 +9,11 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
+
 use windows_sys::Win32::{
     Foundation::RECT,
     UI::WindowsAndMessaging::GetWindowRect,
@@ -19,6 +24,41 @@ const QUICK_ACCESS_LABEL: &str =
 
 const QUICK_ACCESS_WIDTH: u32 = 390;
 const QUICK_ACCESS_MARGIN: i32 = 14;
+
+static QUICK_ACCESS_VISIBLE: AtomicBool =
+    AtomicBool::new(false);
+static QUICK_ACCESS_INTERACTIVE: AtomicBool =
+    AtomicBool::new(false);
+
+
+pub fn is_visible() -> bool {
+    QUICK_ACCESS_VISIBLE.load(Ordering::SeqCst)
+}
+
+
+pub fn is_interactive() -> bool {
+    QUICK_ACCESS_INTERACTIVE.load(Ordering::SeqCst)
+}
+
+
+#[cfg(test)]
+pub fn set_visible_for_test(visible: bool) {
+    QUICK_ACCESS_VISIBLE.store(
+        visible,
+        Ordering::SeqCst,
+    );
+}
+
+
+fn emit_interaction_mode(
+    window: &WebviewWindow,
+    active: bool,
+) {
+    let _ = window.emit(
+        "quick-access-interaction",
+        active,
+    );
+}
 
 
 fn deadlock_rect() -> Result<RECT, String> {
@@ -148,6 +188,24 @@ pub fn show(
     let window =
         get_or_create(app)?;
 
+    window
+        .set_focusable(false)
+        .map_err(|error| {
+            format!(
+                "Could not make Quick Access passive: {error}"
+            )
+        })?;
+
+    QUICK_ACCESS_INTERACTIVE.store(
+        false,
+        Ordering::SeqCst,
+    );
+
+    emit_interaction_mode(
+        &window,
+        false,
+    );
+
     position_window(
         &window,
     )?;
@@ -159,6 +217,11 @@ pub fn show(
                 "Could not show Quick Access: {error}"
             )
         })?;
+
+    QUICK_ACCESS_VISIBLE.store(
+        true,
+        Ordering::SeqCst,
+    );
 
     /*
      * Au premier affichage React charge
@@ -186,6 +249,24 @@ pub fn hide(
         )
     {
         window
+            .set_focusable(false)
+            .map_err(|error| {
+                format!(
+                    "Could not make Quick Access passive: {error}"
+                )
+            })?;
+
+        QUICK_ACCESS_INTERACTIVE.store(
+            false,
+            Ordering::SeqCst,
+        );
+
+        emit_interaction_mode(
+            &window,
+            false,
+        );
+
+        window
             .hide()
             .map_err(|error| {
                 format!(
@@ -194,7 +275,141 @@ pub fn hide(
             })?;
     }
 
+    QUICK_ACCESS_INTERACTIVE.store(
+        false,
+        Ordering::SeqCst,
+    );
+
+    QUICK_ACCESS_VISIBLE.store(
+        false,
+        Ordering::SeqCst,
+    );
+
+    let _ = crate::deadlock::
+        focus_deadlock_window();
+
     Ok(())
+}
+
+
+pub fn enter_interaction_mode(
+    app: &AppHandle,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window(
+            QUICK_ACCESS_LABEL,
+        )
+        .ok_or_else(|| {
+            "Quick Access window does not exist"
+                .to_string()
+        })?;
+
+    if !window
+        .is_visible()
+        .unwrap_or(false)
+    {
+        let _ = window.set_focusable(false);
+
+        QUICK_ACCESS_INTERACTIVE.store(
+            false,
+            Ordering::SeqCst,
+        );
+
+        emit_interaction_mode(
+            &window,
+            false,
+        );
+
+        QUICK_ACCESS_VISIBLE.store(
+            false,
+            Ordering::SeqCst,
+        );
+
+        return Err(
+            "Quick Access is not visible"
+                .to_string(),
+        );
+    }
+
+    window
+        .set_focusable(true)
+        .map_err(|error| {
+            format!(
+                "Could not make Quick Access interactive: {error}"
+            )
+        })?;
+
+    if let Err(error) = window.set_focus() {
+        let _ = window.set_focusable(false);
+        QUICK_ACCESS_INTERACTIVE.store(
+            false,
+            Ordering::SeqCst,
+        );
+        emit_interaction_mode(
+            &window,
+            false,
+        );
+
+        return Err(format!(
+            "Could not focus Quick Access: {error}"
+        ));
+    }
+
+    QUICK_ACCESS_INTERACTIVE.store(
+        true,
+        Ordering::SeqCst,
+    );
+
+    emit_interaction_mode(
+        &window,
+        true,
+    );
+
+    Ok(())
+}
+
+
+pub fn exit_interaction_mode(
+    app: &AppHandle,
+) -> Result<(), String> {
+    let mut error = None;
+
+    QUICK_ACCESS_INTERACTIVE.store(
+        false,
+        Ordering::SeqCst,
+    );
+
+    if let Some(window) =
+        app.get_webview_window(
+            QUICK_ACCESS_LABEL,
+        )
+    {
+        if let Err(reason) =
+            window.set_focusable(false)
+        {
+            error = Some(format!(
+                "Could not make Quick Access passive: {reason}"
+            ));
+        }
+
+        emit_interaction_mode(
+            &window,
+            false,
+        );
+    }
+
+    if let Err(reason) =
+        crate::deadlock::focus_deadlock_window()
+    {
+        if error.is_none() {
+            error = Some(reason);
+        }
+    }
+
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 

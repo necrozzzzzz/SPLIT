@@ -7,7 +7,7 @@ use std::{
     },
     thread,
     thread::JoinHandle,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use windows_sys::{
@@ -21,7 +21,7 @@ use windows_sys::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_F1, VK_F10, VK_F11,
+                KEYEVENTF_KEYUP, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F10, VK_F11,
                 VK_F12, VK_F13, VK_F14, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9,
                 VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT,
                 VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE, VK_UP,
@@ -65,7 +65,31 @@ enum HotkeyAction {
         hotkey: Hotkey,
     },
     Prime(u8),
+    QuickAccessPressed {
+        overlay_was_visible: bool,
+        pressed_at: Instant,
+    },
+    QuickAccessReleased {
+        released_at: Instant,
+    },
+    QuickAccessEscapePressed,
     Shutdown,
+}
+
+const QUICK_ACCESS_HOLD_DURATION: Duration =
+    Duration::from_millis(250);
+
+#[derive(Debug)]
+enum CapsLockState {
+    Idle,
+    Pressed {
+        started_at: Instant,
+        overlay_was_visible: bool,
+    },
+    Interaction {
+        activation_key_down: bool,
+    },
+    SuppressUntilRelease,
 }
 
 static HOTKEY_SENDER: OnceLock<mpsc::Sender<HotkeyAction>> = OnceLock::new();
@@ -545,6 +569,8 @@ struct HookEngine {
     down_keys: HashSet<u16>,
     consumed_keys: HashSet<u16>,
     emergency_f10: bool,
+    quick_access_caps_lock_down: bool,
+    quick_access_escape_down: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -553,6 +579,9 @@ enum HookDecision {
     Consume,
     Trigger(UserHotkeyAction, Hotkey),
     EmergencyF10,
+    QuickAccessPressed,
+    QuickAccessReleased,
+    QuickAccessEscapePressed,
 }
 
 impl HookEngine {
@@ -581,6 +610,16 @@ impl HookEngine {
 
         if key_up {
             self.down_keys.remove(&vk);
+            if vk == VK_CAPITAL && self.quick_access_caps_lock_down {
+                self.quick_access_caps_lock_down = false;
+                self.consumed_keys.remove(&vk);
+                return HookDecision::QuickAccessReleased;
+            }
+            if vk == VK_ESCAPE && self.quick_access_escape_down {
+                self.quick_access_escape_down = false;
+                self.consumed_keys.remove(&vk);
+                return HookDecision::Consume;
+            }
             if vk == VK_F10 && self.emergency_f10 {
                 self.emergency_f10 = false;
                 return HookDecision::Pass;
@@ -613,6 +652,18 @@ impl HookEngine {
             return HookDecision::EmergencyF10;
         }
 
+        if vk == VK_ESCAPE && crate::quick_access::is_visible() {
+            self.quick_access_escape_down = true;
+            self.consumed_keys.insert(vk);
+            return HookDecision::QuickAccessEscapePressed;
+        }
+
+        if vk == VK_CAPITAL && crate::quick_access::is_interactive() {
+            self.quick_access_caps_lock_down = true;
+            self.consumed_keys.insert(vk);
+            return HookDecision::QuickAccessPressed;
+        }
+
         if !deadlock_foreground {
             return HookDecision::Pass;
         }
@@ -630,6 +681,10 @@ impl HookEngine {
             return HookDecision::Pass;
         };
         self.consumed_keys.insert(vk);
+        if vk == VK_CAPITAL && action == UserHotkeyAction::ToggleQuickAccess {
+            self.quick_access_caps_lock_down = true;
+            return HookDecision::QuickAccessPressed;
+        }
         HookDecision::Trigger(action, hotkey)
     }
 
@@ -1370,6 +1425,29 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
             println!("[SPLIT] Emergency presentation resume via F10");
             CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
         }
+        HookDecision::QuickAccessPressed => {
+            if let Some(sender) = HOTKEY_SENDER.get() {
+                let _ = sender.send(HotkeyAction::QuickAccessPressed {
+                    overlay_was_visible: crate::quick_access::is_visible(),
+                    pressed_at: Instant::now(),
+                });
+            }
+            1
+        }
+        HookDecision::QuickAccessReleased => {
+            if let Some(sender) = HOTKEY_SENDER.get() {
+                let _ = sender.send(HotkeyAction::QuickAccessReleased {
+                    released_at: Instant::now(),
+                });
+            }
+            1
+        }
+        HookDecision::QuickAccessEscapePressed => {
+            if let Some(sender) = HOTKEY_SENDER.get() {
+                let _ = sender.send(HotkeyAction::QuickAccessEscapePressed);
+            }
+            1
+        }
         HookDecision::Trigger(action, hotkey) => {
             if let Some(sender) = HOTKEY_SENDER.get() {
                 let _ = sender.send(HotkeyAction::User { action, hotkey });
@@ -1396,7 +1474,46 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
     let worker = thread::Builder::new()
         .name("split-hotkey-worker".to_string())
         .spawn(move || {
-            for action in rx {
+            let mut caps_lock_state = CapsLockState::Idle;
+
+            loop {
+                let action = match &caps_lock_state {
+                    CapsLockState::Pressed {
+                        started_at,
+                        overlay_was_visible: true,
+                    } => {
+                        let remaining = QUICK_ACCESS_HOLD_DURATION
+                            .saturating_sub(started_at.elapsed());
+
+                        match rx.recv_timeout(remaining) {
+                            Ok(action) => action,
+
+                            Err(mpsc::RecvTimeoutError::Timeout) => {
+                                caps_lock_state = CapsLockState::Interaction {
+                                    activation_key_down: true,
+                                };
+
+                                if let Err(error) =
+                                    crate::quick_access::enter_interaction_mode(&app)
+                                {
+                                    eprintln!(
+                                        "[SPLIT] Could not enter Quick Access interaction mode: {error}"
+                                    );
+                                }
+
+                                continue;
+                            }
+
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        }
+                    }
+
+                    _ => match rx.recv() {
+                        Ok(action) => action,
+                        Err(_) => break,
+                    },
+                };
+
                 if let HotkeyAction::User {
                     action: user_action,
                     hotkey,
@@ -1434,6 +1551,153 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                     }
                 }
                 match action {
+                    HotkeyAction::QuickAccessPressed {
+                        overlay_was_visible,
+                        pressed_at,
+                    } => {
+                        if matches!(
+                            &caps_lock_state,
+                            CapsLockState::Interaction { .. }
+                        ) && !crate::quick_access::is_interactive()
+                        {
+                            caps_lock_state = CapsLockState::Idle;
+                        }
+
+                        if matches!(&caps_lock_state, CapsLockState::Idle) {
+                            caps_lock_state = CapsLockState::Pressed {
+                                started_at: pressed_at,
+                                overlay_was_visible,
+                            };
+                        } else if matches!(
+                            &caps_lock_state,
+                            CapsLockState::Interaction {
+                                activation_key_down: false,
+                            }
+                        ) {
+                            caps_lock_state = CapsLockState::SuppressUntilRelease;
+
+                            if let Err(error) =
+                                crate::quick_access::exit_interaction_mode(&app)
+                            {
+                                eprintln!(
+                                    "[SPLIT] Could not leave Quick Access interaction mode: {error}"
+                                );
+                            }
+                        }
+                    }
+
+                    HotkeyAction::QuickAccessReleased {
+                        released_at,
+                    } => {
+                        let previous = std::mem::replace(
+                            &mut caps_lock_state,
+                            CapsLockState::Idle,
+                        );
+
+                        match previous {
+                            CapsLockState::Idle => {}
+
+                            CapsLockState::Pressed {
+                                started_at,
+                                overlay_was_visible,
+                                ..
+                            } => {
+                                let held_long_enough = overlay_was_visible
+                                    && released_at.saturating_duration_since(started_at)
+                                        >= QUICK_ACCESS_HOLD_DURATION;
+
+                                if held_long_enough {
+                                    caps_lock_state = CapsLockState::Interaction {
+                                        activation_key_down: false,
+                                    };
+
+                                    if let Err(error) =
+                                        crate::quick_access::enter_interaction_mode(&app)
+                                    {
+                                        eprintln!(
+                                            "[SPLIT] Could not enter Quick Access interaction mode: {error}"
+                                        );
+                                    }
+                                } else if let Err(error) = crate::quick_access::toggle(&app) {
+                                    eprintln!(
+                                        "[SPLIT] Could not toggle Quick Access: {error}"
+                                    );
+                                }
+                            }
+
+                            CapsLockState::Interaction {
+                                activation_key_down: true,
+                            } => {
+                                if crate::quick_access::is_interactive() {
+                                    caps_lock_state = CapsLockState::Interaction {
+                                        activation_key_down: false,
+                                    };
+                                }
+                            }
+
+                            CapsLockState::Interaction {
+                                activation_key_down: false,
+                            } => {}
+
+                            CapsLockState::SuppressUntilRelease => {}
+                        }
+                    }
+
+                    HotkeyAction::QuickAccessEscapePressed => {
+                        let previous = std::mem::replace(
+                            &mut caps_lock_state,
+                            CapsLockState::Idle,
+                        );
+
+                        match previous {
+                            CapsLockState::Interaction {
+                                activation_key_down,
+                            } => {
+                                caps_lock_state = if activation_key_down {
+                                    CapsLockState::SuppressUntilRelease
+                                } else {
+                                    CapsLockState::Idle
+                                };
+
+                                if let Err(error) =
+                                    crate::quick_access::exit_interaction_mode(&app)
+                                {
+                                    eprintln!(
+                                        "[SPLIT] Could not leave Quick Access interaction mode: {error}"
+                                    );
+                                }
+                            }
+
+                            CapsLockState::Pressed { .. } => {
+                                caps_lock_state = CapsLockState::SuppressUntilRelease;
+
+                                if let Err(error) = crate::quick_access::hide(&app) {
+                                    eprintln!(
+                                        "[SPLIT] Could not hide Quick Access: {error}"
+                                    );
+                                }
+                            }
+
+                            CapsLockState::SuppressUntilRelease => {
+                                caps_lock_state = CapsLockState::SuppressUntilRelease;
+
+                                if let Err(error) = crate::quick_access::hide(&app) {
+                                    eprintln!(
+                                        "[SPLIT] Could not hide Quick Access: {error}"
+                                    );
+                                }
+                            }
+
+                            CapsLockState::Idle => {
+                                if let Err(error) = crate::quick_access::hide(&app) {
+                                    eprintln!(
+                                        "[SPLIT] Could not hide Quick Access: {error}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+
                     /*
                      * ALT + F1-F8
                      *
@@ -1677,7 +1941,12 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                     }
 
 
-                    HotkeyAction::Shutdown => break,
+                    HotkeyAction::Shutdown => {
+                        if matches!(&caps_lock_state, CapsLockState::Interaction { .. }) {
+                            let _ = crate::quick_access::exit_interaction_mode(&app);
+                        }
+                        break;
+                    }
                 }
             }
         })
@@ -1966,6 +2235,72 @@ mod tests {
         assert_eq!(
             engine.classify(VK_F9, true, false, true, true, false, &settings),
             HookDecision::Pass
+        );
+    }
+
+    #[test]
+    fn caps_lock_quick_access_consumes_press_repeat_and_release() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+
+        assert_eq!(
+            engine.classify(VK_CAPITAL, true, false, false, true, false, &settings),
+            HookDecision::QuickAccessPressed
+        );
+        assert_eq!(
+            engine.classify(VK_CAPITAL, true, false, false, true, false, &settings),
+            HookDecision::Consume
+        );
+        assert_eq!(
+            engine.classify(VK_CAPITAL, false, true, false, false, false, &settings),
+            HookDecision::QuickAccessReleased
+        );
+    }
+
+    #[test]
+    fn caps_lock_passes_through_when_deadlock_is_not_foreground() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+
+        assert_eq!(
+            engine.classify(VK_CAPITAL, true, false, false, false, false, &settings),
+            HookDecision::Pass
+        );
+        assert_eq!(
+            engine.classify(VK_CAPITAL, false, true, false, false, false, &settings),
+            HookDecision::Pass
+        );
+    }
+
+    #[test]
+    fn escape_is_internal_only_while_quick_access_is_visible() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+
+        crate::quick_access::set_visible_for_test(false);
+        assert_eq!(
+            engine.classify(VK_ESCAPE, true, false, false, true, false, &settings),
+            HookDecision::Pass
+        );
+        assert_eq!(
+            engine.classify(VK_ESCAPE, false, true, false, true, false, &settings),
+            HookDecision::Pass
+        );
+
+        crate::quick_access::set_visible_for_test(true);
+        assert_eq!(
+            engine.classify(VK_ESCAPE, true, false, false, false, false, &settings),
+            HookDecision::QuickAccessEscapePressed
+        );
+        assert_eq!(
+            engine.classify(VK_ESCAPE, true, false, false, false, false, &settings),
+            HookDecision::Consume
+        );
+
+        crate::quick_access::set_visible_for_test(false);
+        assert_eq!(
+            engine.classify(VK_ESCAPE, false, true, false, false, false, &settings),
+            HookDecision::Consume
         );
     }
 }

@@ -155,8 +155,37 @@ fn redo_last_action() -> Result<deadlock::HistoryOperationResult, String> {
 }
 
 #[tauri::command]
-fn set_active_preset(preset: u8) -> Result<Vec<Option<deadlock::PositionSnapshot>>, String> {
-    deadlock::set_active_preset(preset)
+fn set_active_preset(
+    app: tauri::AppHandle,
+    preset: u8,
+) -> Result<
+    Vec<Option<deadlock::PositionSnapshot>>,
+    String,
+> {
+    let slots =
+        deadlock::set_active_preset(
+            preset,
+        )?;
+
+    ui::emit_to_main_if_present(
+        &app,
+        "deadlock-slots",
+        &slots,
+    );
+
+    ui::emit_to_main_if_present(
+        &app,
+        "deadlock-preset",
+        preset,
+    );
+
+    ui::emit_to_main_if_present(
+        &app,
+        "deadlock-favorite-mode",
+        false,
+    );
+
+    Ok(slots)
 }
 
 #[tauri::command]

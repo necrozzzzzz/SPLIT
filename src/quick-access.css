@@ -44,6 +44,18 @@ body,
 }
 
 
+.quick-access-shell.interactive {
+  border-color:
+    rgba(79, 209, 197, 0.58);
+
+  box-shadow:
+    inset 0 0 0 1px
+      rgba(79, 209, 197, 0.08),
+    inset 0 -28px 38px
+      rgba(79, 209, 197, 0.035);
+}
+
+
 .quick-access-header {
   display: flex;
 
@@ -685,6 +697,27 @@ body,
 
   font-size: 7px;
   font-weight: 800;
+}
+
+
+.quick-access-interaction-label {
+  border: 0;
+
+  padding: 0;
+
+  color: #63e3d5;
+
+  background: transparent;
+
+  font-size: 7.5px;
+  font-weight: 850;
+
+  letter-spacing: 0.14em;
+}
+
+
+.quick-access-footer-hint {
+  margin-left: auto;
 }
 
 /* Full-height Quick Access */

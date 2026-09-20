@@ -77,28 +77,6 @@ function formatHotkey(
 }
 
 
-function matchesHotkey(
-  event: KeyboardEvent,
-  hotkey: Hotkey | null,
-): boolean {
-  if (!hotkey) {
-    return false;
-  }
-
-  const key =
-    event.key.length === 1
-      ? event.key.toUpperCase()
-      : event.key;
-
-  return (
-    key === hotkey.key &&
-    event.ctrlKey === hotkey.ctrl &&
-    event.altKey === hotkey.alt &&
-    event.shiftKey === hotkey.shift
-  );
-}
-
-
 export default function QuickAccess() {
   const [
     slots,
@@ -142,6 +120,11 @@ export default function QuickAccess() {
   ] = useState<string | null>(
     null,
   );
+
+  const [
+    interactionMode,
+    setInteractionMode,
+  ] = useState(false);
 
 
   const refresh =
@@ -219,20 +202,6 @@ export default function QuickAccess() {
     }, []);
 
 
-  const close =
-    useCallback(async () => {
-      try {
-        await invoke(
-          "hide_quick_access",
-        );
-      } catch (reason) {
-        console.error(
-          reason,
-        );
-      }
-    }, []);
-
-
   useEffect(() => {
     void refresh();
 
@@ -257,38 +226,25 @@ export default function QuickAccess() {
 
 
   useEffect(() => {
-    const onKeyDown =
-      (
-        event: KeyboardEvent,
-      ) => {
-        if (
-            matchesHotkey(
-                event,
-                hotkeys?.quickAccess ??
-                null,
-            )
-            ) {
-          event.preventDefault();
+    let unlisten:
+      | (() => void)
+      | undefined;
 
-          void close();
-        }
-      };
-
-    window.addEventListener(
-      "keydown",
-      onKeyDown,
-    );
+    void listen<boolean>(
+      "quick-access-interaction",
+      (event) => {
+        setInteractionMode(
+          event.payload,
+        );
+      },
+    ).then((cleanup) => {
+      unlisten = cleanup;
+    });
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        onKeyDown,
-      );
+      unlisten?.();
     };
-  }, [
-    close,
-    hotkeys,
-  ]);
+  }, []);
 
 
   const activateSlot =
@@ -349,7 +305,13 @@ export default function QuickAccess() {
 
 
   return (
-    <main className="quick-access-shell">
+    <main
+      className={`quick-access-shell${
+        interactionMode
+          ? " interactive"
+          : ""
+      }`}
+    >
       <header className="quick-access-header">
         <span className="quick-access-brand">
             SPLIT
@@ -482,6 +444,20 @@ export default function QuickAccess() {
           <span className="quick-access-error">
             {error}
           </span>
+        ) : interactionMode ? (
+          <>
+            <span className="quick-access-interaction-label">
+              INTERACTION MODE
+            </span>
+
+            <span className="quick-access-footer-key">
+              CapsLock / Esc
+            </span>
+
+            <span>
+              Back to game
+            </span>
+          </>
         ) : (
           <>
             <span className="quick-access-footer-key">
@@ -491,7 +467,19 @@ export default function QuickAccess() {
             </span>
 
             <span>
-                Close overlay
+                Close
+            </span>
+
+            <span className="quick-access-footer-hint">
+                Hold CapsLock to interact
+            </span>
+
+            <span className="quick-access-footer-key">
+                Esc
+            </span>
+
+            <span>
+                Close
             </span>
           </>
         )}
