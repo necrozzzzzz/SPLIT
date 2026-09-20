@@ -1,7 +1,12 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Mutex,
+use std::{
+    fs,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
 };
+
+use tauri_plugin_notification::NotificationExt;
 
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
@@ -53,6 +58,69 @@ pub fn open_main_window(app: AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Could not start main window task: {error}"))?;
 
     Ok(())
+}
+
+pub fn show_background_notice_once(
+    app: &AppHandle,
+) {
+    let marker = match app
+        .path()
+        .app_data_dir()
+    {
+        Ok(directory) => {
+            directory.join(
+                "tray-close-notice-shown",
+            )
+        }
+
+        Err(error) => {
+            eprintln!(
+                "[SPLIT] Could not resolve app data directory: {error}"
+            );
+            return;
+        }
+    };
+
+    if marker.exists() {
+        return;
+    }
+
+    if let Err(error) = app
+        .notification()
+        .builder()
+        .title("SPLIT is still running")
+        .body(
+            "SPLIT continues running in the background. \
+             Use the tray icon to reopen or quit.",
+        )
+        .show()
+    {
+        eprintln!(
+            "[SPLIT] Could not show background notification: {error}"
+        );
+
+        return;
+    }
+
+    if let Some(parent) = marker.parent() {
+        if let Err(error) =
+            fs::create_dir_all(parent)
+        {
+            eprintln!(
+                "[SPLIT] Could not create notification state directory: {error}"
+            );
+
+            return;
+        }
+    }
+
+    if let Err(error) =
+        fs::write(&marker, b"shown")
+    {
+        eprintln!(
+            "[SPLIT] Could not save background notification state: {error}"
+        );
+    }
 }
 
 pub fn close_main_window_to_background(app: AppHandle) -> Result<(), String> {

@@ -22,6 +22,12 @@ import {
   readTextFile,
 } from "@tauri-apps/plugin-fs";
 
+import {
+  disable as disableAutostart,
+  enable as enableAutostart,
+  isEnabled as isAutostartEnabled,
+} from "@tauri-apps/plugin-autostart";
+
 type DeadlockStatus = {
   deadlockRunning: boolean;
   deadlockPath: string | null;
@@ -509,6 +515,22 @@ function App() {
     "general",
   );  
 
+
+  const [
+    autostartEnabled,
+    setAutostartEnabled,
+  ] = useState(false);
+
+  const [
+    autostartLoading,
+    setAutostartLoading,
+  ] = useState(true);
+
+  const [
+    autostartSaving,
+    setAutostartSaving,
+  ] = useState(false);
+
   const [
     slotColorDisplayMode,
     setSlotColorDisplayMode,
@@ -887,6 +909,63 @@ function App() {
   ] =
     useState<string | null>(null);
     
+
+  useEffect(() => {
+    let disposed = false;
+
+    void isAutostartEnabled()
+      .then((enabled) => {
+        if (!disposed) {
+          setAutostartEnabled(enabled);
+        }
+      })
+      .catch((reason) => {
+        if (!disposed) {
+          setError(
+            `Could not read startup setting: ${String(reason)}`,
+          );
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setAutostartLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);  
+
+  const toggleAutostart =
+    useCallback(async () => {
+      const next =
+        !autostartEnabled;
+
+      setAutostartSaving(true);
+      setError(null);
+
+      try {
+        if (next) {
+          await enableAutostart();
+        } else {
+          await disableAutostart();
+        }
+
+        const enabled =
+          await isAutostartEnabled();
+
+        setAutostartEnabled(
+          enabled,
+        );
+      } catch (reason) {
+        setError(
+          `Could not update startup setting: ${String(reason)}`,
+        );
+      } finally {
+        setAutostartSaving(false);
+      }
+    }, [autostartEnabled]);
 
 
   useEffect(() => {
@@ -4962,6 +5041,44 @@ function App() {
             </div>
 
             <div className="general-settings-list">
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Launch with Windows
+                  </strong>
+
+                  <span>
+                    Start SPLIT automatically when
+                    you sign in to Windows.
+                  </span>
+                </div>
+
+                <button
+                  className={`general-toggle ${
+                    autostartEnabled
+                      ? "active"
+                      : ""
+                  }`}
+                  type="button"
+                  disabled={
+                    autostartLoading ||
+                    autostartSaving
+                  }
+                  onClick={() =>
+                    void toggleAutostart()
+                  }
+                >
+                  {autostartSaving
+                    ? "Saving…"
+                    : autostartLoading
+                      ? "Checking…"
+                      : autostartEnabled
+                        ? "On"
+                        : "Off"}
+                </button>
+              </div>
+
               <div className="general-setting-row">
                 <div>
                   <strong>
@@ -5557,7 +5674,7 @@ function App() {
                   </li>
 
                   <li>
-                    Enter Sandbox or Practice mode.
+                    Enter "Explore NYC".
                   </li>
 
                   <li>

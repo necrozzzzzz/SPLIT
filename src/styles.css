@@ -770,7 +770,7 @@ footer { margin-top: 20px; font-size: 10px; }
 .slot-preview {
   position: relative;
 
-  height: 108px;
+  height: clamp(108px, 18vh, 145px);
 
   overflow: hidden;
 
@@ -1940,6 +1940,50 @@ button:hover {
   font-size: 8px;
 
   text-align: center;
+}
+
+/* =========================================
+   SPLIT — TALL WINDOW ADAPTATION
+   ========================================= */
+
+@media (min-height: 780px) {
+  .slot-preview {
+    height: clamp(
+      125px,
+      20vh,
+      175px
+    );
+  }
+}
+
+
+@media (min-height: 950px) {
+  .slot-preview {
+    height: clamp(
+      150px,
+      22vh,
+      205px
+    );
+  }
+}
+
+
+@media (min-height: 850px) {
+  .savestates-section {
+    min-height:
+      calc(100vh - 175px);
+  }
+
+  .slots-grid {
+    align-content: start;
+
+    row-gap:
+      clamp(
+        10px,
+        1.6vh,
+        18px
+      );
+  }
 }
 
 
@@ -3605,6 +3649,64 @@ button.active::after {
     color 140ms ease,
     border-color 140ms ease,
     background 140ms ease;
+}
+
+.general-toggle {
+  min-width: 72px;
+  min-height: 29px;
+
+  flex: 0 0 auto;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.16);
+
+  border-radius: 6px;
+
+  padding: 0 10px;
+
+  color: #78908b;
+
+  background:
+    rgba(79, 209, 197, 0.025);
+
+  cursor: pointer;
+
+  font-size: 10px;
+  font-weight: 750;
+
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+
+.general-toggle:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.34);
+
+  color: #edf7f5;
+
+  background:
+    rgba(79, 209, 197, 0.065);
+}
+
+
+.general-toggle.active {
+  border-color:
+    rgba(79, 209, 197, 0.45);
+
+  color: #c9f5ef;
+
+  background:
+    rgba(79, 209, 197, 0.10);
+}
+
+
+.general-toggle:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 /* =========================================
@@ -6565,6 +6667,8 @@ select:hover:not(:disabled) {
 .setup-manual-folder + .setup-actions {
   margin-top: 24px;
 }
+
+
 
 /* Responsive */
 

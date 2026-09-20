@@ -231,11 +231,26 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Err(error) = app_window::open_main_window(app.clone()) {
-                eprintln!("[SPLIT] Could not open window from second instance: {error}");
+                eprintln!(
+                    "[SPLIT] Could not open window from second instance: {error}"
+                );
             }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::SIZE,
+                )
+                .build(),
+        )
         .setup(|app| {
             /*
              * Le tray est léger et nécessaire
@@ -321,10 +336,19 @@ pub fn run() {
 
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+
+                app_window::show_background_notice_once(
+                    window.app_handle(),
+                );
+
                 if let Err(error) =
-                    app_window::close_main_window_to_background(window.app_handle().clone())
+                    app_window::close_main_window_to_background(
+                        window.app_handle().clone(),
+                    )
                 {
-                    eprintln!("[SPLIT] Could not close main window to background: {error}");
+                    eprintln!(
+                        "[SPLIT] Could not close main window to background: {error}"
+                    );
                 }
             }
         })
