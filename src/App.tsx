@@ -201,6 +201,9 @@ const GAMEPLAY_HOTKEY_WARNING_KEY =
 const FAVORITE_MODE_WARNING_KEY =
   "split.favorites.skipModeWarning";  
 
+const SLOT_COLOR_DISPLAY_MODE_KEY =
+  "split.slotColorDisplayMode";
+
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
@@ -423,6 +426,11 @@ type StatusTone =
 
 type AppView = "slots" | "settings";
 
+type SlotColorDisplayMode =
+  | "tint"
+  | "accent"
+  | "dot";
+
 type SettingsSection =
   | "general"
   | "hotkeys"
@@ -500,6 +508,37 @@ function App() {
   ] = useState<SettingsSection>(
     "general",
   );  
+
+  const [
+    slotColorDisplayMode,
+    setSlotColorDisplayMode,
+  ] = useState<SlotColorDisplayMode>(() => {
+    const stored =
+      localStorage.getItem(
+        SLOT_COLOR_DISPLAY_MODE_KEY,
+      );
+
+    if (
+      stored === "tint" ||
+      stored === "accent" ||
+      stored === "dot"
+    ) {
+      return stored;
+    }
+
+    return "tint";
+  });
+
+  const updateSlotColorDisplayMode = (
+    mode: SlotColorDisplayMode,
+  ) => {
+    setSlotColorDisplayMode(mode);
+
+    localStorage.setItem(
+      SLOT_COLOR_DISPLAY_MODE_KEY,
+      mode,
+    );
+  };
 
   const [
     setup,
@@ -3766,6 +3805,20 @@ function App() {
                 )}
               </kbd>
             </button>
+
+            <button
+              className="header-refresh-button"
+              type="button"
+              onClick={() =>
+                void refresh()
+              }
+              disabled={loading}
+            >
+              {loading
+                ? "Checking…"
+                : "Refresh"}
+            </button>    
+
           </div>
         ) : (
           activeSettingsSection === "diagnostics" && (
@@ -4241,15 +4294,16 @@ function App() {
                     });
                 }}
               >
-                {metadata?.color && (
-                  <span
-                    className="slot-card-accent"
-                    style={{
-                      backgroundColor:
-                        metadata.color,
-                    }}
-                  />
-                )}
+                {metadata?.color &&
+                  slotColorDisplayMode !== "dot" && (
+                    <span
+                      className={`slot-card-accent ${slotColorDisplayMode}`}
+                      style={{
+                        backgroundColor:
+                          metadata.color,
+                      }}
+                    />
+                  )}
 
                 <div
                   className={`slot-preview ${
@@ -4659,18 +4713,31 @@ function App() {
                     </span>
                   </div>
 
-                  <div className="slot-card-hotkey">
-                    {position
-                      ? formatHotkey(
-                          hotkeySettings.loadSlots[
-                            slot - 1
-                          ],
-                        )
-                      : formatHotkey(
-                          hotkeySettings.saveSlots[
-                            slot - 1
-                          ],
-                        )}
+                  <div className="slot-card-hotkey-group">
+                    {metadata?.color &&
+                      slotColorDisplayMode === "dot" && (
+                        <span
+                          className="slot-card-color-dot"
+                          style={{
+                            backgroundColor:
+                              metadata.color,
+                          }}
+                        />
+                      )}
+
+                    <div className="slot-card-hotkey">
+                      {position
+                        ? formatHotkey(
+                            hotkeySettings.loadSlots[
+                              slot - 1
+                            ],
+                          )
+                        : formatHotkey(
+                            hotkeySettings.saveSlots[
+                              slot - 1
+                            ],
+                          )}
+                    </div>
                   </div>
                 </div>
               </article>
@@ -4704,6 +4771,65 @@ function App() {
             </div>
 
             <div className="general-settings-list">
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Slot color style
+                  </strong>
+
+                  <span>
+                    Choose how assigned colors are
+                    displayed on savestate cards.
+                  </span>
+                </div>
+
+                <div className="slot-color-style-options">
+                  <button
+                    className={
+                      slotColorDisplayMode === "tint"
+                        ? "active"
+                        : ""
+                    }
+                    type="button"
+                    onClick={() =>
+                      updateSlotColorDisplayMode("tint")
+                    }
+                  >
+                    <span className="slot-color-style-preview tint" />
+                    Tint
+                  </button>
+
+                  <button
+                    className={
+                      slotColorDisplayMode === "dot"
+                        ? "active"
+                        : ""
+                    }
+                    type="button"
+                    onClick={() =>
+                      updateSlotColorDisplayMode("dot")
+                    }
+                  >
+                    <span className="slot-color-style-preview dot" />
+                    Dot
+                  </button>
+
+                  <button
+                    className={
+                      slotColorDisplayMode === "accent"
+                        ? "active"
+                        : ""
+                    }
+                    type="button"
+                    onClick={() =>
+                      updateSlotColorDisplayMode("accent")
+                    }
+                  >
+                    <span className="slot-color-style-preview accent" />
+                    Accent
+                  </button>
+                </div>
+              </div>
               <div className="general-setting-row">
                 <div>
                   <strong>
@@ -4952,7 +5078,13 @@ function App() {
         className="status-grid"
         aria-label="Deadlock diagnostics"
       >
-        <article className="status-card wide">
+        <article
+          className={`status-card ${
+            status.integrationHealthy
+              ? ""
+              : "wide diagnostic-card"
+          }`}
+        >
           <div className="status-heading">
             <StatusDot
               ok={status.integrationHealthy}
@@ -5375,7 +5507,14 @@ function App() {
 
         
 
-        <article className="status-card wide diagnostic-card">
+        <article
+          className={`status-card wide ${
+            status.cameraRuntimeChecked &&
+            !status.cameraRuntimeReady
+              ? "diagnostic-card"
+              : ""
+          }`}
+        >
           <div className="status-heading">
             <StatusDot
               tone={
