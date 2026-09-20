@@ -1,6 +1,7 @@
 mod app_window;
 mod deadlock;
 mod notifications;
+mod quick_access;
 mod storage;
 mod tray;
 mod ui;
@@ -278,6 +279,18 @@ fn reset_main_window(
     )
 }
 
+#[tauri::command]
+fn launch_deadlock() -> Result<(), String> {
+    deadlock::launch_deadlock()
+}
+
+#[tauri::command]
+fn hide_quick_access(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    quick_access::hide(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -431,6 +444,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            launch_deadlock,
             get_start_minimized_to_tray,
             set_start_minimized_to_tray,
             get_deadlock_status,
@@ -441,6 +455,7 @@ pub fn run() {
             get_close_to_tray,
             set_close_to_tray,
             reset_main_window,
+            hide_quick_access,
             get_last_position,
             get_slots,
             get_slot_metadata,

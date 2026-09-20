@@ -1,8 +1,12 @@
 use std::{
     ffi::OsString,
     mem::{size_of, zeroed},
-    os::windows::ffi::OsStringExt,
+    os::windows::{
+        ffi::OsStringExt,
+        process::CommandExt,
+    },
     path::PathBuf,
+    process::Command,
 };
 
 use windows_sys::Win32::{
@@ -186,6 +190,29 @@ fn process_exe_path(pid: u32) -> Option<PathBuf> {
 
         Some(PathBuf::from(OsString::from_wide(&buffer)))
     }
+}
+
+pub fn launch_deadlock() -> Result<(), String> {
+    if is_deadlock_running() {
+        return Ok(());
+    }
+
+    Command::new("cmd")
+        .args([
+            "/C",
+            "start",
+            "",
+            "steam://rungameid/1422450",
+        ])
+        .creation_flags(0x08000000)
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "Could not launch Deadlock through Steam: {error}"
+            )
+        })?;
+
+    Ok(())
 }
 
 pub fn running_deadlock_root() -> Option<PathBuf> {

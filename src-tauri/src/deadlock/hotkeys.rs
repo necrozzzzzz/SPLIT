@@ -25,6 +25,7 @@ use windows_sys::{
                 VK_F12, VK_F13, VK_F14, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9,
                 VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT,
                 VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE, VK_UP,
+                VK_CAPITAL,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
@@ -54,6 +55,7 @@ enum UserHotkeyAction {
     Undo,
     Redo,
     ToggleFavorites,
+    ToggleQuickAccess,
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +106,10 @@ impl Hotkey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(
+    rename_all = "camelCase",
+    default
+)]
 pub struct HotkeySettings {
     pub load_slots: [Hotkey; 8],
     pub save_slots: [Hotkey; 8],
@@ -112,6 +117,7 @@ pub struct HotkeySettings {
     pub redo: Hotkey,
     pub cycle_preset: Hotkey,
     pub favorite_mode: Hotkey,
+    pub quick_access: Hotkey,
 }
 
 impl Default for HotkeySettings {
@@ -127,6 +133,12 @@ impl Default for HotkeySettings {
             redo: Hotkey::new("F10", false, false, false),
             cycle_preset: Hotkey::new("V", false, false, false),
             favorite_mode: Hotkey::new("F11", false, false, false),
+            quick_access: Hotkey::new(
+                "CapsLock",
+                false,
+                false,
+                false,
+            ),
         }
     }
 }
@@ -170,6 +182,7 @@ impl HotkeySettings {
             &self.redo,
             &self.cycle_preset,
             &self.favorite_mode,
+            &self.quick_access,
         ] {
             validate_hotkey(hotkey, false)?;
         }
@@ -198,6 +211,7 @@ impl HotkeySettings {
             ("Redo", &self.redo),
             ("Cycle Preset", &self.cycle_preset),
             ("Favorite Mode", &self.favorite_mode),
+            ("Quick Access", &self.quick_access),
         ]);
         bindings
     }
@@ -211,6 +225,7 @@ impl HotkeySettings {
             &mut self.redo,
             &mut self.cycle_preset,
             &mut self.favorite_mode,
+            &mut self.quick_access,
         ]);
         bindings
     }
@@ -248,6 +263,16 @@ impl HotkeySettings {
             .or_else(|| {
                 (self.favorite_mode == *hotkey).then_some(UserHotkeyAction::ToggleFavorites)
             })
+            .or_else(|| {
+                (
+                    self.quick_access ==
+                    *hotkey
+                )
+                    .then_some(
+                        UserHotkeyAction::
+                            ToggleQuickAccess,
+                    )
+            })
     }
 }
 
@@ -264,6 +289,7 @@ fn normalize_key(key: &str) -> Result<String, String> {
         "END" => "End",
         "INSERT" => "Insert",
         "DELETE" | "DEL" => "Delete",
+        "CAPSLOCK" | "CAPS" => "CapsLock",
         "SPACE" | "SPACEBAR" => "Space",
         value if value.len() == 1 && value.as_bytes()[0].is_ascii_alphanumeric() => value,
         value
@@ -456,6 +482,7 @@ fn key_to_vk(key: &str) -> Option<u16> {
         "PageUp" => Some(VK_PRIOR),
         "PageDown" => Some(VK_NEXT),
         "Space" => Some(VK_SPACE),
+        "CapsLock" => Some(VK_CAPITAL),
         _ => None,
     }
 }
@@ -784,7 +811,7 @@ fn find_deadlock_window() -> Option<HWND> {
     }
 }
 
-fn focus_deadlock_window() -> Result<(), String> {
+pub(crate) fn focus_deadlock_window() -> Result<(), String> {
     let hwnd =
         find_deadlock_window().ok_or_else(|| "Could not find the Deadlock window".to_string())?;
 
@@ -1583,7 +1610,10 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         action: UserHotkeyAction::ToggleFavorites,
                         hotkey,
                     } => {
-                        println!("[SPLIT] Favorite Mode hotkey: {}", hotkey.display());
+                        println!(
+                            "[SPLIT] Favorite Mode hotkey: {}",
+                            hotkey.display()
+                        );
 
                         match super::toggle_favorite_mode() {
                             Ok(result) => {
@@ -1593,10 +1623,39 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             }
 
                             Err(error) => {
-                                eprintln!("[SPLIT] Could not toggle Favorite Mode: {error}");
+                                eprintln!(
+                                    "[SPLIT] Could not toggle Favorite Mode: {error}"
+                                );
                             }
                         }
                     }
+
+
+                    /*
+                    * Quick Access overlay.
+                    *
+                    * Le raccourci est détecté uniquement
+                    * lorsque Deadlock est au premier plan.
+                    */
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::ToggleQuickAccess,
+                        hotkey,
+                    } => {
+                        println!(
+                            "[SPLIT] Quick Access hotkey: {}",
+                            hotkey.display()
+                        );
+
+                        if let Err(error) =
+                            crate::quick_access::toggle(&app)
+                        {
+                            eprintln!(
+                                "[SPLIT] Could not toggle Quick Access: {error}"
+                            );
+                        }
+                    }
+
+
                     HotkeyAction::Shutdown => break,
                 }
             }

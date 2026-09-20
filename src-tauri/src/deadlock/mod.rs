@@ -17,6 +17,12 @@ pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundat
     hotkeys::foreground_deadlock_window()
 }
 
+pub(crate) fn focus_deadlock_window()
+    -> Result<(), String>
+{
+    hotkeys::focus_deadlock_window()
+}
+
 use std::{
     fs,
     path::Path,
@@ -107,6 +113,15 @@ pub struct DeadlockSetupState {
     configured_path: Option<String>,
     detected_path: Option<String>,
     needs_setup: bool,
+}
+
+pub fn launch_deadlock() -> Result<(), String> {
+    process::launch_deadlock()
+}
+
+
+pub fn is_deadlock_running() -> bool {
+    process::is_deadlock_running()
 }
 
 pub fn get_last_position() -> Option<PositionSnapshot> {

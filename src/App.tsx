@@ -165,6 +165,7 @@ type HotkeySettings = {
   redo: Hotkey;
   cyclePreset: Hotkey;
   favoriteMode: Hotkey;
+  quickAccess: Hotkey;
 };
 
 type HotkeyTarget =
@@ -234,6 +235,12 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
   redo: { key: "F10", ctrl: false, alt: false, shift: false },
   cyclePreset: { key: "V", ctrl: false, alt: false, shift: false },
   favoriteMode: { key: "F11", ctrl: false, alt: false, shift: false },
+  quickAccess: {
+    key: "CapsLock",
+    ctrl: false,
+    alt: false,
+    shift: false,
+  },
 };
 
 function getFullScreenshotPath(
@@ -270,7 +277,7 @@ function capturedKey(event: KeyboardEvent): string | null {
     ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft",
     ArrowRight: "ArrowRight", Home: "Home", End: "End", Insert: "Insert",
     Delete: "Delete", PageUp: "PageUp", PageDown: "PageDown", " ": "Space",
-    Spacebar: "Space",
+    Spacebar: "Space", CapsLock: "CapsLock",
   };
   return supported[event.key] ?? null;
 }
@@ -882,6 +889,11 @@ function App() {
     setLoading,
   ] = useState(false);
 
+  const [
+    launchingDeadlock,
+    setLaunchingDeadlock,
+  ] = useState(false);
+
 
   const [
     repairingIntegration,
@@ -1201,6 +1213,66 @@ function App() {
         setResettingWindow(false);
       }
     }, []);  
+
+
+
+  const launchDeadlock =
+    useCallback(async () => {
+      if (
+        launchingDeadlock ||
+        status.deadlockRunning
+      ) {
+        return;
+      }
+
+      setLaunchingDeadlock(true);
+      setError(null);
+
+      try {
+        await invoke(
+          "launch_deadlock",
+        );
+
+        /*
+        * Attend que Deadlock soit réellement
+        * détecté avant de retirer le bandeau.
+        */
+        for (
+          let attempt = 0;
+          attempt < 30;
+          attempt += 1
+        ) {
+          await new Promise<void>(
+            (resolve) => {
+              window.setTimeout(
+                resolve,
+                1000,
+              );
+            },
+          );
+
+          const next =
+            await invoke<DeadlockStatus>(
+              "get_deadlock_status",
+            );
+
+          setStatus(next);
+
+          if (next.deadlockRunning) {
+            return;
+          }
+        }
+      } catch (reason) {
+        setError(
+          `Could not launch Deadlock: ${String(reason)}`,
+        );
+      } finally {
+        setLaunchingDeadlock(false);
+      }
+    }, [
+      launchingDeadlock,
+      status.deadlockRunning,
+    ]);  
 
 
   const refresh =
@@ -4448,6 +4520,41 @@ function App() {
       </section>
       )}
 
+
+      {activeView === "slots" &&
+        !loading &&
+        !status.deadlockRunning && (
+          <div className="runtime-notice">
+            <div className="runtime-notice-content">
+              <StatusDot tone="off" />
+
+              <div>
+                <strong>
+                  Deadlock is not running
+                </strong>
+
+                <span>
+                  SPLIT is ready. Hotkeys and
+                  teleporting will become available
+                  when Deadlock starts.
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={launchingDeadlock}
+              onClick={() =>
+                void launchDeadlock()
+              }
+            >
+              {launchingDeadlock
+                ? "Launching…"
+                : "Launch"}
+            </button>
+          </div>
+        )}
+
       {activeView === "slots" && (
     <section className="savestates-section">
       <div className="savestates-header">
@@ -4949,6 +5056,24 @@ function App() {
                             {position.roll.toFixed(2)}
                           </code>
                         </div>
+
+
+                        <button
+                          className="slot-menu-copy-position"
+                          type="button"
+                          onClick={async (event) => {
+                            event.currentTarget
+                              .closest("details")
+                              ?.removeAttribute("open");
+
+                            await navigator.clipboard.writeText(
+                              `setpos_exact ${position.x.toFixed(2)} ${position.y.toFixed(2)} ${position.z.toFixed(2)}; setang_exact ${position.pitch.toFixed(2)} ${position.yaw.toFixed(2)} ${position.roll.toFixed(2)}`,
+                            );
+                          }}
+                        >
+                          Copy position
+                        </button>
+
 
                         <div className="slot-menu-divider" />
 
