@@ -3374,7 +3374,7 @@ function App() {
               </button>
 
               <button
-                className="preset-button preset-clear-button"
+                className="preset-button confirmation-primary-button"
                 type="button"
                 onClick={continueFavoriteMode}
               >
@@ -3388,7 +3388,7 @@ function App() {
       {pendingFavoriteCopy && (
         <div className="confirmation-backdrop">
           <section
-            className="confirmation-dialog"
+            className="confirmation-dialog favorite-copy-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="save-favorite-title"
@@ -3427,12 +3427,16 @@ function App() {
               </div>
             </div>
 
-            <div className="preset-switcher">
+            <div className="favorite-destination-grid">
               {favoriteSlotSummaries.map(
                 (favorite) => (
                   <button
                     key={favorite.slot}
-                    className="preset-button"
+                    className={`favorite-destination-card ${
+                      favorite.occupied
+                        ? "occupied"
+                        : "empty"
+                    }`}
                     type="button"
                     disabled={favoriteCopyWorking}
                     onClick={() =>
@@ -3441,11 +3445,35 @@ function App() {
                       )
                     }
                   >
-                    Favorite {favorite.slot}
-                    {" · "}
-                    {favorite.occupied
-                      ? favorite.name
-                      : "Empty"}
+                    <div className="favorite-destination-card-header">
+                      <span className="favorite-destination-slot">
+                        Favorite {favorite.slot}
+                      </span>
+
+                      <span
+                        className={`favorite-destination-state ${
+                          favorite.occupied
+                            ? "occupied"
+                            : "empty"
+                        }`}
+                      >
+                        {favorite.occupied
+                          ? "Occupied"
+                          : "Empty"}
+                      </span>
+                    </div>
+
+                    <strong className="favorite-destination-name">
+                      {favorite.occupied
+                        ? favorite.name
+                        : "Available slot"}
+                    </strong>
+
+                    <span className="favorite-destination-hint">
+                      {favorite.occupied
+                        ? "Overwrite this favorite"
+                        : "Save here"}
+                    </span>
                   </button>
                 ),
               )}
