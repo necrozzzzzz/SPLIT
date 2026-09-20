@@ -3709,6 +3709,12 @@ button.active::after {
   opacity: 0.45;
 }
 
+.general-toggle-group {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
 /* =========================================
    SPLIT — HOTKEY SETTINGS / PHASE 2N
    ========================================= */

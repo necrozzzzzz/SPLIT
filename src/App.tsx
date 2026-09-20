@@ -532,6 +532,21 @@ function App() {
   ] = useState(false);
 
   const [
+    startMinimized,
+    setStartMinimized,
+  ] = useState(false);
+
+  const [
+    startMinimizedLoading,
+    setStartMinimizedLoading,
+  ] = useState(true);
+
+  const [
+    startMinimizedSaving,
+    setStartMinimizedSaving,
+  ] = useState(false);
+
+  const [
     slotColorDisplayMode,
     setSlotColorDisplayMode,
   ] = useState<SlotColorDisplayMode>(() => {
@@ -937,6 +952,39 @@ function App() {
     };
   }, []);  
 
+  useEffect(() => {
+    let disposed = false;
+
+    void invoke<boolean>(
+      "get_start_minimized_to_tray",
+    )
+      .then((enabled) => {
+        if (!disposed) {
+          setStartMinimized(
+            enabled,
+          );
+        }
+      })
+      .catch((reason) => {
+        if (!disposed) {
+          setError(
+            `Could not read minimized startup setting: ${String(reason)}`,
+          );
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setStartMinimizedLoading(
+            false,
+          );
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
   const toggleAutostart =
     useCallback(async () => {
       const next =
@@ -950,6 +998,17 @@ function App() {
           await enableAutostart();
         } else {
           await disableAutostart();
+
+          if (startMinimized) {
+            await invoke<boolean>(
+              "set_start_minimized_to_tray",
+              {
+                enabled: false,
+              },
+            );
+
+            setStartMinimized(false);
+          }
         }
 
         const enabled =
@@ -965,7 +1024,62 @@ function App() {
       } finally {
         setAutostartSaving(false);
       }
-    }, [autostartEnabled]);
+    }, [
+      autostartEnabled,
+      startMinimized,
+    ]);
+
+
+  const toggleStartMinimized =
+    useCallback(async () => {
+      const next =
+        !startMinimized;
+
+      setStartMinimizedSaving(true);
+      setError(null);
+
+      try {
+        const enabled =
+          await invoke<boolean>(
+            "set_start_minimized_to_tray",
+            {
+              enabled: next,
+            },
+          );
+
+        setStartMinimized(
+          enabled,
+        );
+      } catch (reason) {
+        setError(
+          `Could not update minimized startup setting: ${String(reason)}`,
+        );
+      } finally {
+        setStartMinimizedSaving(
+          false,
+        );
+      }
+    }, [startMinimized]);  
+
+  const [
+    closeToTray,
+    setCloseToTray,
+  ] = useState(true);
+
+  const [
+    closeBehaviorLoading,
+    setCloseBehaviorLoading,
+  ] = useState(true);
+
+  const [
+    closeBehaviorSaving,
+    setCloseBehaviorSaving,
+  ] = useState(false);  
+
+  const [
+    resettingWindow,
+    setResettingWindow,
+  ] = useState(false);
 
 
   useEffect(() => {
@@ -999,6 +1113,94 @@ function App() {
       );
     };
   }, [slotMetadata]);
+
+
+  useEffect(() => {
+    let disposed = false;
+
+    void invoke<boolean>(
+      "get_close_to_tray",
+    )
+      .then((enabled) => {
+        if (!disposed) {
+          setCloseToTray(enabled);
+        }
+      })
+      .catch((reason) => {
+        if (!disposed) {
+          setError(
+            `Could not read close behavior: ${String(reason)}`,
+          );
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setCloseBehaviorLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const updateCloseBehavior =
+    useCallback(
+      async (
+        enabled: boolean,
+      ) => {
+        if (
+          closeBehaviorSaving ||
+          enabled === closeToTray
+        ) {
+          return;
+        }
+
+        setCloseBehaviorSaving(true);
+        setError(null);
+
+        try {
+          const result =
+            await invoke<boolean>(
+              "set_close_to_tray",
+              {
+                enabled,
+              },
+            );
+
+          setCloseToTray(result);
+        } catch (reason) {
+          setError(
+            `Could not update close behavior: ${String(reason)}`,
+          );
+        } finally {
+          setCloseBehaviorSaving(false);
+        }
+      },
+      [
+        closeBehaviorSaving,
+        closeToTray,
+      ],
+    );
+
+
+  const resetWindow =
+    useCallback(async () => {
+      setResettingWindow(true);
+      setError(null);
+
+      try {
+        await invoke(
+          "reset_main_window",
+        );
+      } catch (reason) {
+        setError(
+          `Could not reset window: ${String(reason)}`,
+        );
+      } finally {
+        setResettingWindow(false);
+      }
+    }, []);  
 
 
   const refresh =
@@ -5076,6 +5278,125 @@ function App() {
                       : autostartEnabled
                         ? "On"
                         : "Off"}
+                </button>
+              </div>
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Start minimized to tray
+                  </strong>
+
+                  <span>
+                    {autostartEnabled
+                      ? "Keep SPLIT hidden in the system tray when it starts with Windows."
+                      : "Enable Launch with Windows to use this option."}
+                  </span>
+                </div>
+
+                <button
+                  className={`general-toggle ${
+                    startMinimized
+                      ? "active"
+                      : ""
+                  }`}
+                  type="button"
+                  disabled={
+                    !autostartEnabled ||
+                    autostartLoading ||
+                    autostartSaving ||
+                    startMinimizedLoading ||
+                    startMinimizedSaving
+                  }
+                  onClick={() =>
+                    void toggleStartMinimized()
+                  }
+                >
+                  {startMinimizedSaving
+                    ? "Saving…"
+                    : startMinimizedLoading
+                      ? "Checking…"
+                      : startMinimized
+                        ? "On"
+                        : "Off"}
+                </button>
+              </div>
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Close button behavior
+                  </strong>
+
+                  <span>
+                    Choose what happens when you close
+                    the SPLIT window.
+                  </span>
+                </div>
+
+                <div className="general-toggle-group">
+                  <button
+                    className={`general-toggle ${
+                      closeToTray
+                        ? "active"
+                        : ""
+                    }`}
+                    type="button"
+                    disabled={
+                      closeBehaviorLoading ||
+                      closeBehaviorSaving
+                    }
+                    onClick={() =>
+                      void updateCloseBehavior(true)
+                    }
+                  >
+                    Minimize to tray
+                  </button>
+
+                  <button
+                    className={`general-toggle ${
+                      !closeToTray
+                        ? "active"
+                        : ""
+                    }`}
+                    type="button"
+                    disabled={
+                      closeBehaviorLoading ||
+                      closeBehaviorSaving
+                    }
+                    onClick={() =>
+                      void updateCloseBehavior(false)
+                    }
+                  >
+                    Quit SPLIT
+                  </button>
+                </div>
+              </div>
+
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Window size & position
+                  </strong>
+
+                  <span>
+                    Restore the default window size
+                    and center SPLIT on the screen.
+                  </span>
+                </div>
+
+                <button
+                  className="general-restore-button"
+                  type="button"
+                  disabled={resettingWindow}
+                  onClick={() =>
+                    void resetWindow()
+                  }
+                >
+                  {resettingWindow
+                    ? "Resetting…"
+                    : "Reset"}
                 </button>
               </div>
 

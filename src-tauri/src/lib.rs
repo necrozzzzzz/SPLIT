@@ -226,6 +226,58 @@ fn confirm_deadlock_path(
     deadlock::confirm_deadlock_path(app, path)
 }
 
+
+#[tauri::command]
+fn get_start_minimized_to_tray(
+    app: tauri::AppHandle,
+) -> bool {
+    app_window::start_minimized_to_tray_enabled(
+        &app,
+    )
+}
+
+
+#[tauri::command]
+fn set_start_minimized_to_tray(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<bool, String> {
+    app_window::set_start_minimized_to_tray(
+        &app,
+        enabled,
+    )
+}
+
+#[tauri::command]
+fn get_close_to_tray(
+    app: tauri::AppHandle,
+) -> bool {
+    app_window::close_to_tray_enabled(
+        &app,
+    )
+}
+
+
+#[tauri::command]
+fn set_close_to_tray(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<bool, String> {
+    app_window::set_close_to_tray(
+        &app,
+        enabled,
+    )
+}
+
+#[tauri::command]
+fn reset_main_window(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    app_window::reset_main_window(
+        &app,
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -241,7 +293,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--autostart"]),
         ))
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -252,14 +304,32 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            /*
-             * Le tray est léger et nécessaire
-             * immédiatement.
-             */
             tray::setup(app)?;
 
+            let launched_from_autostart =
+                std::env::args()
+                    .any(|argument| {
+                        argument == "--autostart"
+                    });
+
+            if launched_from_autostart
+                && app_window::start_minimized_to_tray_enabled(
+                    app.handle(),
+                )
+            {
+                if let Err(error) =
+                    app_window::close_main_window_to_background(
+                        app.handle().clone(),
+                    )
+                {
+                    eprintln!(
+                        "[SPLIT] Could not start minimized to tray: {error}"
+                    );
+                }
+            }
+
             /*
-             * IMPORTANT :
+            * IMPORTANT :
              *
              * Ne jamais bloquer le thread de setup Tauri
              * avec les services Deadlock / notifications.
@@ -337,27 +407,40 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
 
-                app_window::show_background_notice_once(
+                if app_window::close_to_tray_enabled(
                     window.app_handle(),
-                );
+                ) {
+                    app_window::show_background_notice_once(
+                        window.app_handle(),
+                    );
 
-                if let Err(error) =
-                    app_window::close_main_window_to_background(
-                        window.app_handle().clone(),
-                    )
-                {
-                    eprintln!(
-                        "[SPLIT] Could not close main window to background: {error}"
+                    if let Err(error) =
+                        app_window::close_main_window_to_background(
+                            window.app_handle().clone(),
+                        )
+                    {
+                        eprintln!(
+                            "[SPLIT] Could not close main window to background: {error}"
+                        );
+                    }
+                } else {
+                    app_window::request_true_quit(
+                        window.app_handle(),
                     );
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
+            get_start_minimized_to_tray,
+            set_start_minimized_to_tray,
             get_deadlock_status,
             get_diagnostic_report,
             get_deadlock_setup,
             scan_deadlock_path,
             confirm_deadlock_path,
+            get_close_to_tray,
+            set_close_to_tray,
+            reset_main_window,
             get_last_position,
             get_slots,
             get_slot_metadata,
