@@ -149,12 +149,12 @@ body,
   align-items: center;
 
   grid-template-columns:
-    24px
-    82px
+    20px
+    138px
     minmax(0, 1fr)
     auto;
 
-  gap: 8px;
+  gap: 9px;
 
   overflow: hidden;
 
@@ -215,10 +215,10 @@ body,
 .quick-access-preview {
   display: grid;
 
-  width: 82px;
-  height: 100%;
+  width: 138px;
+  height: 78px;
 
-  min-height: 42px;
+  min-height: 0;
 
   place-items: center;
 
@@ -281,7 +281,7 @@ body,
 
   color: #dbe8e5;
 
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 720;
 
   text-overflow: ellipsis;
@@ -294,7 +294,7 @@ body,
 
   color: #627c77;
 
-  font-size: 8.5px;
+  font-size: 9px;
 
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -375,4 +375,383 @@ body,
 
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* =========================================
+   QUICK ACCESS — COMPACT HUD LAYOUT
+   ========================================= */
+
+.quick-access-shell {
+  gap: 8px;
+
+  padding:
+    10px 10px 8px;
+}
+
+
+/* Header */
+
+.quick-access-header {
+  min-height: 34px;
+
+  padding:
+    0 2px 8px;
+
+  align-items: center;
+}
+
+
+.quick-access-brand {
+  color: #4fd1c5;
+
+  font-size: 9px;
+  font-weight: 850;
+
+  letter-spacing: 0.17em;
+}
+
+
+.quick-access-header > strong {
+  color: #809d97;
+
+  font-size: 9px;
+  font-weight: 750;
+
+  letter-spacing: 0.08em;
+
+  text-transform: uppercase;
+}
+
+
+/* Liste */
+
+.quick-access-list {
+  display: flex;
+
+  min-height: 0;
+
+  flex: 1;
+  flex-direction: column;
+
+  gap: 6px;
+}
+
+
+/* Base slot */
+
+.quick-access-slot {
+  min-height: 0;
+
+  flex: none;
+
+  gap: 8px;
+
+  padding:
+    6px 8px;
+}
+
+
+/* =========================================
+   SLOT SAUVEGARDÉ
+   ========================================= */
+
+.quick-access-slot.filled {
+  min-height: 112px;
+
+  flex:
+    1 1 112px;
+
+  grid-template-columns:
+    20px
+    176px
+    minmax(0, 1fr)
+    auto;
+
+  border-color:
+    rgba(79, 209, 197, 0.14);
+
+  background:
+    rgba(17, 35, 37, 0.88);
+}
+
+
+.quick-access-slot.filled:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.32);
+
+  background:
+    rgba(22, 43, 45, 0.94);
+}
+
+
+/* Screenshot 16:9 */
+
+.quick-access-slot.filled
+.quick-access-preview {
+  width: 176px;
+  height: 99px;
+
+  min-height: 99px;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.15);
+
+  border-radius: 5px;
+
+  background:
+    rgba(3, 10, 11, 0.70);
+
+  box-shadow:
+    0 3px 12px
+    rgba(0, 0, 0, 0.18);
+}
+
+
+.quick-access-slot.filled
+.quick-access-preview img {
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+}
+
+
+/* Texte slot rempli */
+
+.quick-access-slot.filled
+.quick-access-slot-copy {
+  gap: 4px;
+}
+
+
+.quick-access-slot.filled
+.quick-access-slot-copy strong {
+  color: #edf5f3;
+
+  font-size: 11.5px;
+  font-weight: 760;
+}
+
+
+.quick-access-slot.filled
+.quick-access-slot-copy span {
+  color: #6f8d87;
+
+  font-size: 8.5px;
+  font-weight: 650;
+
+  letter-spacing: 0.035em;
+
+  text-transform: uppercase;
+}
+
+
+/* =========================================
+   SLOT VIDE
+   ========================================= */
+
+.quick-access-slot.empty {
+  min-height: 48px;
+
+  flex:
+    0 0 48px;
+
+  grid-template-columns:
+    20px
+    22px
+    minmax(0, 1fr)
+    auto;
+
+  border-color:
+    rgba(79, 209, 197, 0.055);
+
+  background:
+    rgba(11, 25, 27, 0.54);
+}
+
+
+.quick-access-slot.empty:hover:not(:disabled) {
+  border-color:
+    rgba(79, 209, 197, 0.18);
+
+  background:
+    rgba(17, 34, 36, 0.72);
+}
+
+
+.quick-access-empty-mark {
+  display: grid;
+
+  width: 22px;
+  height: 22px;
+
+  place-items: center;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.10);
+
+  border-radius: 4px;
+
+  color: #526f69;
+
+  background:
+    rgba(79, 209, 197, 0.018);
+
+  font-size: 13px;
+  font-weight: 400;
+}
+
+
+.quick-access-slot.empty
+.quick-access-slot-copy {
+  gap: 2px;
+}
+
+
+.quick-access-slot.empty
+.quick-access-slot-copy strong {
+  color: #aabfbb;
+
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+
+.quick-access-slot.empty
+.quick-access-slot-copy span {
+  color: #506b66;
+
+  font-size: 7.5px;
+
+  text-transform: uppercase;
+}
+
+
+/* Numéros */
+
+.quick-access-slot-number {
+  font-size: 8px;
+
+  opacity: 0.80;
+}
+
+
+/* Hotkey */
+
+.quick-access-slot kbd {
+  min-width: 30px;
+
+  padding:
+    4px 6px;
+
+  font-size: 7px;
+}
+
+
+/* Footer */
+
+.quick-access-footer {
+  min-height: 18px;
+
+  justify-content: flex-start;
+
+  gap: 6px;
+
+  padding:
+    2px 2px 0;
+
+  color: #526d68;
+
+  font-size: 7.5px;
+}
+
+
+.quick-access-footer-key {
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.14);
+
+  border-radius: 3px;
+
+  padding:
+    2px 5px;
+
+  color: #82a099;
+
+  background:
+    rgba(79, 209, 197, 0.035);
+
+  font-size: 7px;
+  font-weight: 800;
+}
+
+/* Full-height Quick Access */
+
+.quick-access-list {
+  flex: 1;
+
+  gap: 7px;
+}
+
+
+/* Un slot sauvegardé prend plus de place */
+
+.quick-access-slot.filled {
+  min-height: 0;
+
+  flex:
+    1.65 1 0;
+
+  grid-template-columns:
+    20px
+    170px
+    minmax(0, 1fr)
+    auto;
+
+  padding:
+    7px 8px;
+}
+
+
+/* Les vides restent visibles mais moins importants */
+
+.quick-access-slot.empty {
+  min-height: 0;
+
+  flex:
+    1 1 0;
+
+  grid-template-columns:
+    20px
+    26px
+    minmax(0, 1fr)
+    auto;
+
+  padding:
+    6px 8px;
+}
+
+
+/* Screenshot nettement plus visible */
+
+.quick-access-slot.filled
+.quick-access-preview {
+  width: 170px;
+  height: 100%;
+
+  min-height: 90px;
+
+  max-height: 130px;
+
+  aspect-ratio: 16 / 9;
+}
+
+
+/* Empty + */
+
+.quick-access-empty-mark {
+  width: 26px;
+  height: 26px;
 }

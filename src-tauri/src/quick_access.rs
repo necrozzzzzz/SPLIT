@@ -17,7 +17,7 @@ use windows_sys::Win32::{
 const QUICK_ACCESS_LABEL: &str =
     "quick-access";
 
-const QUICK_ACCESS_WIDTH: u32 = 320;
+const QUICK_ACCESS_WIDTH: u32 = 390;
 const QUICK_ACCESS_MARGIN: i32 = 14;
 
 
@@ -130,6 +130,7 @@ fn get_or_create(
     .maximizable(false)
     .minimizable(false)
     .always_on_top(true)
+    .focusable(false)
     .skip_taskbar(true)
     .visible(false)
     .build()
@@ -156,14 +157,6 @@ pub fn show(
         .map_err(|error| {
             format!(
                 "Could not show Quick Access: {error}"
-            )
-        })?;
-
-    window
-        .set_focus()
-        .map_err(|error| {
-            format!(
-                "Could not focus Quick Access: {error}"
             )
         })?;
 
@@ -199,19 +192,6 @@ pub fn hide(
                     "Could not hide Quick Access: {error}"
                 )
             })?;
-    }
-
-    /*
-     * Ne pas faire échouer la fermeture
-     * si Deadlock s'est fermé entre-temps.
-     */
-    if let Err(error) =
-        crate::deadlock::
-            focus_deadlock_window()
-    {
-        eprintln!(
-            "[SPLIT] Could not restore Deadlock focus after Quick Access: {error}"
-        );
     }
 
     Ok(())

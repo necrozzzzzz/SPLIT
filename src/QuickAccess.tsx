@@ -262,14 +262,12 @@ export default function QuickAccess() {
         event: KeyboardEvent,
       ) => {
         if (
-          event.key ===
-            "Escape" ||
-          matchesHotkey(
-            event,
-            hotkeys?.quickAccess ??
-              null,
-          )
-        ) {
+            matchesHotkey(
+                event,
+                hotkeys?.quickAccess ??
+                null,
+            )
+            ) {
           event.preventDefault();
 
           void close();
@@ -353,25 +351,13 @@ export default function QuickAccess() {
   return (
     <main className="quick-access-shell">
       <header className="quick-access-header">
-        <div>
-          <span>
+        <span className="quick-access-brand">
             SPLIT
-          </span>
+        </span>
 
-          <strong>
+        <strong>
             {bankName}
-          </strong>
-        </div>
-
-        <button
-          type="button"
-          onClick={() =>
-            void close()
-          }
-          aria-label="Close Quick Access"
-        >
-          ×
-        </button>
+        </strong>
       </header>
 
 
@@ -430,62 +416,60 @@ export default function QuickAccess() {
                 }
               >
                 <span className="quick-access-slot-number">
-                  {String(
-                    slot,
-                  ).padStart(
-                    2,
-                    "0",
-                  )}
-                </span>
-
-
-                <div className="quick-access-preview">
-                  {position &&
-                  info?.screenshot ? (
-                    <img
-                      src={convertFileSrc(
-                        info.screenshot,
-                      )}
-                      alt=""
-                      draggable={
-                        false
-                      }
-                    />
-                  ) : position ? (
-                    <span>
-                      SAVED
+                    {String(
+                        slot,
+                    ).padStart(
+                        2,
+                        "0",
+                    )}
                     </span>
-                  ) : (
+
+
+                    {position ? (
+                    <div className="quick-access-preview">
+                        {info?.screenshot ? (
+                        <img
+                            src={convertFileSrc(
+                            info.screenshot,
+                            )}
+                            alt=""
+                            draggable={false}
+                        />
+                        ) : (
+                        <span>
+                            SAVED
+                        </span>
+                        )}
+                    </div>
+                    ) : (
+                    <div className="quick-access-empty-mark">
+                        +
+                    </div>
+                    )}
+
+
+                    <div className="quick-access-slot-copy">
+                    <strong>
+                        {name}
+                    </strong>
+
                     <span>
-                      +
+                        {workingSlot === slot
+                        ? position
+                            ? "Loading…"
+                            : "Saving…"
+                        : position
+                            ? "Load position"
+                            : "Save current position"}
                     </span>
-                  )}
-                </div>
+                    </div>
 
 
-                <div className="quick-access-slot-copy">
-                  <strong>
-                    {name}
-                  </strong>
-
-                  <span>
-                    {workingSlot ===
-                    slot
-                      ? position
-                        ? "Loading…"
-                        : "Saving…"
-                      : position
-                        ? "Load position"
-                        : "Save current position"}
-                  </span>
-                </div>
-
-
-                <kbd>
-                  {formatHotkey(
-                    hotkey,
-                  )}
-                </kbd>
+                    <kbd>
+                    {formatHotkey(
+                        hotkey,
+                    )}
+                  </kbd>
               </button>
             );
           },
@@ -500,12 +484,14 @@ export default function QuickAccess() {
           </span>
         ) : (
           <>
-            <span>
-                CapsLock
+            <span className="quick-access-footer-key">
+                {formatHotkey(
+                hotkeys?.quickAccess,
+                )}
             </span>
 
             <span>
-              or Esc to close
+                Close overlay
             </span>
           </>
         )}

@@ -512,6 +512,7 @@ fn vk_to_key(vk: u16) -> Option<String> {
         VK_END => "End",
         VK_INSERT => "Insert",
         VK_DELETE => "Delete",
+        VK_CAPITAL => "CapsLock",
         VK_PRIOR => "PageUp",
         VK_NEXT => "PageDown",
         VK_SPACE => "Space",
@@ -1396,19 +1397,39 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
         .name("split-hotkey-worker".to_string())
         .spawn(move || {
             for action in rx {
-                if let HotkeyAction::User { hotkey, .. } = &action {
-                    if !wait_for_hotkey_release(hotkey) {
+                if let HotkeyAction::User {
+                    action: user_action,
+                    hotkey,
+                } = &action
+                {
+                    /*
+                    * Save / Load / Undo / etc. conservent
+                    * l'attente historique du relâchement.
+                    *
+                    * Quick Access n'en a pas besoin :
+                    * HookEngine::down_keys empêche déjà
+                    * l'auto-repeat pendant que CapsLock
+                    * reste physiquement enfoncé.
+                    */
+                    if !matches!(
+                        user_action,
+                        UserHotkeyAction::ToggleQuickAccess
+                    ) && !wait_for_hotkey_release(hotkey)
+                    {
                         eprintln!(
                             "[SPLIT] {} cancelled: physical shortcut was held too long",
                             hotkey.display()
                         );
+
                         continue;
                     }
+
                     if !is_deadlock_foreground() {
                         println!(
                             "[SPLIT] {} cancelled: Deadlock lost focus",
                             hotkey.display()
                         );
+
                         continue;
                     }
                 }
