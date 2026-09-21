@@ -279,15 +279,96 @@ pub fn get_hotkey_settings() -> HotkeySettings {
 
 pub fn update_hotkey_settings(settings: HotkeySettings) -> Result<HotkeySettings, String> {
     let normalized = settings.normalized()?;
-    normalized.validate_update_from(&hotkeys::current_settings())?;
-    let saved = paths::save_hotkey_settings(normalized)?;
+    let previous = hotkeys::current_settings();
+    normalized.validate_update_from(&previous)?;
+
+    if normalized.quick_access != previous.quick_access {
+        hotkeys::reconfigure_quick_access_hotkey(
+            &normalized.quick_access,
+        )?;
+    }
+
+    let saved = match paths::save_hotkey_settings(normalized) {
+        Ok(saved) => saved,
+        Err(error) => {
+            let _ = hotkeys::reconfigure_quick_access_hotkey(
+                &previous.quick_access,
+            );
+            return Err(error);
+        }
+    };
     hotkeys::apply_settings(saved.clone());
     Ok(saved)
 }
 
 pub fn reset_hotkey_settings() -> Result<HotkeySettings, String> {
-    let saved = paths::save_hotkey_settings(HotkeySettings::default())?;
+    let previous = hotkeys::current_settings();
+    let defaults = HotkeySettings::default();
+
+    if defaults.quick_access != previous.quick_access {
+        hotkeys::reconfigure_quick_access_hotkey(
+            &defaults.quick_access,
+        )?;
+    }
+
+    let saved = match paths::save_hotkey_settings(defaults) {
+        Ok(saved) => saved,
+        Err(error) => {
+            let _ = hotkeys::reconfigure_quick_access_hotkey(
+                &previous.quick_access,
+            );
+            return Err(error);
+        }
+    };
     hotkeys::apply_settings(saved.clone());
+    Ok(saved)
+}
+
+pub fn load_quick_access_settings(
+) -> crate::quick_access::QuickAccessSettings {
+    paths::load_quick_access_settings()
+}
+
+pub fn get_quick_access_settings(
+) -> crate::quick_access::QuickAccessSettings {
+    crate::quick_access::settings()
+}
+
+pub fn update_quick_access_settings(
+    app: &AppHandle,
+    settings: crate::quick_access::QuickAccessSettings,
+) -> Result<crate::quick_access::QuickAccessSettings, String> {
+    let previous = crate::quick_access::settings();
+    let saved = paths::save_quick_access_settings(settings)?;
+    crate::quick_access::apply_settings(saved);
+
+    if let Err(error) = hotkeys::refresh_quick_access_hotkeys() {
+        crate::quick_access::apply_settings(previous);
+        let _ = paths::save_quick_access_settings(previous);
+        let _ = hotkeys::refresh_quick_access_hotkeys();
+        return Err(error);
+    }
+
+    let apply_result = if
+        !saved.enabled && crate::quick_access::is_visible()
+    {
+        crate::quick_access::hide(app).map(|()| {
+            hotkeys::quick_access_hidden();
+        })
+    } else if saved.position != previous.position {
+        crate::quick_access::reposition_if_visible(app)
+    } else {
+        Ok(())
+    };
+
+    if let Err(error) = apply_result {
+        crate::quick_access::apply_settings(previous);
+        let _ = paths::save_quick_access_settings(previous);
+        let _ = hotkeys::refresh_quick_access_hotkeys();
+        let _ = crate::quick_access::reposition_if_visible(app);
+        return Err(error);
+    }
+
     Ok(saved)
 }
 
@@ -1443,6 +1524,21 @@ pub fn capture_slot(app: AppHandle, slot: u8) -> Result<(), String> {
 
 pub fn start_hotkeys(app: AppHandle) -> Result<(), String> {
     hotkeys::start(app)
+}
+
+pub fn quick_access_hidden() {
+    hotkeys::quick_access_hidden()
+}
+
+pub fn set_quick_access_text_input_active(
+    active: bool,
+) -> Result<(), String> {
+    hotkeys::set_quick_access_text_input_active(active)
+}
+
+pub(crate) fn deadlock_window_rect(
+) -> Result<windows_sys::Win32::Foundation::RECT, String> {
+    hotkeys::deadlock_window_rect()
 }
 
 pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {

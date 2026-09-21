@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -12,6 +13,10 @@ import {
 import {
   listen,
 } from "@tauri-apps/api/event";
+
+import {
+  getFullScreenshotPath,
+} from "./screenshot";
 
 import "./quick-access.css";
 
@@ -132,6 +137,36 @@ export default function QuickAccess() {
     setInteractionMode,
   ] = useState(false);
 
+  const [
+    viewerSlot,
+    setViewerSlot,
+  ] = useState<number | null>(null);
+
+  const [
+    editingSlot,
+    setEditingSlot,
+  ] = useState<number | null>(null);
+
+  const [
+    editingName,
+    setEditingName,
+  ] = useState("");
+
+  const renameInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const committingRenameRef =
+    useRef<number | null>(null);
+
+  const suppressCardClickRef =
+    useRef(false);
+
+  const textInputActiveRef =
+    useRef(false);
+
+  const viewerOpenRef =
+    useRef(false);
+
 
   const refresh =
     useCallback(async () => {
@@ -212,7 +247,7 @@ export default function QuickAccess() {
     void refresh();
 
     let disposed = false;
-    let cleanups: Array<() => void> = [];
+    const cleanups: Array<() => void> = [];
 
     const refreshEvents = [
       "quick-access-refresh",
@@ -221,24 +256,31 @@ export default function QuickAccess() {
       "deadlock-favorite-mode",
     ];
 
-    void Promise.all(
-      refreshEvents.map(
-        (event) => listen(
-          event,
-          () => {
-            void refresh();
-          },
-        ),
-      ),
-    ).then((nextCleanups) => {
-      if (disposed) {
-        nextCleanups.forEach(
-          (cleanup) => cleanup(),
-        );
-      } else {
-        cleanups = nextCleanups;
+    void (async () => {
+      for (const event of refreshEvents) {
+        try {
+          const cleanup = await listen(
+            event,
+            () => {
+              void refresh();
+            },
+          );
+
+          if (disposed) {
+            cleanup();
+          } else {
+            cleanups.push(
+              cleanup,
+            );
+          }
+        } catch (reason) {
+          console.error(
+            `[SPLIT][QA] Could not initialize ${event} listener:`,
+            reason,
+          );
+        }
       }
-    });
+    })();
 
     return () => {
       disposed = true;
@@ -257,24 +299,24 @@ export default function QuickAccess() {
       | undefined;
 
     void (async () => {
-      const cleanup = await listen<boolean>(
-        "quick-access-interaction",
-        (event) => {
-          receivedLiveEvent = true;
-          setInteractionMode(
-            event.payload,
-          );
-        },
-      );
-
-      if (disposed) {
-        cleanup();
-        return;
-      }
-
-      unlisten = cleanup;
-
       try {
+        const cleanup = await listen<boolean>(
+          "quick-access-interaction",
+          (event) => {
+            receivedLiveEvent = true;
+            setInteractionMode(
+              event.payload,
+            );
+          },
+        );
+
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+
         const state = await invoke<QuickAccessState>(
           "get_quick_access_state",
         );
@@ -288,7 +330,10 @@ export default function QuickAccess() {
           );
         }
       } catch (reason) {
-        console.error(reason);
+        console.error(
+          "[SPLIT][QA] Could not initialize interaction listener:",
+          reason,
+        );
       }
     })();
 
@@ -296,6 +341,213 @@ export default function QuickAccess() {
       disposed = true;
       unlisten?.();
     };
+  }, []);
+
+
+  useEffect(() => {
+    if (editingSlot === null) {
+      return;
+    }
+
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [editingSlot]);
+
+
+  const beginRename =
+    useCallback(
+      async (
+        slot: number,
+        name: string,
+      ) => {
+        console.log(
+          "[SPLIT][QA][UI] rename begin",
+        );
+        setError(null);
+
+        try {
+          console.log(
+            "[SPLIT][QA][UI] suspending native hotkeys",
+          );
+          await invoke(
+            "set_quick_access_text_input_active",
+            { active: true },
+          );
+          console.log(
+            "[SPLIT][QA][UI] native hotkeys suspended",
+          );
+          textInputActiveRef.current = true;
+          setEditingName(name);
+          setEditingSlot(slot);
+        } catch (reason) {
+          setError(String(reason));
+        }
+      },
+      [],
+    );
+
+
+  const finishRename =
+    useCallback(
+      async (
+        slot: number,
+        previousName: string,
+        save: boolean,
+      ) => {
+        if (committingRenameRef.current !== null) {
+          return;
+        }
+
+        const requestedName =
+          editingName;
+
+        committingRenameRef.current = slot;
+        setEditingSlot(null);
+        setError(null);
+        let renamed = false;
+
+        try {
+          if (
+            save &&
+            requestedName.trim() !==
+              previousName.trim()
+          ) {
+            await invoke(
+              "rename_slot",
+              {
+                slot,
+                name: requestedName,
+              },
+            );
+
+            setMetadata(
+              (current) =>
+                current.map(
+                  (item, index) =>
+                    index === slot - 1
+                      ? {
+                          ...item,
+                          name:
+                            requestedName.trim(),
+                        }
+                      : item,
+                ),
+            );
+            renamed = true;
+          } else if (!save) {
+            setEditingName(previousName);
+          }
+        } catch (reason) {
+          setError(
+            String(reason),
+          );
+        } finally {
+          try {
+            await invoke(
+              "set_quick_access_text_input_active",
+              { active: false },
+            );
+            textInputActiveRef.current = false;
+          } catch (reason) {
+            setError(String(reason));
+          }
+
+          committingRenameRef.current =
+            null;
+        }
+
+        if (renamed) {
+          await refresh();
+        }
+      },
+      [
+        editingName,
+        refresh,
+      ],
+    );
+
+
+  const openViewer =
+    useCallback(
+      async (slot: number) => {
+        setError(null);
+
+        try {
+          await invoke(
+            "set_quick_access_viewer_open",
+            { open: true },
+          );
+          viewerOpenRef.current = true;
+          setViewerSlot(slot);
+        } catch (reason) {
+          setError(String(reason));
+        }
+      },
+      [],
+    );
+
+
+  const closeViewer =
+    useCallback(async () => {
+      setViewerSlot(null);
+
+      try {
+        await invoke(
+          "set_quick_access_viewer_open",
+          { open: false },
+        );
+        viewerOpenRef.current = false;
+      } catch (reason) {
+        setError(String(reason));
+      }
+    }, []);
+
+
+  useEffect(() => {
+    if (interactionMode) {
+      return;
+    }
+
+    if (
+      editingSlot !== null &&
+      committingRenameRef.current === null
+    ) {
+      const previousName =
+        metadata[editingSlot - 1]?.name ??
+        `Slot ${editingSlot}`;
+      void finishRename(
+        editingSlot,
+        previousName,
+        false,
+      );
+    }
+
+    if (viewerOpenRef.current) {
+      void closeViewer();
+    }
+  }, [
+    closeViewer,
+    editingSlot,
+    finishRename,
+    interactionMode,
+    metadata,
+  ]);
+
+
+  useEffect(() => () => {
+    if (textInputActiveRef.current) {
+      void invoke(
+        "set_quick_access_text_input_active",
+        { active: false },
+      );
+    }
+
+    if (viewerOpenRef.current) {
+      void invoke(
+        "set_quick_access_viewer_open",
+        { open: false },
+      );
+    }
   }, []);
 
 
@@ -355,6 +607,29 @@ export default function QuickAccess() {
       ],
     );
 
+  const viewerMetadata =
+    viewerSlot === null
+      ? null
+      : metadata[viewerSlot - 1];
+
+  const viewerThumbnailPath =
+    viewerMetadata?.screenshot ?? null;
+
+  const viewerFullPath =
+    viewerThumbnailPath
+      ? getFullScreenshotPath(
+          viewerThumbnailPath,
+        )
+      : null;
+
+  const viewerName =
+    viewerSlot === null
+      ? ""
+      : (
+          viewerMetadata?.name?.trim() ||
+          `Slot ${viewerSlot}`
+        );
+
 
   return (
     <main
@@ -403,15 +678,16 @@ export default function QuickAccess() {
                     ];
 
             return (
-              <button
+              <div
                 key={slot}
-                type="button"
+                role="button"
+                tabIndex={0}
                 className={`quick-access-slot ${
                   position
                     ? "filled"
                     : "empty"
                 }`}
-                disabled={
+                aria-disabled={
                   workingSlot !==
                   null
                 }
@@ -423,11 +699,38 @@ export default function QuickAccess() {
                       }
                     : undefined
                 }
-                onClick={() =>
+                onClick={() => {
+                  if (
+                    suppressCardClickRef.current ||
+                    workingSlot !== null
+                  ) {
+                    suppressCardClickRef.current =
+                      false;
+                    return;
+                  }
+
                   void activateSlot(
                     index,
-                  )
-                }
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.target !==
+                      event.currentTarget ||
+                    workingSlot !== null ||
+                    (
+                      event.key !== "Enter" &&
+                      event.key !== " "
+                    )
+                  ) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  void activateSlot(
+                    index,
+                  );
+                }}
               >
                 <span className="quick-access-slot-number">
                     {String(
@@ -448,6 +751,12 @@ export default function QuickAccess() {
                             )}
                             alt=""
                             draggable={false}
+                            title="Right click to view screenshot"
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              void openViewer(slot);
+                            }}
                         />
                         ) : (
                         <span>
@@ -463,9 +772,74 @@ export default function QuickAccess() {
 
 
                     <div className="quick-access-slot-copy">
-                    <strong>
+                    {editingSlot === slot ? (
+                      <input
+                        ref={renameInputRef}
+                        className="quick-access-slot-name-input"
+                        value={editingName}
+                        aria-label={`Rename slot ${slot}`}
+                        onChange={(event) =>
+                          setEditingName(
+                            event.target.value,
+                          )
+                        }
+                        onClick={(event) =>
+                          event.stopPropagation()
+                        }
+                        onPointerDown={(event) =>
+                          event.stopPropagation()
+                        }
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void finishRename(
+                              slot,
+                              name,
+                              true,
+                            );
+                          } else if (
+                            event.key === "Escape"
+                          ) {
+                            event.preventDefault();
+                            void finishRename(
+                              slot,
+                              name,
+                              false,
+                            );
+                          }
+                        }}
+                        onBlur={() => {
+                          suppressCardClickRef.current =
+                            true;
+                          window.setTimeout(() => {
+                            suppressCardClickRef.current =
+                              false;
+                          }, 0);
+
+                          void finishRename(
+                            slot,
+                            name,
+                            true,
+                          );
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="quick-access-slot-name"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void beginRename(
+                            slot,
+                            name,
+                          );
+                        }}
+                      >
                         {name}
-                    </strong>
+                      </button>
+                    )}
 
                     <span>
                         {workingSlot === slot
@@ -484,7 +858,7 @@ export default function QuickAccess() {
                         hotkey,
                     )}
                   </kbd>
-              </button>
+              </div>
             );
           },
         )}
@@ -536,6 +910,86 @@ export default function QuickAccess() {
           </>
         )}
       </footer>
+
+
+      {viewerSlot !== null &&
+        viewerThumbnailPath && (
+          <div
+            className="quick-access-viewer-backdrop"
+            onClick={() => {
+              void closeViewer();
+            }}
+          >
+            <section
+              className="quick-access-viewer"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Screenshot for ${viewerName}`}
+            >
+              <header
+                className="quick-access-viewer-header"
+                onClick={(event) =>
+                  event.stopPropagation()
+                }
+              >
+                <strong>
+                  SAVE {viewerSlot} / {viewerName}
+                </strong>
+
+                <button
+                  type="button"
+                  aria-label="Close screenshot"
+                  title="Close"
+                  onClick={() => {
+                    void closeViewer();
+                  }}
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="quick-access-viewer-image">
+                <img
+                  key={viewerThumbnailPath}
+                  src={convertFileSrc(
+                    viewerFullPath ??
+                      viewerThumbnailPath,
+                  )}
+                  alt={`Screenshot for ${viewerName}`}
+                  draggable={false}
+                  onClick={(event) =>
+                    event.stopPropagation()
+                  }
+                  onError={(event) => {
+                    if (
+                      viewerFullPath === null ||
+                      event.currentTarget.dataset
+                        .fallback === "true"
+                    ) {
+                      return;
+                    }
+
+                    event.currentTarget.dataset.fallback =
+                      "true";
+                    event.currentTarget.src =
+                      convertFileSrc(
+                        viewerThumbnailPath,
+                      );
+                  }}
+                />
+              </div>
+
+              <footer
+                className="quick-access-viewer-footer"
+                onClick={(event) =>
+                  event.stopPropagation()
+                }
+              >
+                Click outside the image to close
+              </footer>
+            </section>
+          </div>
+        )}
     </main>
   );
 }

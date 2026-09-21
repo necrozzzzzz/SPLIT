@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::hotkeys::HotkeySettings;
 use super::process::running_deadlock_root;
 use crate::notifications::NotificationSettings;
+use crate::quick_access::QuickAccessSettings;
 use crate::storage::atomic_write;
 
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
@@ -44,6 +45,8 @@ struct SplitConfig {
     notifications: NotificationSettings,
     #[serde(deserialize_with = "deserialize_hotkey_settings")]
     hotkeys: HotkeySettings,
+    #[serde(deserialize_with = "deserialize_quick_access_settings")]
+    quick_access: QuickAccessSettings,
 }
 
 impl Default for SplitConfig {
@@ -52,6 +55,7 @@ impl Default for SplitConfig {
             deadlock_path: String::new(),
             notifications: NotificationSettings::default(),
             hotkeys: HotkeySettings::default(),
+            quick_access: QuickAccessSettings::default(),
         }
     }
 }
@@ -70,6 +74,16 @@ where
 fn deserialize_notification_settings<'de, D>(
     deserializer: D,
 ) -> Result<NotificationSettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+fn deserialize_quick_access_settings<'de, D>(
+    deserializer: D,
+) -> Result<QuickAccessSettings, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -232,6 +246,39 @@ pub fn save_hotkey_settings(settings: HotkeySettings) -> Result<HotkeySettings, 
     Ok(settings)
 }
 
+pub fn load_quick_access_settings() -> QuickAccessSettings {
+    let Ok(_guard) = CONFIG_LOCK.lock() else {
+        return QuickAccessSettings::default();
+    };
+    let Ok(path) = config_path() else {
+        return QuickAccessSettings::default();
+    };
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .map(|config| config.quick_access)
+        .unwrap_or_default()
+}
+
+pub fn save_quick_access_settings(
+    settings: QuickAccessSettings,
+) -> Result<QuickAccessSettings, String> {
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let path = config_path()?;
+    let mut config = fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .unwrap_or_default();
+    config.quick_access = settings;
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
+    atomic_write(&path, json)
+        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+    Ok(settings)
+}
+
 fn push_unique(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
     let candidate_string = candidate.to_string_lossy();
 
@@ -377,6 +424,7 @@ mod tests {
         assert_eq!(config.deadlock_path, r"C:\Deadlock");
         assert_eq!(config.notifications, NotificationSettings::default());
         assert_eq!(config.hotkeys, HotkeySettings::default());
+        assert_eq!(config.quick_access, QuickAccessSettings::default());
     }
 
     #[test]
@@ -415,5 +463,24 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.hotkeys, HotkeySettings::default());
+    }
+
+    #[test]
+    fn quick_access_settings_deserialize_disabled_on_right() {
+        let config: SplitConfig = serde_json::from_str(
+            r#"{
+                "quickAccess": {
+                    "enabled": false,
+                    "position": "right"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!config.quick_access.enabled);
+        assert_eq!(
+            config.quick_access.position,
+            crate::quick_access::QuickAccessPosition::Right,
+        );
     }
 }

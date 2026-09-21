@@ -28,6 +28,10 @@ import {
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
 
+import {
+  getFullScreenshotPath,
+} from "./screenshot";
+
 type DeadlockStatus = {
   deadlockRunning: boolean;
   deadlockPath: string | null;
@@ -168,9 +172,14 @@ type HotkeySettings = {
   quickAccess: Hotkey;
 };
 
+type QuickAccessSettings = {
+  enabled: boolean;
+  position: "left" | "right";
+};
+
 type HotkeyTarget =
   | { group: "loadSlots" | "saveSlots"; index: number }
-  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" };
+  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" | "quickAccess" };
 
 const SLOT_COLORS = [
   {
@@ -243,23 +252,10 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
   },
 };
 
-function getFullScreenshotPath(
-  thumbnailPath: string,
-): string | null {
-  const match =
-    thumbnailPath.match(
-      /^(.*[\\/])capture-([^\\/]+)$/,
-    );
-
-  if (!match) {
-    return null;
-  }
-
-  return (
-    `${match[1]}` +
-    `capture-full-${match[2]}`
-  );
-}
+const DEFAULT_QUICK_ACCESS_SETTINGS: QuickAccessSettings = {
+  enabled: true,
+  position: "left",
+};
 
 function formatHotkey(hotkey: Hotkey): string {
   return [
@@ -370,6 +366,16 @@ function findHotkeyConflictLabel(
     )
   ) {
     return "Favorite Mode";
+  }
+
+  if (
+    target.group !== "quickAccess" &&
+    hotkeysEqual(
+      settings.quickAccess,
+      candidate,
+    )
+  ) {
+    return "Quick Access";
   }
 
   return null;
@@ -831,6 +837,13 @@ function App() {
   const [hotkeyMessage, setHotkeyMessage] =
     useState<string | null>(null);
   const [hotkeysRestored, setHotkeysRestored] =
+    useState(false);
+
+  const [quickAccessSettings, setQuickAccessSettings] =
+    useState<QuickAccessSettings>(DEFAULT_QUICK_ACCESS_SETTINGS);
+  const [quickAccessSettingsLoading, setQuickAccessSettingsLoading] =
+    useState(true);
+  const [quickAccessSettingsSaving, setQuickAccessSettingsSaving] =
     useState(false);
 
   const [
@@ -2973,6 +2986,62 @@ function App() {
       disposed = true;
     };
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    invoke<QuickAccessSettings>(
+      "get_quick_access_settings",
+    )
+      .then((saved) => {
+        if (!disposed) {
+          setQuickAccessSettings(saved);
+        }
+      })
+      .catch((reason) => {
+        if (!disposed) {
+          setError(String(reason));
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setQuickAccessSettingsLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const updateQuickAccessSettings = useCallback(
+    async (next: QuickAccessSettings) => {
+      const previous = quickAccessSettings;
+      if (
+        !next.enabled &&
+        capturingHotkey?.group === "quickAccess"
+      ) {
+        setCapturingHotkey(null);
+        setHotkeyMessage(null);
+      }
+      setQuickAccessSettings(next);
+      setQuickAccessSettingsSaving(true);
+      setError(null);
+
+      try {
+        const saved = await invoke<QuickAccessSettings>(
+          "update_quick_access_settings",
+          { settings: next },
+        );
+        setQuickAccessSettings(saved);
+      } catch (reason) {
+        setQuickAccessSettings(previous);
+        setError(String(reason));
+      } finally {
+        setQuickAccessSettingsSaving(false);
+      }
+    },
+    [capturingHotkey, quickAccessSettings],
+  );
 
   const saveCapturedHotkey = useCallback(
     async (target: HotkeyTarget, hotkey: Hotkey) => {
@@ -5496,6 +5565,141 @@ function App() {
                     Quit SPLIT
                   </button>
                 </div>
+              </div>
+
+
+              <div
+                className={`quick-access-settings-group ${
+                  quickAccessSettings.enabled
+                    ? ""
+                    : "disabled"
+                }`}
+              >
+                <h3>QUICK ACCESS</h3>
+
+                <div className="general-setting-row">
+                  <div>
+                    <strong>Enabled</strong>
+                    <span>
+                      Show the Quick Access overlay in Deadlock.
+                    </span>
+                  </div>
+
+                  <button
+                    className={`general-toggle ${
+                      quickAccessSettings.enabled
+                        ? "active"
+                        : ""
+                    }`}
+                    type="button"
+                    role="switch"
+                    aria-checked={quickAccessSettings.enabled}
+                    disabled={
+                      quickAccessSettingsLoading ||
+                      quickAccessSettingsSaving
+                    }
+                    onClick={() =>
+                      void updateQuickAccessSettings({
+                        ...quickAccessSettings,
+                        enabled: !quickAccessSettings.enabled,
+                      })
+                    }
+                  >
+                    {quickAccessSettings.enabled ? "On" : "Off"}
+                  </button>
+                </div>
+
+                <div className="general-setting-row quick-access-dependent-setting">
+                  <div>
+                    <strong>Shortcut</strong>
+                    <span>Hold shortcut to interact</span>
+                  </div>
+
+                  <div className="quick-access-shortcut-control">
+                    <kbd>
+                      {isHotkeyTarget(
+                        capturingHotkey,
+                        { group: "quickAccess" },
+                      )
+                        ? "Press a shortcut..."
+                        : formatHotkey(hotkeySettings.quickAccess)}
+                    </kbd>
+                    <button
+                      className="general-restore-button"
+                      type="button"
+                      disabled={
+                        !quickAccessSettings.enabled ||
+                        quickAccessSettingsLoading ||
+                        quickAccessSettingsSaving ||
+                        hotkeySettingsSaving
+                      }
+                      onClick={() => {
+                        const target: HotkeyTarget = {
+                          group: "quickAccess",
+                        };
+                        const capturing = isHotkeyTarget(
+                          capturingHotkey,
+                          target,
+                        );
+                        setHotkeyMessage(null);
+                        setCapturingHotkey(
+                          capturing ? null : target,
+                        );
+                      }}
+                    >
+                      {isHotkeyTarget(
+                        capturingHotkey,
+                        { group: "quickAccess" },
+                      )
+                        ? "Cancel"
+                        : "Change"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="general-setting-row quick-access-dependent-setting">
+                  <div>
+                    <strong>Position</strong>
+                    <span>
+                      Anchor the overlay inside the Deadlock window.
+                    </span>
+                  </div>
+
+                  <div className="general-toggle-group">
+                    {(["left", "right"] as const).map(
+                      (position) => (
+                        <button
+                          key={position}
+                          className={`general-toggle ${
+                            quickAccessSettings.position === position
+                              ? "active"
+                              : ""
+                          }`}
+                          type="button"
+                          disabled={
+                            !quickAccessSettings.enabled ||
+                            quickAccessSettingsLoading ||
+                            quickAccessSettingsSaving
+                          }
+                          onClick={() =>
+                            void updateQuickAccessSettings({
+                              ...quickAccessSettings,
+                              position,
+                            })
+                          }
+                        >
+                          {position === "left" ? "Left" : "Right"}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+
+                {hotkeyMessage && (
+                  <p className="hotkey-message" role="alert">
+                    {hotkeyMessage}
+                  </p>
+                )}
               </div>
 
 

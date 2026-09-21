@@ -128,15 +128,50 @@ fn get_hotkey_settings() -> deadlock::HotkeySettings {
 }
 
 #[tauri::command]
-fn update_hotkey_settings(
+async fn update_hotkey_settings(
     settings: deadlock::HotkeySettings,
 ) -> Result<deadlock::HotkeySettings, String> {
-    deadlock::update_hotkey_settings(settings)
+    tauri::async_runtime::spawn_blocking(move || {
+        deadlock::update_hotkey_settings(settings)
+    })
+    .await
+    .map_err(|error| {
+        format!("Hotkey settings task failed: {error}")
+    })?
 }
 
 #[tauri::command]
-fn reset_hotkey_settings() -> Result<deadlock::HotkeySettings, String> {
-    deadlock::reset_hotkey_settings()
+async fn reset_hotkey_settings() -> Result<deadlock::HotkeySettings, String> {
+    tauri::async_runtime::spawn_blocking(
+        deadlock::reset_hotkey_settings,
+    )
+    .await
+    .map_err(|error| {
+        format!("Hotkey reset task failed: {error}")
+    })?
+}
+
+#[tauri::command]
+fn get_quick_access_settings(
+) -> quick_access::QuickAccessSettings {
+    deadlock::get_quick_access_settings()
+}
+
+#[tauri::command]
+async fn update_quick_access_settings(
+    app: tauri::AppHandle,
+    settings: quick_access::QuickAccessSettings,
+) -> Result<quick_access::QuickAccessSettings, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        deadlock::update_quick_access_settings(
+            &app,
+            settings,
+        )
+    })
+    .await
+    .map_err(|error| {
+        format!("Quick Access settings task failed: {error}")
+    })?
 }
 
 #[tauri::command]
@@ -317,13 +352,42 @@ fn launch_deadlock() -> Result<(), String> {
 fn hide_quick_access(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    quick_access::hide(&app)
+    quick_access::hide(&app)?;
+    deadlock::quick_access_hidden();
+    Ok(())
 }
 
 #[tauri::command]
 fn get_quick_access_state(
 ) -> quick_access::QuickAccessState {
     quick_access::state()
+}
+
+#[tauri::command]
+fn set_quick_access_viewer_open(
+    app: tauri::AppHandle,
+    open: bool,
+) -> Result<(), String> {
+    quick_access::set_viewer_open(&app, open)
+}
+
+#[tauri::command]
+async fn set_quick_access_text_input_active(
+    active: bool,
+) -> Result<(), String> {
+    println!(
+        "[SPLIT][QA] text input command active={active}"
+    );
+
+    tauri::async_runtime::spawn_blocking(move || {
+        deadlock::set_quick_access_text_input_active(active)
+    })
+    .await
+    .map_err(|error| {
+        format!(
+            "Quick Access text input command task failed: {error}"
+        )
+    })?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -492,6 +556,8 @@ pub fn run() {
             reset_main_window,
             hide_quick_access,
             get_quick_access_state,
+            set_quick_access_viewer_open,
+            set_quick_access_text_input_active,
             get_last_position,
             get_slots,
             get_slot_metadata,
@@ -512,6 +578,8 @@ pub fn run() {
             get_hotkey_settings,
             update_hotkey_settings,
             reset_hotkey_settings,
+            get_quick_access_settings,
+            update_quick_access_settings,
             toggle_favorite_mode,
             undo_last_action,
             redo_last_action,

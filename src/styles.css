@@ -3856,6 +3856,52 @@ button.active::after {
   gap: 5px;
 }
 
+.quick-access-settings-group {
+  display: grid;
+  gap: 7px;
+
+  margin: 5px 0;
+}
+
+.quick-access-settings-group h3 {
+  margin: 5px 2px 1px;
+
+  color: #78908b;
+
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.quick-access-settings-group.disabled
+.quick-access-dependent-setting {
+  opacity: 0.55;
+}
+
+.quick-access-shortcut-control {
+  display: flex !important;
+
+  grid-template-columns: auto auto;
+  align-items: center;
+
+  gap: 7px !important;
+}
+
+.quick-access-shortcut-control kbd {
+  min-width: 82px;
+
+  border: 1px solid rgba(79, 209, 197, 0.16);
+  border-radius: 5px;
+
+  padding: 6px 8px;
+
+  color: #c4d6d2;
+  background: #122022;
+
+  font-size: 10px;
+  text-align: center;
+}
+
 /* =========================================
    SPLIT — HOTKEY SETTINGS / PHASE 2N
    ========================================= */
@@ -6834,5 +6880,4 @@ select:hover:not(:disabled) {
     grid-template-columns: 1fr;
   }
 }
-
 

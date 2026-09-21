@@ -198,7 +198,7 @@ body,
 }
 
 
-.quick-access-slot:hover:not(:disabled) {
+.quick-access-slot:hover:not([aria-disabled="true"]) {
   border-color:
     rgba(79, 209, 197, 0.30);
 
@@ -207,7 +207,7 @@ body,
 }
 
 
-.quick-access-slot:disabled {
+.quick-access-slot[aria-disabled="true"] {
   cursor: default;
 
   opacity: 0.55;
@@ -288,7 +288,8 @@ body,
 }
 
 
-.quick-access-slot-copy strong {
+.quick-access-slot-name,
+.quick-access-slot-name-input {
   overflow: hidden;
 
   color: #dbe8e5;
@@ -298,6 +299,66 @@ body,
 
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+
+.quick-access-slot-name {
+  min-width: 0;
+
+  border: 0;
+  padding: 0;
+
+  color: inherit;
+  background: transparent;
+
+  cursor: text;
+
+  font-family: inherit;
+  text-align: left;
+}
+
+
+.quick-access-slot-name:hover {
+  color: #f4fffd;
+}
+
+
+.quick-access-slot-name-input {
+  width: 100%;
+  min-width: 0;
+
+  box-sizing: border-box;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.34);
+
+  border-radius: 3px;
+
+  padding:
+    2px 4px;
+
+  outline: none;
+
+  background:
+    rgba(79, 209, 197, 0.07);
+
+  font-family: inherit;
+
+  user-select: text;
+
+  box-shadow:
+    0 0 0 1px
+    rgba(79, 209, 197, 0.04);
+}
+
+
+.quick-access-slot:focus-visible {
+  outline:
+    1px solid
+    rgba(79, 209, 197, 0.55);
+
+  outline-offset: -1px;
 }
 
 
@@ -487,7 +548,7 @@ body,
 }
 
 
-.quick-access-slot.filled:hover:not(:disabled) {
+.quick-access-slot.filled:hover:not([aria-disabled="true"]) {
   border-color:
     rgba(79, 209, 197, 0.32);
 
@@ -538,7 +599,9 @@ body,
 
 
 .quick-access-slot.filled
-.quick-access-slot-copy strong {
+.quick-access-slot-name,
+.quick-access-slot.filled
+.quick-access-slot-name-input {
   color: #edf5f3;
 
   font-size: 11.5px;
@@ -583,7 +646,7 @@ body,
 }
 
 
-.quick-access-slot.empty:hover:not(:disabled) {
+.quick-access-slot.empty:hover:not([aria-disabled="true"]) {
   border-color:
     rgba(79, 209, 197, 0.18);
 
@@ -623,7 +686,9 @@ body,
 
 
 .quick-access-slot.empty
-.quick-access-slot-copy strong {
+.quick-access-slot-name,
+.quick-access-slot.empty
+.quick-access-slot-name-input {
   color: #aabfbb;
 
   font-size: 9.5px;
@@ -787,4 +852,188 @@ body,
 .quick-access-empty-mark {
   width: 26px;
   height: 26px;
+}
+
+
+/* Screenshot viewer */
+
+.quick-access-viewer-backdrop {
+  position: fixed;
+  z-index: 100;
+
+  inset: 0;
+
+  display: grid;
+
+  place-items: center;
+
+  padding: 12px;
+
+  background:
+    rgba(2, 7, 8, 0.90);
+
+  backdrop-filter:
+    blur(5px);
+}
+
+
+.quick-access-viewer {
+  display: flex;
+
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+
+  flex-direction: column;
+
+  overflow: hidden;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.27);
+
+  border-radius: 7px;
+
+  background: #081112;
+
+  box-shadow:
+    0 18px 54px
+    rgba(0, 0, 0, 0.58);
+}
+
+
+.quick-access-viewer-header {
+  display: flex;
+
+  min-height: 38px;
+
+  flex: 0 0 auto;
+
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 10px;
+
+  border-bottom:
+    1px solid
+    rgba(79, 209, 197, 0.10);
+
+  padding:
+    6px 7px 6px 10px;
+
+  background:
+    rgba(16, 31, 33, 0.96);
+}
+
+
+.quick-access-viewer-header strong {
+  overflow: hidden;
+
+  color: #eaf6f3;
+
+  font-size: 10px;
+  font-weight: 760;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.quick-access-viewer-header button {
+  display: grid;
+
+  width: 27px;
+  height: 27px;
+
+  flex: 0 0 auto;
+
+  place-items: center;
+
+  border:
+    1px solid
+    rgba(79, 209, 197, 0.14);
+
+  border-radius: 4px;
+
+  padding: 0;
+
+  color: #879c98;
+
+  background:
+    rgba(79, 209, 197, 0.03);
+
+  cursor: pointer;
+
+  font-size: 17px;
+  line-height: 1;
+}
+
+
+.quick-access-viewer-header button:hover {
+  border-color:
+    rgba(79, 209, 197, 0.34);
+
+  color: #eef8f6;
+
+  background:
+    rgba(79, 209, 197, 0.08);
+}
+
+
+.quick-access-viewer-image {
+  display: flex;
+
+  min-height: 0;
+
+  flex: 1 1 auto;
+
+  align-items: center;
+  justify-content: center;
+
+  overflow: hidden;
+
+  padding: 8px;
+
+  background: #04090a;
+}
+
+
+.quick-access-viewer-image img {
+  display: block;
+
+  width: 100%;
+  height: 100%;
+
+  max-width: 100%;
+  max-height:
+    calc(100vh - 92px);
+
+  object-fit: contain;
+
+  border-radius: 4px;
+
+  box-shadow:
+    0 7px 24px
+    rgba(0, 0, 0, 0.42);
+}
+
+
+.quick-access-viewer-footer {
+  flex: 0 0 auto;
+
+  border-top:
+    1px solid
+    rgba(79, 209, 197, 0.07);
+
+  padding:
+    6px 9px;
+
+  color: #526c68;
+
+  background:
+    rgba(12, 24, 25, 0.98);
+
+  font-size: 7.5px;
+
+  text-align: center;
 }
