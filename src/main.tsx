@@ -18,6 +18,23 @@ const quickAccess =
   ).get("quick-access") ===
   "1";
 
+document.documentElement.classList.toggle(
+  "quick-access-page",
+  quickAccess,
+);
+
+document.body.classList.toggle(
+  "quick-access-page",
+  quickAccess,
+);
+
+document
+  .getElementById("root")
+  ?.classList.toggle(
+    "quick-access-root",
+    quickAccess,
+  );
+
 
 createRoot(
   document.getElementById(

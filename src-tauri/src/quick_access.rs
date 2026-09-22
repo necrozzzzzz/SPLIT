@@ -21,7 +21,29 @@ use std::{
     time::Duration,
 };
 
-use windows_sys::Win32::Foundation::{HWND, RECT};
+use windows_sys::Win32::{
+    Foundation::{
+        GetLastError,
+        SetLastError,
+        ERROR_SUCCESS,
+        HWND,
+        RECT,
+    },
+    UI::WindowsAndMessaging::{
+        GetWindowLongPtrW,
+        SetWindowLongPtrW,
+        SetWindowPos,
+        GWL_EXSTYLE,
+        GWLP_HWNDPARENT,
+        SWP_FRAMECHANGED,
+        SWP_NOACTIVATE,
+        SWP_NOMOVE,
+        SWP_NOSIZE,
+        SWP_NOZORDER,
+        WS_EX_APPWINDOW,
+        WS_EX_TOOLWINDOW,
+    },
+};
 
 const QUICK_ACCESS_LABEL: &str =
     "quick-access";
@@ -208,6 +230,139 @@ fn position_window(
 }
 
 
+fn quick_access_ex_style(current: u32) -> u32 {
+    (current | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW
+}
+
+
+fn ensure_tool_window_style(
+    window: &WebviewWindow,
+) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| {
+            format!(
+                "Could not read Quick Access window handle: {error}"
+            )
+        })?
+        .0;
+
+    unsafe {
+        SetLastError(ERROR_SUCCESS);
+    }
+    let current = unsafe {
+        GetWindowLongPtrW(
+            hwnd,
+            GWL_EXSTYLE,
+        )
+    };
+    let read_error = unsafe { GetLastError() };
+
+    if current == 0 && read_error != ERROR_SUCCESS {
+        return Err(format!(
+            "Could not read Quick Access extended styles: {}",
+            std::io::Error::from_raw_os_error(read_error as i32),
+        ));
+    }
+
+    let next = quick_access_ex_style(current as u32);
+
+    if next != current as u32 {
+        unsafe {
+            SetLastError(ERROR_SUCCESS);
+        }
+        let previous = unsafe {
+            SetWindowLongPtrW(
+                hwnd,
+                GWL_EXSTYLE,
+                next as isize,
+            )
+        };
+        let write_error = unsafe { GetLastError() };
+
+        if previous == 0 && write_error != ERROR_SUCCESS {
+            return Err(format!(
+                "Could not update Quick Access extended styles: {}",
+                std::io::Error::from_raw_os_error(write_error as i32),
+            ));
+        }
+
+        if unsafe {
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED |
+                    SWP_NOMOVE |
+                    SWP_NOSIZE |
+                    SWP_NOZORDER |
+                    SWP_NOACTIVATE,
+            )
+        } == 0
+        {
+            return Err(format!(
+                "Could not refresh Quick Access window frame: {}",
+                std::io::Error::last_os_error(),
+            ));
+        }
+
+        println!(
+            "[SPLIT][QA] Applied WS_EX_TOOLWINDOW and cleared WS_EX_APPWINDOW"
+        );
+    }
+
+    Ok(())
+}
+
+
+fn set_quick_access_owner(
+    quick_access_hwnd: HWND,
+    owner_hwnd: Option<HWND>,
+) -> Result<(), String> {
+    let owner = owner_hwnd.unwrap_or(std::ptr::null_mut());
+
+    unsafe {
+        SetLastError(ERROR_SUCCESS);
+    }
+    let previous = unsafe {
+        SetWindowLongPtrW(
+            quick_access_hwnd,
+            GWLP_HWNDPARENT,
+            owner as isize,
+        )
+    };
+    let error = unsafe { GetLastError() };
+
+    if previous == 0 && error != ERROR_SUCCESS {
+        return Err(format!(
+            "Could not {} Quick Access owner: {}",
+            if owner.is_null() {
+                "detach"
+            } else {
+                "attach"
+            },
+            std::io::Error::from_raw_os_error(error as i32),
+        ));
+    }
+
+    if previous != owner as isize {
+        println!(
+            "[SPLIT][QA] owner {}",
+            if owner.is_null() {
+                "detached"
+            } else {
+                "attached to Deadlock"
+            },
+        );
+    }
+
+    Ok(())
+}
+
+
 fn get_or_create(
     app: &AppHandle,
 ) -> Result<WebviewWindow, String> {
@@ -216,10 +371,11 @@ fn get_or_create(
             QUICK_ACCESS_LABEL,
         )
     {
+        ensure_tool_window_style(&window)?;
         return Ok(window);
     }
 
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         app,
         QUICK_ACCESS_LABEL,
         WebviewUrl::App(
@@ -245,7 +401,11 @@ fn get_or_create(
         format!(
             "Could not create Quick Access window: {error}"
         )
-    })
+    })?;
+
+    ensure_tool_window_style(&window)?;
+
+    Ok(window)
 }
 
 
@@ -256,8 +416,27 @@ pub fn show(
         return Ok(());
     }
 
+    let owner_hwnd =
+        crate::deadlock::foreground_deadlock_window()
+            .ok_or_else(|| {
+                "Could not find the foreground Deadlock window"
+                    .to_string()
+            })?;
     let window =
         get_or_create(app)?;
+    let quick_access_hwnd = window
+        .hwnd()
+        .map_err(|error| {
+            format!(
+                "Could not read Quick Access window handle: {error}"
+            )
+        })?
+        .0;
+
+    set_quick_access_owner(
+        quick_access_hwnd,
+        Some(owner_hwnd),
+    )?;
 
     window
         .set_focusable(false)
@@ -312,8 +491,9 @@ pub fn show(
 }
 
 
-pub fn hide(
+fn hide_internal(
     app: &AppHandle,
+    restore_deadlock_focus: bool,
 ) -> Result<(), String> {
     if let Some(window) =
         app.get_webview_window(
@@ -345,6 +525,24 @@ pub fn hide(
                     "Could not hide Quick Access: {error}"
                 )
             })?;
+
+        match window.hwnd() {
+            Ok(hwnd) => {
+                if let Err(error) =
+                    set_quick_access_owner(
+                        hwnd.0,
+                        None,
+                    )
+                {
+                    eprintln!(
+                        "[SPLIT][QA] {error}"
+                    );
+                }
+            }
+            Err(error) => eprintln!(
+                "[SPLIT][QA] Could not read Quick Access window handle while detaching owner: {error}"
+            ),
+        }
     }
 
     QUICK_ACCESS_INTERACTIVE.store(
@@ -356,13 +554,29 @@ pub fn hide(
         Ordering::SeqCst,
     );
 
-    if let Err(error) = crate::deadlock::focus_deadlock_window() {
-        eprintln!(
-            "[SPLIT][QA] Could not return focus to Deadlock: {error}"
-        );
+    if restore_deadlock_focus {
+        if let Err(error) = crate::deadlock::focus_deadlock_window() {
+            eprintln!(
+                "[SPLIT][QA] Could not return focus to Deadlock: {error}"
+            );
+        }
     }
 
     Ok(())
+}
+
+
+pub fn hide(
+    app: &AppHandle,
+) -> Result<(), String> {
+    hide_internal(app, true)
+}
+
+
+pub(crate) fn hide_without_focus(
+    app: &AppHandle,
+) -> Result<(), String> {
+    hide_internal(app, false)
 }
 
 
@@ -676,6 +890,24 @@ mod tests {
                 QuickAccessPosition::Right,
             ),
             906,
+        );
+    }
+
+    #[test]
+    fn tool_window_style_preserves_other_extended_styles() {
+        let preserved_style = 0x0000_0008;
+        let current =
+            preserved_style |
+                WS_EX_APPWINDOW;
+        let updated =
+            quick_access_ex_style(current);
+
+        assert_ne!(updated & WS_EX_TOOLWINDOW, 0);
+        assert_eq!(updated & WS_EX_APPWINDOW, 0);
+        assert_ne!(updated & preserved_style, 0);
+        assert_eq!(
+            quick_access_ex_style(updated),
+            updated,
         );
     }
 }

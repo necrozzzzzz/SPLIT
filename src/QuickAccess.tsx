@@ -61,6 +61,34 @@ type QuickAccessState = {
 };
 
 
+const SLOT_COLORS = [
+  {
+    label: "None",
+    value: null,
+  },
+  {
+    label: "Cyan",
+    value: "#4fd1c5",
+  },
+  {
+    label: "Yellow",
+    value: "#ffd166",
+  },
+  {
+    label: "Red",
+    value: "#d98c8c",
+  },
+  {
+    label: "Purple",
+    value: "#9b8cff",
+  },
+  {
+    label: "Green",
+    value: "#62ff8f",
+  },
+] as const;
+
+
 function formatHotkey(
   hotkey: Hotkey | undefined,
 ): string {
@@ -152,6 +180,16 @@ export default function QuickAccess() {
     setEditingName,
   ] = useState("");
 
+  const [
+    openMenuSlot,
+    setOpenMenuSlot,
+  ] = useState<number | null>(null);
+
+  const [
+    confirmClearSlot,
+    setConfirmClearSlot,
+  ] = useState<number | null>(null);
+
   const renameInputRef =
     useRef<HTMLInputElement | null>(null);
 
@@ -166,6 +204,13 @@ export default function QuickAccess() {
 
   const viewerOpenRef =
     useRef(false);
+
+
+  const closeSlotMenu =
+    useCallback(() => {
+      setOpenMenuSlot(null);
+      setConfirmClearSlot(null);
+    }, []);
 
 
   const refresh =
@@ -262,6 +307,7 @@ export default function QuickAccess() {
           const cleanup = await listen(
             event,
             () => {
+              closeSlotMenu();
               void refresh();
             },
           );
@@ -288,7 +334,7 @@ export default function QuickAccess() {
         (cleanup) => cleanup(),
       );
     };
-  }, [refresh]);
+  }, [closeSlotMenu, refresh]);
 
 
   useEffect(() => {
@@ -508,6 +554,8 @@ export default function QuickAccess() {
       return;
     }
 
+    closeSlotMenu();
+
     if (
       editingSlot !== null &&
       committingRenameRef.current === null
@@ -527,6 +575,7 @@ export default function QuickAccess() {
     }
   }, [
     closeViewer,
+    closeSlotMenu,
     editingSlot,
     finishRename,
     interactionMode,
@@ -555,6 +604,7 @@ export default function QuickAccess() {
     useCallback(
       async (
         index: number,
+        overwrite = false,
       ) => {
         if (
           workingSlot !==
@@ -576,7 +626,7 @@ export default function QuickAccess() {
         setError(null);
 
         try {
-          if (position) {
+          if (position && !overwrite) {
             await invoke(
               "load_slot",
               { slot },
@@ -603,6 +653,82 @@ export default function QuickAccess() {
       },
       [
         slots,
+        workingSlot,
+      ],
+    );
+
+
+  const updateSlotColor =
+    useCallback(
+      async (
+        slot: number,
+        color: string | null,
+      ) => {
+        if (workingSlot !== null) {
+          return;
+        }
+
+        setWorkingSlot(slot);
+        setError(null);
+
+        try {
+          await invoke(
+            "set_slot_color",
+            { slot, color },
+          );
+
+          setMetadata((current) =>
+            current.map((item, index) =>
+              index === slot - 1
+                ? {
+                    ...item,
+                    color,
+                  }
+                : item,
+            ),
+          );
+          closeSlotMenu();
+          await refresh();
+        } catch (reason) {
+          setError(String(reason));
+        } finally {
+          setWorkingSlot(null);
+        }
+      },
+      [
+        closeSlotMenu,
+        refresh,
+        workingSlot,
+      ],
+    );
+
+
+  const clearSlot =
+    useCallback(
+      async (slot: number) => {
+        if (workingSlot !== null) {
+          return;
+        }
+
+        setWorkingSlot(slot);
+        setError(null);
+
+        try {
+          await invoke(
+            "clear_slot",
+            { slot },
+          );
+          closeSlotMenu();
+          await refresh();
+        } catch (reason) {
+          setError(String(reason));
+        } finally {
+          setWorkingSlot(null);
+        }
+      },
+      [
+        closeSlotMenu,
+        refresh,
         workingSlot,
       ],
     );
@@ -638,6 +764,12 @@ export default function QuickAccess() {
           ? " interactive"
           : ""
       }`}
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+      onClick={() => {
+        closeSlotMenu();
+      }}
     >
       <header className="quick-access-header">
         <span className="quick-access-brand">
@@ -686,6 +818,10 @@ export default function QuickAccess() {
                   position
                     ? "filled"
                     : "empty"
+                }${
+                  openMenuSlot === slot
+                    ? " menu-open"
+                    : ""
                 }`}
                 aria-disabled={
                   workingSlot !==
@@ -706,6 +842,11 @@ export default function QuickAccess() {
                   ) {
                     suppressCardClickRef.current =
                       false;
+                    return;
+                  }
+
+                  if (openMenuSlot !== null) {
+                    closeSlotMenu();
                     return;
                   }
 
@@ -772,6 +913,7 @@ export default function QuickAccess() {
 
 
                     <div className="quick-access-slot-copy">
+                    <div className="quick-access-slot-title-row">
                     {editingSlot === slot ? (
                       <input
                         ref={renameInputRef}
@@ -841,6 +983,165 @@ export default function QuickAccess() {
                       </button>
                     )}
 
+                    <div className="quick-access-slot-controls">
+                    {interactionMode && position && (
+                      <div
+                        className="quick-access-slot-actions"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="quick-access-slot-actions-button"
+                          aria-label={`Slot ${slot} actions`}
+                          aria-haspopup="menu"
+                          aria-expanded={
+                            openMenuSlot === slot
+                          }
+                          disabled={workingSlot !== null}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setConfirmClearSlot(null);
+                            setOpenMenuSlot(
+                              (current) =>
+                                current === slot
+                                  ? null
+                                  : slot,
+                            );
+                          }}
+                        >
+                          ...
+                        </button>
+
+                        {openMenuSlot === slot && (
+                          <div
+                            className={`quick-access-slot-menu${
+                              slot > 5
+                                ? " opens-up"
+                                : ""
+                            }`}
+                            role="menu"
+                            aria-label={`Slot ${slot} actions`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                            }}
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="quick-access-slot-menu-item"
+                              disabled={workingSlot !== null}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                closeSlotMenu();
+                                void activateSlot(
+                                  index,
+                                  true,
+                                );
+                              }}
+                            >
+                              Overwrite
+                            </button>
+
+                            <div className="quick-access-slot-menu-divider" />
+
+                            <span className="quick-access-slot-menu-label">
+                              Color
+                            </span>
+
+                            <div className="quick-access-slot-menu-colors">
+                              {SLOT_COLORS.map(
+                                ({ label, value }) => {
+                                  const active =
+                                    (info?.color ?? null) ===
+                                    value;
+
+                                  return (
+                                    <button
+                                      key={label}
+                                      type="button"
+                                      role="menuitemradio"
+                                      aria-checked={active}
+                                      aria-label={`${label} color for slot ${slot}`}
+                                      title={label}
+                                      className={`quick-access-slot-menu-color${
+                                        active
+                                          ? " active"
+                                          : ""
+                                      }`}
+                                      disabled={workingSlot !== null}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void updateSlotColor(
+                                          slot,
+                                          value,
+                                        );
+                                      }}
+                                    >
+                                      {value ? (
+                                        <span
+                                          className="quick-access-slot-menu-swatch"
+                                          style={{
+                                            backgroundColor:
+                                              value,
+                                          }}
+                                        />
+                                      ) : (
+                                        <span className="quick-access-slot-menu-none">
+                                          /
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                },
+                              )}
+                            </div>
+
+                            <div className="quick-access-slot-menu-divider" />
+
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className={`quick-access-slot-menu-item danger${
+                                confirmClearSlot === slot
+                                  ? " confirming"
+                                  : ""
+                              }`}
+                              disabled={workingSlot !== null}
+                              onClick={(event) => {
+                                event.stopPropagation();
+
+                                if (
+                                  confirmClearSlot !== slot
+                                ) {
+                                  setConfirmClearSlot(slot);
+                                  return;
+                                }
+
+                                void clearSlot(slot);
+                              }}
+                            >
+                              {confirmClearSlot === slot
+                                ? "Confirm clear"
+                                : "Clear"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <kbd>
+                      {formatHotkey(
+                        hotkey,
+                      )}
+                    </kbd>
+                    </div>
+                    </div>
+
                     <span>
                         {workingSlot === slot
                         ? position
@@ -853,11 +1154,6 @@ export default function QuickAccess() {
                     </div>
 
 
-                    <kbd>
-                    {formatHotkey(
-                        hotkey,
-                    )}
-                  </kbd>
               </div>
             );
           },

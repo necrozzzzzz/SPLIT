@@ -1294,24 +1294,56 @@ function App() {
       setError(null);
 
       try {
-        const next =
-          await invoke<DeadlockStatus>(
+        const [
+          nextStatus,
+          position,
+          nextSlots,
+          nextMetadata,
+          nextPreset,
+          nextPresetNames,
+          nextHistory,
+          nextFavoriteMode,
+        ] = await Promise.all([
+          invoke<DeadlockStatus>(
             "get_deadlock_status",
-          );
-
-        setStatus(next);
-        const position =
-          await invoke<
-            PositionSnapshot | null
-          >(
+          ),
+          invoke<PositionSnapshot | null>(
             "get_last_position",
-          );
+          ),
+          invoke<Array<PositionSnapshot | null>>(
+            "get_slots",
+          ),
+          invoke<Array<SlotMetadata>>(
+            "get_slot_metadata",
+          ),
+          invoke<number>(
+            "get_active_preset",
+          ),
+          invoke<Array<string>>(
+            "get_preset_names",
+          ),
+          invoke<HistoryState>(
+            "get_history_state",
+          ),
+          invoke<boolean>(
+            "get_favorite_mode",
+          ),
+        ]);
+
+        setStatus(nextStatus);
 
         if (position) {
           setLastPosition(
             position,
           );
         }
+        setSlots(nextSlots);
+        setSlotMetadata(nextMetadata);
+        setActivePreset(nextPreset);
+        setPresetNames(nextPresetNames);
+        setHistoryState(nextHistory);
+        setFavoriteMode(nextFavoriteMode);
+        setRelativeTimeNow(Date.now());
       } catch (reason) {
         setError(String(reason));
       } finally {
@@ -3687,7 +3719,12 @@ function App() {
       : null;      
 
   return (
-    <div className="shell">
+    <div
+      className="shell"
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+    >
 
       {screenshotViewer && (
         <div

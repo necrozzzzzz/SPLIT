@@ -1003,6 +1003,30 @@ pub(crate) fn emit_history_operation(app: &AppHandle, result: &HistoryOperationR
     emit_history_state(app, result.history_state);
 }
 
+pub(crate) fn emit_slot_edit(
+    app: &AppHandle,
+    result: &SlotEditResult,
+) {
+    crate::ui::emit_to_main_if_present(
+        app,
+        "deadlock-slots",
+        &result.slots,
+    );
+    crate::ui::emit_to_main_if_present(
+        app,
+        "deadlock-preset",
+        result.preset,
+    );
+    emit_favorite_mode(
+        app,
+        result.favorite_active,
+    );
+    emit_history_state(
+        app,
+        result.history_state,
+    );
+}
+
 pub(crate) fn emit_favorite_mode(app: &AppHandle, active: bool) {
     crate::ui::emit_to_main_if_present(app, "deadlock-favorite-mode", active);
 }

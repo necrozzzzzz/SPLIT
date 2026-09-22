@@ -102,6 +102,14 @@ struct QuickAccessRegistrationPlan {
     escape: bool,
 }
 
+fn quick_access_auto_hide_mode(
+    foreground: QuickAccessForeground,
+    visible: bool,
+) -> Option<QuickAccessMode> {
+    (foreground == QuickAccessForeground::Other && visible)
+        .then_some(QuickAccessMode::Hidden)
+}
+
 fn quick_access_registration_plan(
     foreground: QuickAccessForeground,
     text_input_active: bool,
@@ -483,7 +491,7 @@ static QUICK_ACCESS_CONTROL_SENDER: Mutex<
 unsafe extern "system" fn quick_access_foreground_event(
     _hook: HWINEVENTHOOK,
     _event: u32,
-    hwnd: HWND,
+    _hwnd: HWND,
     _object_id: i32,
     _child_id: i32,
     _event_thread: u32,
@@ -497,7 +505,7 @@ unsafe extern "system" fn quick_access_foreground_event(
             thread_id,
             QUICK_ACCESS_FOREGROUND_MESSAGE,
             0,
-            hwnd as LPARAM,
+            0,
         );
     }
 }
@@ -676,7 +684,56 @@ enum HookDecision {
     EmergencyF10,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ModifierState {
+    ctrl: bool,
+    alt: bool,
+    shift: bool,
+}
+
 impl HookEngine {
+    fn modifier_state(&self) -> ModifierState {
+        ModifierState {
+            ctrl: !self.ctrl_keys.is_empty(),
+            alt: !self.alt_keys.is_empty(),
+            shift: !self.shift_keys.is_empty(),
+        }
+    }
+
+    fn reconcile_modifiers(
+        &mut self,
+        ctrl_down: bool,
+        alt_down: bool,
+        shift_down: bool,
+    ) -> Option<(ModifierState, ModifierState)> {
+        let tracked = self.modifier_state();
+        let physical = ModifierState {
+            ctrl: ctrl_down,
+            alt: alt_down,
+            shift: shift_down,
+        };
+
+        if tracked == physical {
+            return None;
+        }
+
+        Self::reconcile_modifier(&mut self.ctrl_keys, ctrl_down, VK_CONTROL);
+        Self::reconcile_modifier(&mut self.alt_keys, alt_down, VK_MENU);
+        Self::reconcile_modifier(&mut self.shift_keys, shift_down, VK_SHIFT);
+
+        Some((tracked, physical))
+    }
+
+    fn reconcile_modifier(keys: &mut HashSet<u16>, is_down: bool, fallback_vk: u16) {
+        if is_down {
+            if keys.is_empty() {
+                keys.insert(fallback_vk);
+            }
+        } else {
+            keys.clear();
+        }
+    }
+
     fn classify(
         &mut self,
         vk: u16,
@@ -975,12 +1032,15 @@ fn unregister_caps_lock_hotkey(
     } == 0
     {
         return Err(format!(
-            "Could not unregister Quick Access shortcut: {}",
+            "UnregisterHotKey failed for Quick Access shortcut: {}",
             std::io::Error::last_os_error(),
         ));
     }
 
     *registered = false;
+    println!(
+        "[SPLIT][QA] Quick Access shortcut unregistered"
+    );
     Ok(())
 }
 
@@ -1002,12 +1062,15 @@ fn register_caps_lock_hotkey(
     } == 0
     {
         return Err(format!(
-            "Could not register Quick Access shortcut: {}",
+            "RegisterHotKey failed for Quick Access shortcut: {}",
             std::io::Error::last_os_error(),
         ));
     }
 
     *registered = true;
+    println!(
+        "[SPLIT][QA] Quick Access shortcut registered"
+    );
     Ok(())
 }
 
@@ -1075,12 +1138,12 @@ fn apply_quick_access_registration_plan(
 
 fn reconcile_quick_access_hotkeys(
     app: &AppHandle,
-    hwnd: HWND,
     text_input_active: bool,
     caps_lock_registered: &mut bool,
     escape_registered: &mut bool,
     registration: SystemHotkeyRegistration,
 ) -> Result<QuickAccessForeground, String> {
+    let hwnd = unsafe { GetForegroundWindow() };
     let foreground =
         quick_access_foreground(app, hwnd);
     let plan = quick_access_registration_plan(
@@ -1103,16 +1166,19 @@ fn reconcile_quick_access_hotkeys(
 fn log_quick_access_foreground(
     foreground: QuickAccessForeground,
 ) {
+    println!(
+        "[SPLIT][QA] foreground reconcile -> {}",
+        quick_access_foreground_name(foreground),
+    );
+}
+
+fn quick_access_foreground_name(
+    foreground: QuickAccessForeground,
+) -> &'static str {
     match foreground {
-        QuickAccessForeground::Deadlock => println!(
-            "[SPLIT][QA] hotkeys active for Deadlock"
-        ),
-        QuickAccessForeground::QuickAccess => println!(
-            "[SPLIT][QA] hotkeys active for Quick Access"
-        ),
-        QuickAccessForeground::Other => println!(
-            "[SPLIT][QA] hotkeys suspended outside Deadlock"
-        ),
+        QuickAccessForeground::Deadlock => "Deadlock",
+        QuickAccessForeground::QuickAccess => "QuickAccess",
+        QuickAccessForeground::Other => "Other",
     }
 }
 
@@ -1130,10 +1196,8 @@ fn set_text_input_active_on_service(
 
     let previous = *text_input_active;
     *text_input_active = active;
-    let hwnd = unsafe { GetForegroundWindow() };
     let result = reconcile_quick_access_hotkeys(
         app,
-        hwnd,
         *text_input_active,
         caps_lock_registered,
         escape_registered,
@@ -1144,7 +1208,6 @@ fn set_text_input_active_on_service(
         *text_input_active = previous;
         let _ = reconcile_quick_access_hotkeys(
             app,
-            hwnd,
             previous,
             caps_lock_registered,
             escape_registered,
@@ -1385,7 +1448,6 @@ fn spawn_quick_access_hotkey_service(
 
             if let Err(error) = reconcile_quick_access_hotkeys(
                 &app,
-                initial_hwnd,
                 text_input_active,
                 &mut caps_lock_registered,
                 &mut escape_registered,
@@ -1520,7 +1582,6 @@ fn spawn_quick_access_hotkey_service(
                                 .and_then(|()| {
                                     reconcile_quick_access_hotkeys(
                                         &app,
-                                        unsafe { GetForegroundWindow() },
                                         text_input_active,
                                         &mut caps_lock_registered,
                                         &mut escape_registered,
@@ -1541,7 +1602,6 @@ fn spawn_quick_access_hotkey_service(
                                     if previous_caps || previous_escape {
                                         let _ = reconcile_quick_access_hotkeys(
                                             &app,
-                                            unsafe { GetForegroundWindow() },
                                             text_input_active,
                                             &mut caps_lock_registered,
                                             &mut escape_registered,
@@ -1557,7 +1617,6 @@ fn spawn_quick_access_hotkey_service(
                             } => {
                                 let result = reconcile_quick_access_hotkeys(
                                     &app,
-                                    unsafe { GetForegroundWindow() },
                                     text_input_active,
                                     &mut caps_lock_registered,
                                     &mut escape_registered,
@@ -1569,10 +1628,8 @@ fn spawn_quick_access_hotkey_service(
                         }
                     }
                 } else if message.message == QUICK_ACCESS_FOREGROUND_MESSAGE {
-                    let hwnd = message.lParam as HWND;
                     match reconcile_quick_access_hotkeys(
                         &app,
-                        hwnd,
                         text_input_active,
                         &mut caps_lock_registered,
                         &mut escape_registered,
@@ -1582,6 +1639,57 @@ fn spawn_quick_access_hotkey_service(
                             if foreground != last_foreground {
                                 log_quick_access_foreground(foreground);
                                 last_foreground = foreground;
+                            }
+
+                            if let Some(next_mode) =
+                                quick_access_auto_hide_mode(
+                                    foreground,
+                                    crate::quick_access::is_visible(),
+                                )
+                            {
+                                match crate::quick_access::hide_without_focus(&app) {
+                                    Ok(()) => {
+                                        mode = next_mode;
+                                        text_input_active = false;
+                                        unregister_escape_hotkey(
+                                            &mut escape_registered,
+                                        );
+                                        println!(
+                                            "[SPLIT][QA] Quick Access auto-hidden without focus"
+                                        );
+
+                                        match reconcile_quick_access_hotkeys(
+                                            &app,
+                                            text_input_active,
+                                            &mut caps_lock_registered,
+                                            &mut escape_registered,
+                                            registration,
+                                        ) {
+                                            Ok(final_foreground) => {
+                                                if final_foreground != foreground {
+                                                    println!(
+                                                        "[SPLIT][QA] foreground changed during auto-hide -> {}",
+                                                        quick_access_foreground_name(
+                                                            final_foreground,
+                                                        ),
+                                                    );
+                                                }
+                                                if final_foreground != last_foreground {
+                                                    log_quick_access_foreground(
+                                                        final_foreground,
+                                                    );
+                                                    last_foreground = final_foreground;
+                                                }
+                                            }
+                                            Err(error) => eprintln!(
+                                                "[SPLIT][QA] Could not reconcile hotkeys after foreground dismissal: {error}"
+                                            ),
+                                        }
+                                    }
+                                    Err(error) => eprintln!(
+                                        "[SPLIT][QA] Could not hide Quick Access after foreground change: {error}"
+                                    ),
+                                }
                             }
                         }
                         Err(error) => eprintln!(
@@ -2726,6 +2834,28 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
         .lock()
         .unwrap_or_else(|error| error.into_inner());
 
+    if key_down && modifier_for_vk(keyboard.vkCode as u16).is_none() {
+        let ctrl_down = physical_key_is_down(VK_CONTROL);
+        let alt_down = physical_key_is_down(VK_MENU);
+        let shift_down = physical_key_is_down(VK_SHIFT);
+
+        if let Some((tracked, physical)) =
+            hook_engine.reconcile_modifiers(ctrl_down, alt_down, shift_down)
+        {
+            println!(
+                "[SPLIT][HOTKEY] Modifier state resynced: \
+tracked ctrl={} alt={} shift={} \
+physical ctrl={} alt={} shift={}",
+                tracked.ctrl,
+                tracked.alt,
+                tracked.shift,
+                physical.ctrl,
+                physical.alt,
+                physical.shift,
+            );
+        }
+    }
+
     let decision = hook_engine.classify(
             keyboard.vkCode as u16,
             key_down,
@@ -3206,6 +3336,45 @@ mod tests {
     }
 
     #[test]
+    fn physical_modifier_reconciliation_recovers_stale_hotkeys() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+
+        classify_down(&mut engine, VK_LMENU, &settings);
+        assert!(engine.modifier_state().alt);
+        assert!(engine
+            .reconcile_modifiers(false, false, false)
+            .is_some());
+
+        assert!(matches!(
+            classify_down(&mut engine, VK_F1, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Load(1), _)
+        ));
+        assert!(matches!(
+            classify_down(&mut engine, b'V' as u16, &settings),
+            HookDecision::Trigger(UserHotkeyAction::CyclePreset, _)
+        ));
+        assert!(matches!(
+            classify_down(&mut engine, VK_F9, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Undo, _)
+        ));
+    }
+
+    #[test]
+    fn physical_modifier_reconciliation_preserves_real_alt_shortcuts() {
+        let settings = HotkeySettings::default();
+        let mut engine = HookEngine::default();
+
+        assert!(engine
+            .reconcile_modifiers(false, true, false)
+            .is_some());
+        assert!(matches!(
+            classify_down(&mut engine, VK_F1, &settings),
+            HookDecision::Trigger(UserHotkeyAction::Save(1), _)
+        ));
+    }
+
+    #[test]
     fn hotkeys_pass_through_outside_deadlock() {
         let settings = HotkeySettings::default();
         let mut engine = HookEngine::default();
@@ -3439,6 +3608,110 @@ mod tests {
                 true,
                 true,
             ),
+            QuickAccessRegistrationPlan {
+                caps_lock: false,
+                escape: false,
+            },
+        );
+    }
+
+    #[test]
+    fn quick_access_auto_hide_only_applies_to_visible_other_foreground() {
+        assert_eq!(
+            quick_access_auto_hide_mode(
+                QuickAccessForeground::Deadlock,
+                true,
+            ),
+            None,
+        );
+        assert_eq!(
+            quick_access_auto_hide_mode(
+                QuickAccessForeground::QuickAccess,
+                true,
+            ),
+            None,
+        );
+        assert_eq!(
+            quick_access_auto_hide_mode(
+                QuickAccessForeground::Other,
+                false,
+            ),
+            None,
+        );
+        assert_eq!(
+            quick_access_auto_hide_mode(
+                QuickAccessForeground::Other,
+                true,
+            ),
+            Some(QuickAccessMode::Hidden),
+        );
+    }
+
+    #[test]
+    fn current_foreground_wins_over_a_stale_event_hint() {
+        let _stale_other_hint = QuickAccessForeground::Other;
+        let current_deadlock = quick_access_registration_plan(
+            QuickAccessForeground::Deadlock,
+            false,
+            false,
+            true,
+        );
+        assert_eq!(
+            current_deadlock,
+            QuickAccessRegistrationPlan {
+                caps_lock: true,
+                escape: false,
+            },
+        );
+
+        let _stale_deadlock_hint = QuickAccessForeground::Deadlock;
+        let current_other = quick_access_registration_plan(
+            QuickAccessForeground::Other,
+            false,
+            true,
+            true,
+        );
+        assert_eq!(
+            current_other,
+            QuickAccessRegistrationPlan {
+                caps_lock: false,
+                escape: false,
+            },
+        );
+    }
+
+    #[test]
+    fn post_auto_hide_plan_uses_the_second_foreground_read() {
+        assert_eq!(
+            quick_access_auto_hide_mode(
+                QuickAccessForeground::Other,
+                true,
+            ),
+            Some(QuickAccessMode::Hidden),
+        );
+
+        let returned_to_deadlock = quick_access_registration_plan(
+            QuickAccessForeground::Deadlock,
+            false,
+            false,
+            true,
+        );
+        assert_eq!(
+            returned_to_deadlock,
+            QuickAccessRegistrationPlan {
+                caps_lock: true,
+                escape: false,
+            },
+        );
+
+        let remained_elsewhere = quick_access_registration_plan(
+            QuickAccessForeground::Other,
+            false,
+            false,
+            true,
+        );
+        assert_eq!(
+            remained_elsewhere,
             QuickAccessRegistrationPlan {
                 caps_lock: false,
                 escape: false,

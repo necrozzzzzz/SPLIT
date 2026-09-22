@@ -77,8 +77,18 @@ fn import_preset(
 }
 
 #[tauri::command]
-fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
-    deadlock::rename_preset(preset, name)
+fn rename_preset(
+    app: tauri::AppHandle,
+    preset: u8,
+    name: String,
+) -> Result<Vec<String>, String> {
+    let names = deadlock::rename_preset(preset, name)?;
+    ui::emit_to_main_if_present(
+        &app,
+        "quick-access-refresh",
+        (),
+    );
+    Ok(names)
 }
 
 #[tauri::command]
@@ -175,18 +185,30 @@ async fn update_quick_access_settings(
 }
 
 #[tauri::command]
-fn toggle_favorite_mode() -> Result<deadlock::ActiveBankResult, String> {
-    deadlock::toggle_favorite_mode()
+fn toggle_favorite_mode(
+    app: tauri::AppHandle,
+) -> Result<deadlock::ActiveBankResult, String> {
+    let result = deadlock::toggle_favorite_mode()?;
+    deadlock::emit_active_bank(&app, &result);
+    Ok(result)
 }
 
 #[tauri::command]
-fn undo_last_action() -> Result<deadlock::HistoryOperationResult, String> {
-    deadlock::undo_last_action()
+fn undo_last_action(
+    app: tauri::AppHandle,
+) -> Result<deadlock::HistoryOperationResult, String> {
+    let result = deadlock::undo_last_action()?;
+    deadlock::emit_history_operation(&app, &result);
+    Ok(result)
 }
 
 #[tauri::command]
-fn redo_last_action() -> Result<deadlock::HistoryOperationResult, String> {
-    deadlock::redo_last_action()
+fn redo_last_action(
+    app: tauri::AppHandle,
+) -> Result<deadlock::HistoryOperationResult, String> {
+    let result = deadlock::redo_last_action()?;
+    deadlock::emit_history_operation(&app, &result);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -229,18 +251,35 @@ fn save_slot(slot: u8) -> Result<Vec<Option<deadlock::PositionSnapshot>>, String
 }
 
 #[tauri::command]
-fn rename_slot(slot: u8, name: String) -> Result<deadlock::SlotEditResult, String> {
-    deadlock::rename_slot(slot, name)
+fn rename_slot(
+    app: tauri::AppHandle,
+    slot: u8,
+    name: String,
+) -> Result<deadlock::SlotEditResult, String> {
+    let result = deadlock::rename_slot(slot, name)?;
+    deadlock::emit_slot_edit(&app, &result);
+    Ok(result)
 }
 
 #[tauri::command]
-fn clear_slot(slot: u8) -> Result<deadlock::SlotEditResult, String> {
-    deadlock::clear_slot(slot)
+fn clear_slot(
+    app: tauri::AppHandle,
+    slot: u8,
+) -> Result<deadlock::SlotEditResult, String> {
+    let result = deadlock::clear_slot(slot)?;
+    deadlock::emit_slot_edit(&app, &result);
+    Ok(result)
 }
 
 #[tauri::command]
-fn set_slot_color(slot: u8, color: Option<String>) -> Result<deadlock::SlotEditResult, String> {
-    deadlock::set_slot_color(slot, color)
+fn set_slot_color(
+    app: tauri::AppHandle,
+    slot: u8,
+    color: Option<String>,
+) -> Result<deadlock::SlotEditResult, String> {
+    let result = deadlock::set_slot_color(slot, color)?;
+    deadlock::emit_slot_edit(&app, &result);
+    Ok(result)
 }
 
 #[tauri::command]
