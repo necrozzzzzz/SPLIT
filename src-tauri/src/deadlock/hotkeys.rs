@@ -89,6 +89,56 @@ enum QuickAccessMode {
     Interactive,
 }
 
+fn quick_access_mode_from_state(
+    visible: bool,
+    interactive: bool,
+) -> QuickAccessMode {
+    if interactive {
+        QuickAccessMode::Interactive
+    } else if visible {
+        QuickAccessMode::Passive
+    } else {
+        QuickAccessMode::Hidden
+    }
+}
+
+fn actual_quick_access_mode() -> QuickAccessMode {
+    quick_access_mode_from_state(
+        crate::quick_access::is_visible(),
+        crate::quick_access::is_interactive(),
+    )
+}
+
+fn resynced_quick_access_mode(
+    current: QuickAccessMode,
+    actual: QuickAccessMode,
+) -> QuickAccessMode {
+    if current == actual {
+        current
+    } else {
+        actual
+    }
+}
+
+fn resync_quick_access_mode(
+    mode: &mut QuickAccessMode,
+) {
+    let actual = actual_quick_access_mode();
+    let resynced = resynced_quick_access_mode(
+        *mode,
+        actual,
+    );
+
+    if *mode != resynced {
+        println!(
+            "[SPLIT][QA] mode resynced {:?} -> {:?}",
+            *mode,
+            resynced,
+        );
+        *mode = resynced;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuickAccessForeground {
     Deadlock,
@@ -880,43 +930,31 @@ struct SystemHotkeyRegistration {
 
 fn restore_caps_lock_toggle(
     expected: bool,
+    registered: &mut bool,
     registration: SystemHotkeyRegistration,
 ) -> Result<(), String> {
     if caps_lock_toggle_enabled() == expected {
         return Ok(());
     }
 
-    if unsafe {
-        UnregisterHotKey(
-            std::ptr::null_mut(),
-            QUICK_ACCESS_CAPSLOCK_ID,
-        )
-    } == 0
-    {
-        return Err(format!(
-            "Could not pause CapsLock system hotkey for toggle restoration: {}",
-            std::io::Error::last_os_error(),
-        ));
-    }
+    unregister_caps_lock_hotkey(registered)
+        .map_err(|error| {
+            format!(
+                "Could not pause CapsLock system hotkey for toggle restoration: {error}"
+            )
+        })?;
 
     let restore_result = send_virtual_key(VK_CAPITAL);
     thread::sleep(Duration::from_millis(10));
-    let register_result = if unsafe {
-        RegisterHotKey(
-            std::ptr::null_mut(),
-            QUICK_ACCESS_CAPSLOCK_ID,
-            registration.modifiers,
-            registration.vk,
+    let register_result = register_caps_lock_hotkey(
+        registered,
+        registration,
+    )
+    .map_err(|error| {
+        format!(
+            "Could not re-register CapsLock system hotkey after toggle restoration: {error}"
         )
-    } == 0
-    {
-        Err(format!(
-            "Could not re-register CapsLock system hotkey after toggle restoration: {}",
-            std::io::Error::last_os_error(),
-        ))
-    } else {
-        Ok(())
-    };
+    });
 
     match (restore_result, register_result) {
         (Err(restore), Err(register)) => Err(format!("{restore}; {register}")),
@@ -1038,9 +1076,6 @@ fn unregister_caps_lock_hotkey(
     }
 
     *registered = false;
-    println!(
-        "[SPLIT][QA] Quick Access shortcut unregistered"
-    );
     Ok(())
 }
 
@@ -1068,9 +1103,6 @@ fn register_caps_lock_hotkey(
     }
 
     *registered = true;
-    println!(
-        "[SPLIT][QA] Quick Access shortcut registered"
-    );
     Ok(())
 }
 
@@ -1235,10 +1267,12 @@ fn wait_for_physical_release(vk: u16) -> Option<Duration> {
 fn handle_caps_lock_system_hotkey(
     app: &AppHandle,
     mode: &mut QuickAccessMode,
+    caps_lock_registered: &mut bool,
     escape_registered: &mut bool,
     registration: SystemHotkeyRegistration,
 ) {
     println!("[SPLIT][QA] CapsLock hotkey");
+    resync_quick_access_mode(mode);
 
     let previous_toggle = (registration.vk == VK_CAPITAL as u32)
         .then(caps_lock_toggle_enabled);
@@ -1251,7 +1285,11 @@ fn handle_caps_lock_system_hotkey(
             };
 
             if let Some(expected) = previous_toggle {
-                if let Err(error) = restore_caps_lock_toggle(expected, registration) {
+                if let Err(error) = restore_caps_lock_toggle(
+                    expected,
+                    caps_lock_registered,
+                    registration,
+                ) {
                     eprintln!(
                         "[SPLIT][QA] Could not restore CapsLock system toggle: {error}"
                     );
@@ -1304,7 +1342,7 @@ fn handle_caps_lock_system_hotkey(
                 if wait_for_physical_release(vk).is_none() {
                     return;
                 }
-            } else if let Err(error) = crate::quick_access::hide(app) {
+            } else if let Err(error) = crate::quick_access::hide_without_focus(app) {
                 eprintln!("[SPLIT][QA] Could not hide Quick Access: {error}");
             } else {
                 unregister_escape_hotkey(escape_registered);
@@ -1313,7 +1351,11 @@ fn handle_caps_lock_system_hotkey(
             }
 
             if let Some(expected) = previous_toggle {
-                if let Err(error) = restore_caps_lock_toggle(expected, registration) {
+                if let Err(error) = restore_caps_lock_toggle(
+                    expected,
+                    caps_lock_registered,
+                    registration,
+                ) {
                     eprintln!(
                         "[SPLIT][QA] Could not restore CapsLock system toggle: {error}"
                     );
@@ -1338,7 +1380,11 @@ fn handle_caps_lock_system_hotkey(
             }
 
             if let Some(expected) = previous_toggle {
-                if let Err(error) = restore_caps_lock_toggle(expected, registration) {
+                if let Err(error) = restore_caps_lock_toggle(
+                    expected,
+                    caps_lock_registered,
+                    registration,
+                ) {
                     eprintln!(
                         "[SPLIT][QA] Could not restore CapsLock system toggle: {error}"
                     );
@@ -1354,6 +1400,7 @@ fn handle_escape_system_hotkey(
     escape_registered: &mut bool,
 ) {
     println!("[SPLIT][QA] Escape hotkey");
+    resync_quick_access_mode(mode);
     let next = escape_transition(*mode);
 
     match *mode {
@@ -1369,7 +1416,7 @@ fn handle_escape_system_hotkey(
         }
 
         QuickAccessMode::Passive => {
-            if let Err(error) = crate::quick_access::hide(app) {
+            if let Err(error) = crate::quick_access::hide_without_focus(app) {
                 eprintln!("[SPLIT][QA] Could not hide Quick Access: {error}");
             } else {
                 unregister_escape_hotkey(escape_registered);
@@ -1432,13 +1479,7 @@ fn spawn_quick_access_hotkey_service(
                 return;
             }
 
-            let mut mode = if crate::quick_access::is_interactive() {
-                QuickAccessMode::Interactive
-            } else if crate::quick_access::is_visible() {
-                QuickAccessMode::Passive
-            } else {
-                QuickAccessMode::Hidden
-            };
+            let mut mode = actual_quick_access_mode();
             let mut escape_registered = false;
             let mut caps_lock_registered = false;
             let mut text_input_active = false;
@@ -1492,14 +1533,16 @@ fn spawn_quick_access_hotkey_service(
                         continue;
                     }
 
-                    match message.wParam as i32 {
+                    let handled = match message.wParam as i32 {
                         QUICK_ACCESS_CAPSLOCK_ID => {
                             handle_caps_lock_system_hotkey(
                                 &app,
                                 &mut mode,
+                                &mut caps_lock_registered,
                                 &mut escape_registered,
                                 registration,
                             );
+                            true
                         }
                         QUICK_ACCESS_ESCAPE_ID => {
                             handle_escape_system_hotkey(
@@ -1507,8 +1550,23 @@ fn spawn_quick_access_hotkey_service(
                                 &mut mode,
                                 &mut escape_registered,
                             );
+                            true
                         }
-                        _ => {}
+                        _ => false,
+                    };
+
+                    if handled {
+                        if let Err(error) = reconcile_quick_access_hotkeys(
+                            &app,
+                            text_input_active,
+                            &mut caps_lock_registered,
+                            &mut escape_registered,
+                            registration,
+                        ) {
+                            eprintln!(
+                                "[SPLIT][QA] Could not reconcile hotkeys after shortcut transition: {error}"
+                            );
+                        }
                     }
                 } else if message.message == QUICK_ACCESS_HIDDEN_MESSAGE {
                     mode = QuickAccessMode::Hidden;
@@ -3760,6 +3818,17 @@ mod tests {
     }
 
     #[test]
+    fn passive_fifty_millisecond_caps_lock_becomes_hidden() {
+        assert_eq!(
+            caps_lock_release_transition(
+                QuickAccessMode::Passive,
+                Duration::from_millis(50),
+            ),
+            QuickAccessMode::Hidden
+        );
+    }
+
+    #[test]
     fn passive_short_caps_lock_becomes_hidden() {
         assert_eq!(
             caps_lock_release_transition(
@@ -3802,6 +3871,45 @@ mod tests {
         assert_eq!(
             escape_transition(QuickAccessMode::Passive),
             QuickAccessMode::Hidden
+        );
+    }
+
+    #[test]
+    fn interactive_service_mode_resyncs_to_actual_passive() {
+        let actual = quick_access_mode_from_state(true, false);
+
+        assert_eq!(
+            resynced_quick_access_mode(
+                QuickAccessMode::Interactive,
+                actual,
+            ),
+            QuickAccessMode::Passive,
+        );
+    }
+
+    #[test]
+    fn passive_service_mode_resyncs_to_actual_hidden() {
+        let actual = quick_access_mode_from_state(false, false);
+
+        assert_eq!(
+            resynced_quick_access_mode(
+                QuickAccessMode::Passive,
+                actual,
+            ),
+            QuickAccessMode::Hidden,
+        );
+    }
+
+    #[test]
+    fn hidden_service_mode_resyncs_to_actual_interactive() {
+        let actual = quick_access_mode_from_state(true, true);
+
+        assert_eq!(
+            resynced_quick_access_mode(
+                QuickAccessMode::Hidden,
+                actual,
+            ),
+            QuickAccessMode::Interactive,
         );
     }
 
