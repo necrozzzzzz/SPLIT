@@ -30,8 +30,10 @@ use windows_sys::Win32::{
         RECT,
     },
     UI::WindowsAndMessaging::{
+        BringWindowToTop,
         GetWindowLongPtrW,
         GetForegroundWindow,
+        SetForegroundWindow,
         SetWindowLongPtrW,
         SetWindowPos,
         GWL_EXSTYLE,
@@ -256,19 +258,9 @@ fn quick_access_ex_style(
 }
 
 
-fn apply_window_mode_style(
-    window: &WebviewWindow,
-    mode: QuickAccessWindowMode,
-) -> Result<(), String> {
-    let hwnd = window
-        .hwnd()
-        .map_err(|error| {
-            format!(
-                "Could not read Quick Access window handle: {error}"
-            )
-        })?
-        .0;
-
+fn read_window_ex_style(
+    hwnd: HWND,
+) -> Result<u32, String> {
     unsafe {
         SetLastError(ERROR_SUCCESS);
     }
@@ -287,12 +279,31 @@ fn apply_window_mode_style(
         ));
     }
 
+    Ok(current as u32)
+}
+
+
+fn apply_window_mode_style(
+    window: &WebviewWindow,
+    mode: QuickAccessWindowMode,
+) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| {
+            format!(
+                "Could not read Quick Access window handle: {error}"
+            )
+        })?
+        .0;
+
+    let current = read_window_ex_style(hwnd)?;
+
     let next = quick_access_ex_style(
-        current as u32,
+        current,
         mode,
     );
 
-    if next != current as u32 {
+    if next != current {
         unsafe {
             SetLastError(ERROR_SUCCESS);
         }
@@ -773,6 +784,79 @@ pub fn reposition_if_visible(
 }
 
 
+fn quick_access_has_focus(
+    window: &WebviewWindow,
+    hwnd: HWND,
+) -> bool {
+    (unsafe { GetForegroundWindow() }) == hwnd &&
+        window.is_focused().unwrap_or(false)
+}
+
+
+fn wait_for_quick_access_focus(
+    window: &WebviewWindow,
+    hwnd: HWND,
+) -> bool {
+    for _ in 0..15 {
+        if quick_access_has_focus(window, hwnd) {
+            return true;
+        }
+
+        thread::sleep(
+            Duration::from_millis(10),
+        );
+    }
+
+    quick_access_has_focus(window, hwnd)
+}
+
+
+fn rollback_failed_interaction(
+    window: &WebviewWindow,
+    reason: String,
+) -> String {
+    let focusable_error = window
+        .set_focusable(false)
+        .err()
+        .map(|error| error.to_string());
+    let style_error = apply_window_mode_style(
+        window,
+        QuickAccessWindowMode::Passive,
+    )
+    .err();
+
+    QUICK_ACCESS_INTERACTIVE.store(
+        false,
+        Ordering::SeqCst,
+    );
+    emit_interaction_mode(
+        window,
+        false,
+    );
+
+    let mut rollback_errors = Vec::new();
+    if let Some(error) = focusable_error {
+        rollback_errors.push(format!(
+            "could not make Quick Access non-focusable: {error}"
+        ));
+    }
+    if let Some(error) = style_error {
+        rollback_errors.push(format!(
+            "could not restore passive styles: {error}"
+        ));
+    }
+
+    if rollback_errors.is_empty() {
+        reason
+    } else {
+        format!(
+            "{reason}; passive rollback failed: {}",
+            rollback_errors.join("; "),
+        )
+    }
+}
+
+
 pub fn enter_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
@@ -812,69 +896,111 @@ pub fn enter_interaction_mode(
         );
     }
 
-    apply_window_mode_style(
+    if let Err(error) = window.set_focusable(true) {
+        return Err(rollback_failed_interaction(
+            &window,
+            format!(
+                "Could not make Quick Access interactive: {error}"
+            ),
+        ));
+    }
+
+    if let Err(error) = apply_window_mode_style(
         &window,
         QuickAccessWindowMode::Interactive,
-    )?;
-
-    if let Err(error) = window.set_focusable(true) {
-        let _ = apply_window_mode_style(
+    ) {
+        return Err(rollback_failed_interaction(
             &window,
-            QuickAccessWindowMode::Passive,
-        );
-
-        return Err(format!(
-            "Could not make Quick Access interactive: {error}"
+            format!(
+                "Could not apply Quick Access interactive styles: {error}"
+            ),
         ));
     }
 
-    if let Err(error) = window.set_focus() {
-        let _ = window.set_focusable(false);
-        let _ = apply_window_mode_style(
+    let quick_access_hwnd = window
+        .hwnd()
+        .map_err(|error| {
+            rollback_failed_interaction(
+                &window,
+                format!(
+                    "Could not read Quick Access window handle: {error}"
+                ),
+            )
+        })?
+        .0;
+    let interactive_style = read_window_ex_style(
+        quick_access_hwnd,
+    )
+    .map_err(|error| {
+        rollback_failed_interaction(
             &window,
-            QuickAccessWindowMode::Passive,
-        );
+            error,
+        )
+    })?;
 
-        QUICK_ACCESS_INTERACTIVE.store(
-            false,
-            Ordering::SeqCst,
-        );
-
-        emit_interaction_mode(
-            &window,
-            false,
-        );
-
-        return Err(format!(
-            "Could not focus Quick Access: {error}"
-        ));
-    }
-
-    let mut focused = false;
-
-    for _ in 0..15 {
-        if window
-            .is_focused()
-            .unwrap_or(false)
-        {
-            focused = true;
-            break;
-        }
-
-        thread::sleep(
-            Duration::from_millis(10),
-        );
-    }
-
-    if focused {
-        println!(
-            "[SPLIT][QA] Quick Access focus acquired"
-        );
-    } else {
+    if interactive_style & WS_EX_NOACTIVATE != 0 {
         eprintln!(
-            "[SPLIT][QA] Quick Access focus request did not become foreground"
+            "[SPLIT][QA] Interactive style still had WS_EX_NOACTIVATE"
+        );
+        return Err(rollback_failed_interaction(
+            &window,
+            "Interactive Quick Access still had WS_EX_NOACTIVATE"
+                .to_string(),
+        ));
+    }
+
+    let first_focus_error = window
+        .set_focus()
+        .err()
+        .map(|error| error.to_string());
+    let mut focused = wait_for_quick_access_focus(
+        &window,
+        quick_access_hwnd,
+    );
+
+    let mut fallback_details = None;
+
+    if !focused {
+        let brought_to_top = unsafe {
+            BringWindowToTop(quick_access_hwnd)
+        } != 0;
+        let set_foreground = unsafe {
+            SetForegroundWindow(quick_access_hwnd)
+        } != 0;
+        let retry_focus_error = window
+            .set_focus()
+            .err()
+            .map(|error| error.to_string());
+
+        fallback_details = Some(format!(
+            "firstFocusError={first_focus_error:?}, BringWindowToTop={brought_to_top}, SetForegroundWindow={set_foreground}, retryFocusError={retry_focus_error:?}"
+        ));
+        focused = wait_for_quick_access_focus(
+            &window,
+            quick_access_hwnd,
         );
     }
+
+    if !focused {
+        eprintln!(
+            "[SPLIT][QA] Quick Access focus acquisition failed"
+        );
+        return Err(rollback_failed_interaction(
+            &window,
+            format!(
+                "Quick Access focus acquisition failed ({})",
+                fallback_details.unwrap_or_else(|| {
+                    format!(
+                        "firstFocusError={first_focus_error:?}"
+                    )
+                }),
+            ),
+        ));
+    }
+
+    println!(
+        "[SPLIT][QA] Quick Access focus acquired"
+    );
 
     QUICK_ACCESS_INTERACTIVE.store(
         true,
