@@ -31,6 +31,7 @@ use windows_sys::Win32::{
     },
     UI::WindowsAndMessaging::{
         GetWindowLongPtrW,
+        GetForegroundWindow,
         SetWindowLongPtrW,
         SetWindowPos,
         GWL_EXSTYLE,
@@ -40,7 +41,9 @@ use windows_sys::Win32::{
         SWP_NOMOVE,
         SWP_NOSIZE,
         SWP_NOZORDER,
+        SWP_SHOWWINDOW,
         WS_EX_APPWINDOW,
+        WS_EX_NOACTIVATE,
         WS_EX_TOOLWINDOW,
     },
 };
@@ -57,6 +60,12 @@ static QUICK_ACCESS_VISIBLE: AtomicBool =
     AtomicBool::new(false);
 static QUICK_ACCESS_INTERACTIVE: AtomicBool =
     AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuickAccessWindowMode {
+    Passive,
+    Interactive,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -230,13 +239,26 @@ fn position_window(
 }
 
 
-fn quick_access_ex_style(current: u32) -> u32 {
-    (current | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW
+fn quick_access_ex_style(
+    current: u32,
+    mode: QuickAccessWindowMode,
+) -> u32 {
+    let base =
+        (current | WS_EX_TOOLWINDOW) &
+            !WS_EX_APPWINDOW;
+
+    match mode {
+        QuickAccessWindowMode::Passive =>
+            base | WS_EX_NOACTIVATE,
+        QuickAccessWindowMode::Interactive =>
+            base & !WS_EX_NOACTIVATE,
+    }
 }
 
 
-fn ensure_tool_window_style(
+fn apply_window_mode_style(
     window: &WebviewWindow,
+    mode: QuickAccessWindowMode,
 ) -> Result<(), String> {
     let hwnd = window
         .hwnd()
@@ -265,7 +287,10 @@ fn ensure_tool_window_style(
         ));
     }
 
-    let next = quick_access_ex_style(current as u32);
+    let next = quick_access_ex_style(
+        current as u32,
+        mode,
+    );
 
     if next != current as u32 {
         unsafe {
@@ -310,8 +335,47 @@ fn ensure_tool_window_style(
         }
 
         println!(
-            "[SPLIT][QA] Applied WS_EX_TOOLWINDOW and cleared WS_EX_APPWINDOW"
+            "[SPLIT][QA] Applied {:?} window styles",
+            mode,
         );
+    }
+
+    Ok(())
+}
+
+
+fn show_without_activation(
+    window: &WebviewWindow,
+) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| {
+            format!(
+                "Could not read Quick Access window handle: {error}"
+            )
+        })?
+        .0;
+
+    if unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_SHOWWINDOW |
+                SWP_NOACTIVATE |
+                SWP_NOMOVE |
+                SWP_NOSIZE |
+                SWP_NOZORDER,
+        )
+    } == 0
+    {
+        return Err(format!(
+            "Could not show Quick Access without activation: {}",
+            std::io::Error::last_os_error(),
+        ));
     }
 
     Ok(())
@@ -371,7 +435,6 @@ fn get_or_create(
             QUICK_ACCESS_LABEL,
         )
     {
-        ensure_tool_window_style(&window)?;
         return Ok(window);
     }
 
@@ -403,8 +466,6 @@ fn get_or_create(
         )
     })?;
 
-    ensure_tool_window_style(&window)?;
-
     Ok(window)
 }
 
@@ -432,10 +493,29 @@ pub fn show(
             )
         })?
         .0;
+    let foreground_before = unsafe {
+        GetForegroundWindow()
+    };
+
+    println!(
+        "[SPLIT][QA] Passive show foreground before: {}",
+        if foreground_before == owner_hwnd {
+            "Deadlock"
+        } else if foreground_before == quick_access_hwnd {
+            "Quick Access"
+        } else {
+            "Other"
+        },
+    );
 
     set_quick_access_owner(
         quick_access_hwnd,
         Some(owner_hwnd),
+    )?;
+
+    apply_window_mode_style(
+        &window,
+        QuickAccessWindowMode::Passive,
     )?;
 
     window
@@ -461,13 +541,28 @@ pub fn show(
         QUICK_ACCESS_WIDTH,
     )?;
 
-    window
-        .show()
-        .map_err(|error| {
-            format!(
-                "Could not show Quick Access: {error}"
-            )
-        })?;
+    show_without_activation(&window)?;
+
+    let foreground_after = unsafe {
+        GetForegroundWindow()
+    };
+
+    println!(
+        "[SPLIT][QA] Passive show foreground after: {}",
+        if foreground_after == owner_hwnd {
+            "Deadlock"
+        } else if foreground_after == quick_access_hwnd {
+            "Quick Access"
+        } else {
+            "Other"
+        },
+    );
+
+    if foreground_after != foreground_before {
+        eprintln!(
+            "[SPLIT][QA] Passive show changed foreground: before={foreground_before:p}, after={foreground_after:p}"
+        );
+    }
 
     QUICK_ACCESS_VISIBLE.store(
         true,
@@ -507,6 +602,11 @@ fn hide_internal(
                     "Could not make Quick Access passive: {error}"
                 )
             })?;
+
+        apply_window_mode_style(
+            &window,
+            QuickAccessWindowMode::Passive,
+        )?;
 
         QUICK_ACCESS_INTERACTIVE.store(
             false,
@@ -712,16 +812,28 @@ pub fn enter_interaction_mode(
         );
     }
 
-    window
-        .set_focusable(true)
-        .map_err(|error| {
-            format!(
-                "Could not make Quick Access interactive: {error}"
-            )
-        })?;
+    apply_window_mode_style(
+        &window,
+        QuickAccessWindowMode::Interactive,
+    )?;
+
+    if let Err(error) = window.set_focusable(true) {
+        let _ = apply_window_mode_style(
+            &window,
+            QuickAccessWindowMode::Passive,
+        );
+
+        return Err(format!(
+            "Could not make Quick Access interactive: {error}"
+        ));
+    }
 
     if let Err(error) = window.set_focus() {
         let _ = window.set_focusable(false);
+        let _ = apply_window_mode_style(
+            &window,
+            QuickAccessWindowMode::Passive,
+        );
 
         QUICK_ACCESS_INTERACTIVE.store(
             false,
@@ -819,6 +931,26 @@ pub fn exit_interaction_mode(
         ));
     }
 
+    if let Err(error) = apply_window_mode_style(
+        &window,
+        QuickAccessWindowMode::Passive,
+    ) {
+        let _ = apply_window_mode_style(
+            &window,
+            QuickAccessWindowMode::Interactive,
+        );
+
+        if let Err(restore_error) = window.set_focusable(true) {
+            eprintln!(
+                "[SPLIT][QA] Could not restore Quick Access focusability after passive style failure: {restore_error}"
+            );
+        }
+
+        return Err(format!(
+            "Could not restore Quick Access passive window style: {error}"
+        ));
+    }
+
     QUICK_ACCESS_INTERACTIVE.store(
         false,
         Ordering::SeqCst,
@@ -894,20 +1026,72 @@ mod tests {
     }
 
     #[test]
-    fn tool_window_style_preserves_other_extended_styles() {
+    fn passive_style_preserves_other_extended_styles() {
         let preserved_style = 0x0000_0008;
         let current =
             preserved_style |
                 WS_EX_APPWINDOW;
         let updated =
-            quick_access_ex_style(current);
+            quick_access_ex_style(
+                current,
+                QuickAccessWindowMode::Passive,
+            );
 
         assert_ne!(updated & WS_EX_TOOLWINDOW, 0);
         assert_eq!(updated & WS_EX_APPWINDOW, 0);
+        assert_ne!(updated & WS_EX_NOACTIVATE, 0);
         assert_ne!(updated & preserved_style, 0);
         assert_eq!(
-            quick_access_ex_style(updated),
+            quick_access_ex_style(
+                updated,
+                QuickAccessWindowMode::Passive,
+            ),
             updated,
         );
+    }
+
+    #[test]
+    fn interactive_style_removes_noactivate_and_is_idempotent() {
+        let preserved_style = 0x0000_0008;
+        let current =
+            preserved_style |
+                WS_EX_APPWINDOW |
+                WS_EX_NOACTIVATE;
+        let updated =
+            quick_access_ex_style(
+                current,
+                QuickAccessWindowMode::Interactive,
+            );
+
+        assert_ne!(updated & WS_EX_TOOLWINDOW, 0);
+        assert_eq!(updated & WS_EX_APPWINDOW, 0);
+        assert_eq!(updated & WS_EX_NOACTIVATE, 0);
+        assert_ne!(updated & preserved_style, 0);
+        assert_eq!(
+            quick_access_ex_style(
+                updated,
+                QuickAccessWindowMode::Interactive,
+            ),
+            updated,
+        );
+    }
+
+    #[test]
+    fn window_mode_style_round_trip_is_stable() {
+        let current = 0x0000_0008;
+        let passive = quick_access_ex_style(
+            current,
+            QuickAccessWindowMode::Passive,
+        );
+        let interactive = quick_access_ex_style(
+            passive,
+            QuickAccessWindowMode::Interactive,
+        );
+        let passive_again = quick_access_ex_style(
+            interactive,
+            QuickAccessWindowMode::Passive,
+        );
+
+        assert_eq!(passive_again, passive);
     }
 }
