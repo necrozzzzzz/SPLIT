@@ -5462,18 +5462,84 @@ function App() {
                 </p>
 
                 <h2>
-                  Behavior & confirmations
+                  General settings
                 </h2>
 
                 <p>
-                  Restore warnings or confirmations
-                  that you previously chose not to
-                  show again.
+                  Configure desktop behavior, Quick
+                  Access, appearance and warnings.
                 </p>
               </div>
             </div>
 
+
+          <div className="general-settings-group">
+                <h3>APPEARANCE</h3>
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Slot color style
+                  </strong>
+
+                  <span>
+                    Choose how assigned colors are
+                    displayed on savestate cards.
+                  </span>
+                </div>
+
+                <div className="slot-color-style-options">
+                  <button
+                    className={
+                      slotColorDisplayMode === "tint"
+                        ? "active"
+                        : ""
+                    }
+                    type="button"
+                    onClick={() =>
+                      updateSlotColorDisplayMode("tint")
+                    }
+                  >
+                    <span className="slot-color-style-preview tint" />
+                    Tint
+                  </button>
+
+                  <button
+                    className={
+                      slotColorDisplayMode === "dot"
+                        ? "active"
+                        : ""
+                    }
+                    type="button"
+                    onClick={() =>
+                      updateSlotColorDisplayMode("dot")
+                    }
+                  >
+                    <span className="slot-color-style-preview dot" />
+                    Dot
+                  </button>
+
+                  <button
+                    className={
+                      slotColorDisplayMode === "accent"
+                        ? "active"
+                        : ""
+                    }
+                    type="button"
+                    onClick={() =>
+                      updateSlotColorDisplayMode("accent")
+                    }
+                  >
+                    <span className="slot-color-style-preview accent" />
+                    Accent
+                  </button>
+                </div>
+              </div>  
+
+
             <div className="general-settings-list">
+              <div className="general-settings-group">
+                <h3>DESKTOP</h3>
 
               <div className="general-setting-row">
                 <div>
@@ -5604,9 +5670,36 @@ function App() {
                 </div>
               </div>
 
+              <div className="general-setting-row">
+                <div>
+                  <strong>
+                    Window size & position
+                  </strong>
+
+                  <span>
+                    Restore the default window size
+                    and center SPLIT on the screen.
+                  </span>
+                </div>
+
+                <button
+                  className="general-restore-button"
+                  type="button"
+                  disabled={resettingWindow}
+                  onClick={() =>
+                    void resetWindow()
+                  }
+                >
+                  {resettingWindow
+                    ? "Resetting…"
+                    : "Reset"}
+                </button>
+              </div>
+
+              </div>
 
               <div
-                className={`quick-access-settings-group ${
+                className={`general-settings-group quick-access-settings-group ${
                   quickAccessSettings.enabled
                     ? ""
                     : "disabled"
@@ -5739,92 +5832,13 @@ function App() {
                 )}
               </div>
 
+              
 
-              <div className="general-setting-row">
-                <div>
-                  <strong>
-                    Window size & position
-                  </strong>
-
-                  <span>
-                    Restore the default window size
-                    and center SPLIT on the screen.
-                  </span>
-                </div>
-
-                <button
-                  className="general-restore-button"
-                  type="button"
-                  disabled={resettingWindow}
-                  onClick={() =>
-                    void resetWindow()
-                  }
-                >
-                  {resettingWindow
-                    ? "Resetting…"
-                    : "Reset"}
-                </button>
               </div>
 
-              <div className="general-setting-row">
-                <div>
-                  <strong>
-                    Slot color style
-                  </strong>
+              <div className="general-settings-group">
+                <h3>CONFIRMATIONS &amp; WARNINGS</h3>
 
-                  <span>
-                    Choose how assigned colors are
-                    displayed on savestate cards.
-                  </span>
-                </div>
-
-                <div className="slot-color-style-options">
-                  <button
-                    className={
-                      slotColorDisplayMode === "tint"
-                        ? "active"
-                        : ""
-                    }
-                    type="button"
-                    onClick={() =>
-                      updateSlotColorDisplayMode("tint")
-                    }
-                  >
-                    <span className="slot-color-style-preview tint" />
-                    Tint
-                  </button>
-
-                  <button
-                    className={
-                      slotColorDisplayMode === "dot"
-                        ? "active"
-                        : ""
-                    }
-                    type="button"
-                    onClick={() =>
-                      updateSlotColorDisplayMode("dot")
-                    }
-                  >
-                    <span className="slot-color-style-preview dot" />
-                    Dot
-                  </button>
-
-                  <button
-                    className={
-                      slotColorDisplayMode === "accent"
-                        ? "active"
-                        : ""
-                    }
-                    type="button"
-                    onClick={() =>
-                      updateSlotColorDisplayMode("accent")
-                    }
-                  >
-                    <span className="slot-color-style-preview accent" />
-                    Accent
-                  </button>
-                </div>
-              </div>
               <div className="general-setting-row">
                 <div>
                   <strong>
@@ -5846,7 +5860,7 @@ function App() {
                 >
                   {clearPresetConfirmationRestored
                     ? "Restored"
-                    : "Restore"}
+                    : "Restore confirmation"}
                 </button>
               </div>
 
@@ -5871,7 +5885,7 @@ function App() {
                 >
                   {gameplayHotkeyWarningRestored
                     ? "Restored"
-                    : "Restore"}
+                    : "Restore warning"}
                 </button>
               </div>
 
@@ -5896,8 +5910,9 @@ function App() {
                 >
                   {favoriteModeWarningRestored
                     ? "Restored"
-                    : "Restore"}
+                    : "Restore warning"}
                 </button>
+              </div>
               </div>
             </div>
           </section>
@@ -5921,7 +5936,7 @@ function App() {
         </div>
 
         <p className="hotkey-settings-note">
-          Assigned hotkeys are captured by SPLIT while Deadlock is focused.
+          Customize the shortcuts used while Deadlock is focused.
         </p>
 
         <div className="hotkey-categories">

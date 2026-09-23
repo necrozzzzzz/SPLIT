@@ -12,6 +12,31 @@ body { min-height: 100vh; background: #0d1718; }
 button, input, select, textarea { font: inherit; }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid rgba(79, 209, 197, .5); outline-offset: 2px; }
 
+html:not(.quick-access-page) {
+  scrollbar-color: #35514f rgba(13, 23, 24, 0.28);
+  scrollbar-width: thin;
+}
+
+html:not(.quick-access-page)::-webkit-scrollbar {
+  width: 9px;
+}
+
+html:not(.quick-access-page)::-webkit-scrollbar-track {
+  background: rgba(13, 23, 24, 0.28);
+}
+
+html:not(.quick-access-page)::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(13, 23, 24, 0.28);
+  border-radius: 999px;
+  background: #35514f;
+  background-clip: padding-box;
+}
+
+html:not(.quick-access-page)::-webkit-scrollbar-thumb:hover {
+  background: #456763;
+  background-clip: padding-box;
+}
+
 .shell {
   display: grid;
   width: min(1150px, calc(100% - 40px));
@@ -1222,7 +1247,7 @@ footer { margin-top: 20px; font-size: 10px; }
 }
 
 .slot-empty-save small {
-  color: #526c68;
+  color: #617a76;
 
   font-size: 8px;
 
@@ -1305,7 +1330,7 @@ small {
 .slot-card-copy span {
   overflow: hidden;
 
-  color: #69817e;
+  color: #78918d;
 
   font-size: 8px;
   font-weight: 500;
@@ -3392,11 +3417,13 @@ button:hover {
 
 .header-history-actions
 .preset-button:disabled {
-  border-color: transparent;
+  border-color:
+    rgba(79, 209, 197, 0.07);
 
-  color: #465b57;
+  color: #60736f;
 
-  background: transparent;
+  background:
+    rgba(79, 209, 197, 0.012);
 
   opacity: 1;
 }
@@ -3405,12 +3432,12 @@ button:hover {
 .header-history-actions
 .preset-button:disabled kbd {
   border-color:
-    rgba(79, 209, 197, 0.06);
+    rgba(79, 209, 197, 0.10);
 
-  color: #455d58;
+  color: #617a75;
 
   background:
-    rgba(79, 209, 197, 0.015);
+    rgba(79, 209, 197, 0.025);
 }
 
 /* =========================================
@@ -3850,20 +3877,39 @@ button.active::after {
   opacity: 0.45;
 }
 
+.general-setting-row >
 .general-toggle-group {
   display: flex;
+  width: 112px;
   flex: 0 0 auto;
+  align-items: stretch;
+  flex-direction: column;
   gap: 5px;
 }
 
-.quick-access-settings-group {
+.general-setting-row >
+.general-toggle-group .general-toggle {
+  width: 100%;
+}
+
+.quick-access-dependent-setting
+.general-toggle-group {
+  width: 82px;
+}
+
+.general-settings-group {
   display: grid;
   gap: 7px;
 
-  margin: 5px 0;
+  margin: 0;
 }
 
-.quick-access-settings-group h3 {
+.general-settings-group +
+.general-settings-group {
+  margin-top: 9px;
+}
+
+.general-settings-group h3 {
   margin: 5px 2px 1px;
 
   color: #78908b;
@@ -4026,11 +4072,14 @@ button.active::after {
     rgba(79, 209, 197, 0.065);
 }
 
+.general-setting-row >
 .slot-color-style-options {
   display: flex;
   flex: 0 0 auto;
+  align-items: stretch;
+  flex-direction: column;
 
-  width: 82px;
+  width: 92px;
 
   gap: 5px;
 }
@@ -6880,4 +6929,3 @@ select:hover:not(:disabled) {
     grid-template-columns: 1fr;
   }
 }
-
