@@ -446,6 +446,7 @@ mod tests {
             NotificationPosition::TopRight
         );
         assert_eq!(config.notifications.duration_ms, 1_500);
+        assert!(config.notifications.use_slot_color);
     }
 
     #[test]

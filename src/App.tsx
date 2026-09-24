@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -153,6 +154,7 @@ type NotificationSettings = {
   enabled: boolean;
   position: NotificationPosition;
   durationMs: number;
+  useSlotColor: boolean;
 };
 
 type Hotkey = {
@@ -225,6 +227,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
   position: "topRight",
   durationMs: 1500,
+  useSlotColor: true,
 };
 
 const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
@@ -264,6 +267,56 @@ function formatHotkey(hotkey: Hotkey): string {
     hotkey.shift ? "Shift" : null,
     hotkey.key,
   ].filter(Boolean).join(" + ");
+}
+
+function HotkeyKeys({
+  hotkey,
+  capturing = false,
+}: {
+  hotkey: Hotkey;
+  capturing?: boolean;
+}) {
+  if (capturing) {
+    return (
+      <kbd className="hotkey-binding capturing">
+        Press a shortcut…
+      </kbd>
+    );
+  }
+
+  const keys = [
+    hotkey.ctrl ? "Ctrl" : null,
+    hotkey.alt ? "Alt" : null,
+    hotkey.shift ? "Shift" : null,
+    hotkey.key,
+  ].filter(Boolean) as string[];
+
+  return (
+    <kbd
+      className="hotkey-binding"
+      aria-label={`Shortcut: ${formatHotkey(hotkey)}`}
+    >
+      {keys.map((key, index) => (
+        <span
+          className="hotkey-key-part"
+          key={`${key}-${index}`}
+        >
+          {index > 0 && (
+            <span
+              className="hotkey-key-plus"
+              aria-hidden="true"
+            >
+              +
+            </span>
+          )}
+
+          <span className="hotkey-keycap">
+            {key}
+          </span>
+        </span>
+      ))}
+    </kbd>
+  );
 }
 
 function capturedKey(event: KeyboardEvent): string | null {
@@ -439,6 +492,7 @@ const EMPTY_STATUS: DeadlockStatus = {
 
 type StatusTone =
   | "ok"
+  | "info"
   | "warning"
   | "error"
   | "off";
@@ -828,6 +882,16 @@ function App() {
     setNotificationSettingsSaving,
   ] = useState(false);
 
+  const [notificationTesting, setNotificationTesting] =
+    useState(false);
+  const [
+    notificationTestFeedback,
+    setNotificationTestFeedback,
+  ] = useState<{
+    error: boolean;
+    text: string;
+  } | null>(null);
+
   const [hotkeySettings, setHotkeySettings] =
     useState<HotkeySettings>(DEFAULT_HOTKEY_SETTINGS);
   const [hotkeySettingsSaving, setHotkeySettingsSaving] =
@@ -889,6 +953,22 @@ function App() {
     null,
   );
 
+  const [
+    editingSlot,
+    setEditingSlot,
+  ] = useState<number | null>(null);
+
+  const [
+    editingSlotName,
+    setEditingSlotName,
+  ] = useState("");
+
+  const slotRenameInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const committingSlotRenameRef =
+    useRef<number | null>(null);
+
 
   const [
     coloringSlot,
@@ -941,6 +1021,11 @@ function App() {
   const [
     diagnosticCopied,
     setDiagnosticCopied,
+  ] = useState(false);
+
+  const [
+    diagnosticSummaryExpanded,
+    setDiagnosticSummaryExpanded,
   ] = useState(false);
 
   const [
@@ -1957,36 +2042,78 @@ function App() {
           [],
         );
 
-      const renameSavedSlot =
+      useEffect(() => {
+        if (editingSlot === null) {
+          return;
+        }
+
+        slotRenameInputRef.current?.focus();
+        slotRenameInputRef.current?.select();
+      }, [editingSlot]);
+
+      const beginSlotRename =
         useCallback(
-          async (
+          (
             slot: number,
             currentName: string,
           ) => {
-            const name =
-              window.prompt(
-                `Rename slot ${slot}`,
-                currentName,
-              );
-
-            if (name === null) {
-              return;
-            }
-
-            const trimmed =
-              name.trim();
-
-            if (!trimmed) {
-              setError(
-                "Slot name cannot be empty",
-              );
-
+            if (
+              savingSlot !== null ||
+              loadingSlot !== null
+            ) {
               return;
             }
 
             setError(null);
+            setEditingSlotName(currentName);
+            setEditingSlot(slot);
+          },
+          [loadingSlot, savingSlot],
+        );
+
+      const finishSlotRename =
+        useCallback(
+          async (
+            slot: number,
+            previousName: string,
+            save: boolean,
+          ) => {
+            if (
+              committingSlotRenameRef.current !==
+              null
+            ) {
+              return;
+            }
+
+            const trimmed =
+              editingSlotName.trim();
+
+            committingSlotRenameRef.current =
+              slot;
+            setEditingSlot(null);
 
             try {
+              if (!save) {
+                setEditingSlotName(previousName);
+                return;
+              }
+
+              if (!trimmed) {
+                setEditingSlotName(previousName);
+                setError(
+                  "Slot name cannot be empty",
+                );
+                return;
+              }
+
+              if (
+                trimmed === previousName.trim()
+              ) {
+                setEditingSlotName(previousName);
+                return;
+              }
+
+              setError(null);
               const result =
                 await invoke<SlotEditResult>(
                   "rename_slot",
@@ -1996,16 +2123,25 @@ function App() {
                   },
                 );
 
-              await applySlotEditResult(
-                result,
-              );
+              await applySlotEditResult(result);
             } catch (reason) {
-              setError(
-                String(reason),
-              );
+              setError(String(reason));
+            } finally {
+              window.setTimeout(() => {
+                if (
+                  committingSlotRenameRef.current ===
+                  slot
+                ) {
+                  committingSlotRenameRef.current =
+                    null;
+                }
+              }, 0);
             }
           },
-          [applySlotEditResult],
+          [
+            applySlotEditResult,
+            editingSlotName,
+          ],
         );
 
       const clearSavedSlot =
@@ -3005,6 +3141,30 @@ function App() {
       [notificationSettings],
     );
 
+  const testNotification = useCallback(async () => {
+    if (notificationTesting) {
+      return;
+    }
+
+    setNotificationTesting(true);
+    setNotificationTestFeedback(null);
+
+    try {
+      await invoke("test_notification");
+      setNotificationTestFeedback({
+        error: false,
+        text: "Test notification sent.",
+      });
+    } catch (reason) {
+      setNotificationTestFeedback({
+        error: true,
+        text: String(reason),
+      });
+    } finally {
+      setNotificationTesting(false);
+    }
+  }, [notificationTesting]);
+
   useEffect(() => {
     let disposed = false;
     invoke<HotkeySettings>("get_hotkey_settings")
@@ -3646,27 +3806,67 @@ function App() {
   * état temporaire / action utilisateur
   * potentiellement nécessaire.
   */
-  const healthIssueCount = [
-    !status.integrationHealthy,
-    !status.hotkeysRunning,
-    !status.consoleWatcherRunning,
-    status.presentationMaskActive,
+  const healthProblems = [
+    !status.integrationHealthy
+      ? {
+          tone: "error" as const,
+          title: "SPLIT integration",
+          description: "The Deadlock integration needs repair.",
+        }
+      : null,
+    !status.hotkeysRunning
+      ? {
+          tone: "error" as const,
+          title: "Hotkey hook",
+          description: "The Windows keyboard hook is not running.",
+        }
+      : null,
+    !status.consoleWatcherRunning
+      ? {
+          tone: "error" as const,
+          title: "Console watcher",
+          description: "The Deadlock console watcher is not running.",
+        }
+      : null,
+    status.presentationMaskActive
+      ? {
+          tone: "error" as const,
+          title: "Presentation mask",
+          description: "Deadlock presentation may still be paused.",
+        }
+      : null,
     status.cameraRuntimeChecked &&
-      !status.cameraRuntimeReady,
-  ].filter(Boolean).length;
-
-  const healthWarningCount = [
-    !status.deadlockRunning,
-
+    !status.cameraRuntimeReady
+      ? {
+          tone: "error" as const,
+          title: "Camera runtime",
+          description: "The tested camera runtime is unavailable.",
+        }
+      : null,
+    !status.deadlockRunning
+      ? {
+          tone: "warning" as const,
+          title: "Deadlock process",
+          description: "Deadlock is not currently running.",
+        }
+      : null,
     status.deadlockRunning &&
-      !status.teleportsReady,
+    !status.consoleLogExists
+      ? {
+          tone: "warning" as const,
+          title: "Console log",
+          description: "Deadlock's console log is unavailable.",
+        }
+      : null,
+  ].filter((problem) => problem !== null);
 
-    status.deadlockRunning &&
-      !status.cameraRuntimeChecked,
-
-    status.deadlockRunning &&
-      !status.consoleLogExists,
-  ].filter(Boolean).length;
+  const healthIssueCount = healthProblems.filter(
+    (problem) => problem.tone === "error",
+  ).length;
+  const healthWarningCount = healthProblems.filter(
+    (problem) => problem.tone === "warning",
+  ).length;
+  const healthProblemCount = healthProblems.length;
 
   const healthTone: StatusTone =
     healthIssueCount > 0
@@ -3676,40 +3876,18 @@ function App() {
         : "ok";
 
   const healthHeadline =
-    healthIssueCount > 0
-      ? "Attention required"
-      : healthWarningCount > 0
-        ? "Operational with warnings"
-        : "All systems operational";
-
-  const issueText =
-    `${healthIssueCount} ${
-      healthIssueCount === 1
-        ? "issue"
-        : "issues"
-    }`;
-
-  const warningText =
-    `${healthWarningCount} ${
-      healthWarningCount === 1
-        ? "warning"
-        : "warnings"
-    }`;
+    healthProblemCount > 0
+      ? "Operational with issues"
+      : "Operational";
 
   const healthDescription =
-    healthIssueCount > 0
-      ? `${issueText} ${
-          healthIssueCount === 1
-            ? "requires"
-            : "require"
-        } attention${
-          healthWarningCount > 0
-            ? ` · ${warningText}`
-            : ""
+    healthProblemCount > 0
+      ? `${healthProblemCount} ${
+          healthProblemCount === 1
+            ? "issue detected"
+            : "issues detected"
         }.`
-      : healthWarningCount > 0
-        ? `No critical issues · ${warningText}.`
-        : "All monitored SPLIT systems are ready.";
+      : "No issues detected.";
 
   const screenshotViewerFullPath =
     screenshotViewer
@@ -4485,7 +4663,7 @@ function App() {
                   ? "Copying…"
                   : diagnosticCopied
                     ? "Copied!"
-                    : "Copy diagnostic"}
+                    : "Copy diagnostics"}
               </button>
 
               <button
@@ -4603,26 +4781,47 @@ function App() {
           </div>
         </div>
 
-        <div className="health-summary-counts">
-          {healthIssueCount > 0 && (
-            <span className="health-count error">
-              {issueText}
-            </span>
-          )}
-
-          {healthWarningCount > 0 && (
-            <span className="health-count warning">
-              {warningText}
-            </span>
-          )}
-
-          {healthIssueCount === 0 &&
-            healthWarningCount === 0 && (
-              <span className="health-count ok">
-                All clear
+        {healthProblemCount > 0 && (
+          <div className="health-summary-counts">
+            <button
+              className={`health-summary-toggle ${healthTone}`}
+              type="button"
+              aria-expanded={diagnosticSummaryExpanded}
+              aria-controls="diagnostic-summary-problems"
+              onClick={() =>
+                setDiagnosticSummaryExpanded((expanded) => !expanded)
+              }
+            >
+              <span>
+                {healthProblemCount} {healthProblemCount === 1
+                  ? "issue detected"
+                  : "issues detected"}
               </span>
-            )}
-        </div>
+              <span className="health-summary-chevron" aria-hidden="true">
+                âŒ„
+              </span>
+            </button>
+          </div>
+        )}
+
+        {healthProblemCount > 0 && diagnosticSummaryExpanded && (
+          <div
+            className="health-summary-problems"
+            id="diagnostic-summary-problems"
+          >
+            <ul>
+              {healthProblems.map((problem) => (
+                <li key={problem.title}>
+                  <StatusDot tone={problem.tone} />
+                  <div>
+                    <strong>{problem.title}</strong>
+                    <span>{problem.description}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
       )}
 
@@ -5280,7 +5479,7 @@ function App() {
                           .closest("details")
                           ?.removeAttribute("open");
 
-                        void renameSavedSlot(
+                        beginSlotRename(
                           slot,
                           displayName,
                         );
@@ -5404,9 +5603,75 @@ function App() {
 
                 <div className="slot-card-info">
                   <div className="slot-card-copy">
-                    <strong title={displayName}>
-                      {displayName}
-                    </strong>
+                    {editingSlot === slot ? (
+                      <input
+                        ref={slotRenameInputRef}
+                        className="slot-card-name-input"
+                        value={editingSlotName}
+                        aria-label={`Rename slot ${slot}`}
+                        onChange={(event) =>
+                          setEditingSlotName(
+                            event.target.value,
+                          )
+                        }
+                        onPointerDown={(event) =>
+                          event.stopPropagation()
+                        }
+                        onClick={(event) =>
+                          event.stopPropagation()
+                        }
+                        onDoubleClick={(event) =>
+                          event.stopPropagation()
+                        }
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void finishSlotRename(
+                              slot,
+                              displayName,
+                              true,
+                            );
+                          } else if (
+                            event.key === "Escape"
+                          ) {
+                            event.preventDefault();
+                            void finishSlotRename(
+                              slot,
+                              displayName,
+                              false,
+                            );
+                          }
+                        }}
+                        onBlur={() =>
+                          void finishSlotRename(
+                            slot,
+                            displayName,
+                            true,
+                          )
+                        }
+                      />
+                    ) : (
+                      <button
+                        className="slot-card-name-button"
+                        type="button"
+                        title={displayName}
+                        disabled={
+                          savingSlot !== null ||
+                          loadingSlot !== null
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          beginSlotRename(
+                            slot,
+                            displayName,
+                          );
+                        }}
+                      >
+                        {displayName}
+                      </button>
+                    )}
 
                     <span>
                       {savedAge ??
@@ -5952,7 +6217,10 @@ function App() {
                 return (
                   <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={`${group}-${index}`}>
                     <span>{label === "LOAD" ? "Load" : "Save"} Slot {index + 1}</span>
-                    <kbd>{capturing ? "Press a shortcut…" : formatHotkey(hotkey)}</kbd>
+                    <HotkeyKeys
+                      hotkey={hotkey}
+                      capturing={capturing}
+                    />
                     <button
                       type="button"
                       disabled={hotkeySettingsSaving}
@@ -5982,7 +6250,10 @@ function App() {
               return (
                 <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={group}>
                   <span>{label}</span>
-                  <kbd>{capturing ? "Press a shortcut…" : formatHotkey(hotkey)}</kbd>
+                  <HotkeyKeys
+                    hotkey={hotkey}
+                    capturing={capturing}
+                  />
                   <button
                     type="button"
                     disabled={hotkeySettingsSaving}
@@ -6013,10 +6284,46 @@ function App() {
             </p>
 
             <h2>
-              Overlay settings
+              In-Game notifications
             </h2>
+
+            <p>
+              Configure how SPLIT notifications appear
+              while playing Deadlock.
+            </p>
           </div>
+
+          <button
+            className="general-restore-button notification-test-button"
+            type="button"
+            disabled={
+              notificationTesting ||
+              notificationSettingsSaving
+            }
+            onClick={() => void testNotification()}
+          >
+            {notificationTesting
+              ? "Testing…"
+              : "Test notification"}
+          </button>
         </div>
+
+        {notificationTestFeedback && (
+          <p
+            className={`notification-test-feedback ${
+              notificationTestFeedback.error
+                ? "error"
+                : ""
+            }`}
+            role={
+              notificationTestFeedback.error
+                ? "alert"
+                : "status"
+            }
+          >
+            {notificationTestFeedback.text}
+          </p>
+        )}
 
         <div className="notification-settings-grid">
           <label className="notification-setting-row">
@@ -6073,11 +6380,33 @@ function App() {
                 })
               }
             >
+              <option value={500}>0.5 s</option>
               <option value={1000}>1.0 s</option>
               <option value={1500}>1.5 s</option>
               <option value={2000}>2.0 s</option>
               <option value={3000}>3.0 s</option>
             </select>
+          </label>
+
+          <label className="notification-setting-row">
+            <span>Use slot color</span>
+            <button
+              className={`notification-toggle ${
+                notificationSettings.useSlotColor ? "active" : ""
+              }`}
+              type="button"
+              role="switch"
+              aria-checked={notificationSettings.useSlotColor}
+              disabled={notificationSettingsSaving}
+              onClick={() =>
+                void updateNotificationSettings({
+                  ...notificationSettings,
+                  useSlotColor: !notificationSettings.useSlotColor,
+                })
+              }
+            >
+              {notificationSettings.useSlotColor ? "ON" : "OFF"}
+            </button>
           </label>
         </div>
       </section>
@@ -6085,9 +6414,15 @@ function App() {
 
     {activeSettingsSection === "diagnostics" && ( 
       <section
-        className="status-grid"
+        className="diagnostics-groups"
         aria-label="Deadlock diagnostics"
       >
+        <section className="diagnostics-group">
+          <h2 className="diagnostics-group-title">
+            Runtime
+          </h2>
+
+          <div className="diagnostics-grid diagnostics-runtime-grid">
         <article
           className={`status-card ${
             status.integrationHealthy
@@ -6323,52 +6658,57 @@ function App() {
           )}
         </article>
 
+          </div>
+        </section>
+
+        <section className="diagnostics-group">
+          <h2 className="diagnostics-group-title">
+            Gameplay readiness
+          </h2>
+
+          <div className="diagnostics-grid diagnostics-gameplay-grid">
         <article
           className={`status-card ${
             status.teleportsReady
               ? ""
-              : "wide diagnostic-card"
+              : "wide optional-card"
           }`}
         >
           <div className="status-heading">
             <StatusDot
-              tone={
-                status.teleportsReady
-                  ? "ok"
-                  : "warning"
-              }
+              tone="info"
             />
 
             <span>
-              Teleport preparation
+              Teleport helper
             </span>
           </div>
 
-          <strong>
-            {status.teleportsReady
-              ? "Ready"
-              : "Pending"}
-          </strong>
+          <strong>Optional feature</strong>
 
           {!status.teleportsReady && (
             <div className="diagnostic-details">
               <p className="diagnostic-description">
-                SPLIT generated a new set of
-                teleport points, but Deadlock has
-                not prepared them yet.
+                SPLIT prepares teleport points
+                automatically when you load a
+                populated slot.
               </p>
 
-              <p className="diagnostic-description">
-                This is usually normal after
-                startup repair, saving a slot,
-                switching preset, or changing the
-                active slot bank.
+              <p className="diagnostic-description teleport-reassurance">
+                You do not need to do anything here
+                for Save / Load to work.
               </p>
 
               <div className="diagnostic-fix">
                 <span>
-                  HOW TO FIX
+                  PREPARE MANUALLY
                 </span>
+
+                <p className="teleport-manual-intro">
+                  Use this only if you want the
+                  teleport points to be ready in
+                  advance.
+                </p>
 
                 <ol>
                   <li>
@@ -6380,16 +6720,17 @@ function App() {
                   </li>
 
                   <li>
-                    Click Prepare now below.
-                  </li>
-
-                  <li>
-                    Alternatively, loading any
-                    populated slot will prepare the
-                    teleport points automatically.
+                    Click Prepare now.
                   </li>
                 </ol>
               </div>
+
+              <p className="teleport-context-note">
+                Teleport points may need to be
+                prepared again after startup repair,
+                saving a slot, switching presets, or
+                changing the active slot bank.
+              </p>
 
               <div className="diagnostic-actions">
                 <button
@@ -6529,7 +6870,7 @@ function App() {
             <StatusDot
               tone={
                 !status.cameraRuntimeChecked
-                  ? "warning"
+                  ? "off"
                   : status.cameraRuntimeReady
                     ? "ok"
                     : "error"
@@ -6634,7 +6975,17 @@ function App() {
               </div>
             </div>
           )}
-        </article>    
+        </article>
+
+          </div>
+        </section>
+
+        <section className="diagnostics-group">
+          <h2 className="diagnostics-group-title">
+            Configuration
+          </h2>
+
+          <div className="diagnostics-grid diagnostics-configuration-grid">
 
         <article className="status-card">
           <div className="status-heading">
@@ -6647,7 +6998,10 @@ function App() {
             </span>
           </div>
 
-          <code>
+          <code
+            className="diagnostic-path"
+            title={status.deadlockPath ?? "Not configured"}
+          >
             {status.deadlockPath ??
               "Not configured"}
           </code>
@@ -6731,6 +7085,15 @@ function App() {
           </strong>
         </article>
 
+          </div>
+        </section>
+
+        <section className="diagnostics-group">
+          <h2 className="diagnostics-group-title">
+            Debug data
+          </h2>
+
+          <div className="diagnostics-grid diagnostics-debug-grid">
         <article className="status-card wide">
           <div className="status-heading">
             <StatusDot
@@ -6742,7 +7105,10 @@ function App() {
             </span>
           </div>
 
-          <code>
+          <code
+            className="diagnostic-path"
+            title={status.consoleLogPath ?? "No Deadlock path available"}
+          >
             {status.consoleLogPath ??
               "No Deadlock path available"}
           </code>
@@ -6760,7 +7126,7 @@ function App() {
           </div>
 
           {lastPosition ? (
-            <code>
+            <code className="diagnostic-technical-value">
               XYZ {lastPosition.x}{" "}
               {lastPosition.y}{" "}
               {lastPosition.z} · ANG{" "}
@@ -6774,6 +7140,8 @@ function App() {
             </strong>
           )}
         </article>
+          </div>
+        </section>
       </section>
     )}  
       </div>

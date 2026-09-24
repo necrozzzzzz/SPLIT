@@ -133,6 +133,18 @@ fn update_notification_settings(
 }
 
 #[tauri::command]
+fn test_notification(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "SPLIT main window is unavailable".to_string())?;
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| format!("Could not read the SPLIT window handle: {error}"))?;
+
+    notifications::show_test(hwnd.0)
+}
+
+#[tauri::command]
 fn get_hotkey_settings() -> deadlock::HotkeySettings {
     deadlock::get_hotkey_settings()
 }
@@ -614,6 +626,7 @@ pub fn run() {
             clear_preset,
             get_notification_settings,
             update_notification_settings,
+            test_notification,
             get_hotkey_settings,
             update_hotkey_settings,
             reset_hotkey_settings,

@@ -1,7 +1,7 @@
 use std::{
     ptr::{null, null_mut},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -10,15 +10,19 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize};
 
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, POINT, RECT, WPARAM},
+    Foundation::{HWND, LPARAM, POINT, RECT, SIZE, WPARAM},
     Graphics::Gdi::{
         BeginPaint, ClientToScreen, CreateFontW, CreateRoundRectRgn, CreateSolidBrush,
-        DeleteObject, DrawTextW, EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode,
-        SetTextColor, SetWindowRgn, UpdateWindow, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
-        DEFAULT_PITCH, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, FF_DONTCARE, FW_SEMIBOLD,
-        OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
+        DeleteObject, DrawTextW, EndPaint, FillRect, GetDC, GetMonitorInfoW, GetTextExtentPoint32W,
+        InvalidateRect, MonitorFromWindow, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
+        SetWindowRgn, UpdateWindow, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER,
+        DT_END_ELLIPSIS, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, FF_DONTCARE, FW_SEMIBOLD,
+        MONITORINFO, MONITOR_DEFAULTTOPRIMARY, OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
     },
-    System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
+    System::{
+        LibraryLoader::GetModuleHandleW, SystemInformation::GetTickCount64,
+        Threading::GetCurrentThreadId,
+    },
     UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
         GetMessageW, KillTimer, PostQuitMessage, PostThreadMessageW, RegisterClassW,
@@ -32,16 +36,35 @@ use windows_sys::Win32::{
 
 const COMMAND_MESSAGE: u32 = WM_APP + 41;
 const HIDE_TIMER_ID: usize = 1;
-const OVERLAY_WIDTH: i32 = 264;
+const FADE_TIMER_ID: usize = 2;
+const FADE_MAX_MS: u32 = 200;
+const FADE_INTERVAL_MS: u32 = 16;
+const MIN_OVERLAY_WIDTH: i32 = 264;
+const MAX_OVERLAY_WIDTH: i32 = 480;
 const OVERLAY_HEIGHT: i32 = 56;
+const HORIZONTAL_PADDING: i32 = 20;
 const MARGIN: i32 = 24;
+const BASE_BACKGROUND: (u8, u8, u8) = (20, 24, 31);
+const TEST_COLOR: &str = "#4fd1c5";
+
+struct NotificationPayload {
+    text: String,
+    color: Option<String>,
+}
 
 enum Command {
     Show {
-        text: String,
+        payload: NotificationPayload,
         settings: NotificationSettings,
+        target: NotificationTarget,
     },
     Shutdown,
+}
+
+#[derive(Clone, Copy)]
+enum NotificationTarget {
+    Deadlock,
+    Desktop(RECT),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -81,6 +104,8 @@ pub struct NotificationSettings {
     pub position: NotificationPosition,
     #[serde(deserialize_with = "deserialize_duration")]
     pub duration_ms: u32,
+    #[serde(default = "default_true")]
+    pub use_slot_color: bool,
 }
 
 impl Default for NotificationSettings {
@@ -89,6 +114,7 @@ impl Default for NotificationSettings {
             enabled: true,
             position: NotificationPosition::TopRight,
             duration_ms: 1_500,
+            use_slot_color: true,
         }
     }
 }
@@ -119,35 +145,51 @@ where
 }
 
 const fn valid_duration(duration_ms: u32) -> bool {
-    matches!(duration_ms, 1_000 | 1_500 | 2_000 | 3_000)
+    matches!(duration_ms, 500 | 1_000 | 1_500 | 2_000 | 3_000)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+const fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notification {
     Preset(u8),
-    SlotSaved { slot: u8, favorite: bool },
-    SlotLoaded { slot: u8, favorite: bool },
-    SlotEmpty { slot: u8, favorite: bool },
+    SlotSaved {
+        slot: u8,
+        display_name: String,
+        color: Option<String>,
+    },
+    SlotLoaded {
+        slot: u8,
+        display_name: String,
+        color: Option<String>,
+    },
+    SlotEmpty {
+        slot: u8,
+        favorite: bool,
+    },
     Favorites(bool),
     Undo,
     Redo,
     NothingToUndo,
     NothingToRedo,
     SaveFailed,
+    Test,
 }
 
 impl Notification {
-    fn text(self) -> String {
+    fn text(&self) -> String {
         match self {
             Self::Preset(preset) => format!("SPLIT · Preset {preset}"),
-            Self::SlotSaved { slot, favorite } => {
-                format!("SPLIT · {} {slot} saved", slot_kind(favorite))
+            Self::SlotSaved { display_name, .. } => {
+                format!("SPLIT · Saved · {display_name}")
             }
-            Self::SlotLoaded { slot, favorite } => {
-                format!("SPLIT · {} {slot} loaded", slot_kind(favorite))
+            Self::SlotLoaded { display_name, .. } => {
+                format!("SPLIT · Loaded · {display_name}")
             }
             Self::SlotEmpty { slot, favorite } => {
-                format!("SPLIT · {} {slot} empty", slot_kind(favorite))
+                format!("SPLIT · {} {slot} empty", slot_kind(*favorite))
             }
             Self::Favorites(true) => "SPLIT · Favorites enabled".to_string(),
             Self::Favorites(false) => "SPLIT · Favorites disabled".to_string(),
@@ -156,6 +198,19 @@ impl Notification {
             Self::NothingToUndo => "SPLIT · Nothing to undo".to_string(),
             Self::NothingToRedo => "SPLIT · Nothing to redo".to_string(),
             Self::SaveFailed => "SPLIT · Save failed".to_string(),
+            Self::Test => "SPLIT · Test notification".to_string(),
+        }
+    }
+
+    fn payload(&self) -> NotificationPayload {
+        let color = match self {
+            Self::SlotSaved { color, .. } | Self::SlotLoaded { color, .. } => color.clone(),
+            Self::Test => Some(TEST_COLOR.to_string()),
+            _ => None,
+        };
+        NotificationPayload {
+            text: self.text(),
+            color,
         }
     }
 }
@@ -177,11 +232,20 @@ struct Runtime {
 static RUNTIME: Mutex<Option<Runtime>> = Mutex::new(None);
 static DISPLAY_TEXT: Mutex<String> = Mutex::new(String::new());
 static WINDOW_READY: AtomicBool = AtomicBool::new(false);
+static DISPLAY_BACKGROUND: AtomicU32 = AtomicU32::new(color(20, 24, 31));
+static DISPLAY_FADE_DURATION: AtomicU32 = AtomicU32::new(FADE_MAX_MS);
+static FADE_STATE: Mutex<Option<FadeState>> = Mutex::new(None);
 static SETTINGS: Mutex<NotificationSettings> = Mutex::new(NotificationSettings {
     enabled: true,
     position: NotificationPosition::TopRight,
     duration_ms: 1_500,
+    use_slot_color: true,
 });
+
+struct FadeState {
+    started_at: u64,
+    duration_ms: u32,
+}
 
 pub fn start() -> Result<(), String> {
     apply_settings(crate::deadlock::get_notification_settings());
@@ -222,25 +286,52 @@ pub fn start() -> Result<(), String> {
 }
 
 pub fn show(notification: Notification) {
-    let Some((text, settings)) = prepare_notification(notification) else {
+    let Some((payload, settings)) = prepare_notification(notification) else {
         return;
     };
+    let _ = enqueue(payload, settings, NotificationTarget::Deadlock);
+}
+
+pub fn show_test(split_hwnd: HWND) -> Result<(), String> {
+    let settings = SETTINGS
+        .lock()
+        .map_err(|_| "Notification settings lock poisoned".to_string())?
+        .clone();
+    let work_area = monitor_work_area(split_hwnd)?;
+
+    enqueue(
+        Notification::Test.payload(),
+        settings,
+        NotificationTarget::Desktop(work_area),
+    )
+}
+
+fn enqueue(
+    payload: NotificationPayload,
+    settings: NotificationSettings,
+    target: NotificationTarget,
+) -> Result<(), String> {
     let Ok(runtime) = RUNTIME.lock() else {
-        return;
+        return Err("Notification runtime lock poisoned".to_string());
     };
     let Some(runtime) = runtime.as_ref() else {
-        return;
+        return Err("Notification service is not available".to_string());
     };
 
-    if runtime
+    runtime
         .sender
-        .send(Command::Show { text, settings })
-        .is_ok()
-    {
-        unsafe {
-            PostThreadMessageW(runtime.thread_id, COMMAND_MESSAGE, 0, 0);
-        }
+        .send(Command::Show {
+            payload,
+            settings,
+            target,
+        })
+        .map_err(|_| "Notification thread is no longer available".to_string())?;
+
+    if unsafe { PostThreadMessageW(runtime.thread_id, COMMAND_MESSAGE, 0, 0) } == 0 {
+        return Err("Could not wake notification thread".to_string());
     }
+
+    Ok(())
 }
 
 pub fn apply_settings(settings: NotificationSettings) {
@@ -249,9 +340,11 @@ pub fn apply_settings(settings: NotificationSettings) {
     }
 }
 
-fn prepare_notification(notification: Notification) -> Option<(String, NotificationSettings)> {
+fn prepare_notification(
+    notification: Notification,
+) -> Option<(NotificationPayload, NotificationSettings)> {
     let settings = SETTINGS.lock().ok()?.clone();
-    settings.enabled.then(|| (notification.text(), settings))
+    settings.enabled.then(|| (notification.payload(), settings))
 }
 
 pub fn stop() -> Result<(), String> {
@@ -280,21 +373,50 @@ pub fn stop() -> Result<(), String> {
     Ok(())
 }
 
-fn overlay_position(client: RECT, position: NotificationPosition) -> (i32, i32) {
+fn overlay_width(text_width: i32) -> i32 {
+    (text_width + HORIZONTAL_PADDING * 2).clamp(MIN_OVERLAY_WIDTH, MAX_OVERLAY_WIDTH)
+}
+
+fn overlay_position(
+    client: RECT,
+    position: NotificationPosition,
+    notification_width: i32,
+) -> (i32, i32) {
     match position {
         NotificationPosition::TopLeft => (client.left + MARGIN, client.top + MARGIN),
-        NotificationPosition::TopRight => {
-            (client.right - OVERLAY_WIDTH - MARGIN, client.top + MARGIN)
-        }
+        NotificationPosition::TopRight => (
+            client.right - notification_width - MARGIN,
+            client.top + MARGIN,
+        ),
         NotificationPosition::BottomLeft => (
             client.left + MARGIN,
             client.bottom - OVERLAY_HEIGHT - MARGIN,
         ),
         NotificationPosition::BottomRight => (
-            client.right - OVERLAY_WIDTH - MARGIN,
+            client.right - notification_width - MARGIN,
             client.bottom - OVERLAY_HEIGHT - MARGIN,
         ),
     }
+}
+
+fn monitor_work_area(hwnd: HWND) -> Result<RECT, String> {
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY) };
+    if monitor.is_null() {
+        return Err("Could not find a monitor for SPLIT".to_string());
+    }
+
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return Err(format!(
+            "Could not read the SPLIT monitor work area: {}",
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    Ok(info.rcWork)
 }
 
 fn notification_thread(
@@ -327,7 +449,11 @@ fn notification_thread(
             let mut shutdown = false;
             for command in receiver.try_iter() {
                 match command {
-                    Command::Show { text, settings } => latest = Some((text, settings)),
+                    Command::Show {
+                        payload,
+                        settings,
+                        target,
+                    } => latest = Some((payload, settings, target)),
                     Command::Shutdown => shutdown = true,
                 }
             }
@@ -337,8 +463,8 @@ fn notification_thread(
                 continue;
             }
 
-            if let Some((text, settings)) = latest {
-                show_notification(hwnd, text, settings);
+            if let Some((payload, settings, target)) = latest {
+                show_notification(hwnd, payload, settings, target);
             }
             continue;
         }
@@ -347,6 +473,69 @@ fn notification_thread(
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+    }
+}
+
+fn create_notification_font() -> windows_sys::Win32::Graphics::Gdi::HFONT {
+    let face = wide("Segoe UI");
+    unsafe {
+        CreateFontW(
+            -20,
+            0,
+            0,
+            0,
+            FW_SEMIBOLD as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET.into(),
+            OUT_DEFAULT_PRECIS.into(),
+            CLIP_DEFAULT_PRECIS.into(),
+            5,
+            (DEFAULT_PITCH | FF_DONTCARE).into(),
+            face.as_ptr(),
+        )
+    }
+}
+
+fn measure_text_width(hwnd: HWND, text: &str) -> Option<i32> {
+    unsafe {
+        let device = GetDC(hwnd);
+        if device.is_null() {
+            return None;
+        }
+        let font = create_notification_font();
+        if font.is_null() {
+            ReleaseDC(hwnd, device);
+            return None;
+        }
+        let previous = SelectObject(device, font);
+        if previous.is_null() {
+            DeleteObject(font);
+            ReleaseDC(hwnd, device);
+            return None;
+        }
+
+        let wide_text: Vec<u16> = text.encode_utf16().collect();
+        let mut size = SIZE::default();
+        let measured = GetTextExtentPoint32W(
+            device,
+            wide_text.as_ptr(),
+            wide_text.len() as i32,
+            &mut size,
+        ) != 0;
+
+        SelectObject(device, previous);
+        DeleteObject(font);
+        ReleaseDC(hwnd, device);
+        measured.then_some(size.cx)
+    }
+}
+
+unsafe fn update_window_region(hwnd: HWND, width: i32) {
+    let region = CreateRoundRectRgn(0, 0, width + 1, OVERLAY_HEIGHT + 1, 14, 14);
+    if !region.is_null() && SetWindowRgn(hwnd, region, 0) == 0 {
+        DeleteObject(region);
     }
 }
 
@@ -376,7 +565,7 @@ fn create_overlay_window() -> Result<HWND, String> {
             WS_POPUP,
             0,
             0,
-            OVERLAY_WIDTH,
+            MIN_OVERLAY_WIDTH,
             OVERLAY_HEIGHT,
             null_mut(),
             null_mut(),
@@ -391,24 +580,88 @@ fn create_overlay_window() -> Result<HWND, String> {
     WINDOW_READY.store(true, Ordering::Release);
 
     unsafe {
-        SetLayeredWindowAttributes(hwnd, 0, 232, LWA_ALPHA);
-        let region = CreateRoundRectRgn(0, 0, OVERLAY_WIDTH + 1, OVERLAY_HEIGHT + 1, 14, 14);
-        if !region.is_null() {
-            SetWindowRgn(hwnd, region, 0);
-        }
+        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        update_window_region(hwnd, MIN_OVERLAY_WIDTH);
     }
 
     Ok(hwnd)
 }
 
-fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
-    let Some(deadlock) = crate::deadlock::foreground_deadlock_window() else {
+fn show_notification(
+    hwnd: HWND,
+    payload: NotificationPayload,
+    settings: NotificationSettings,
+    target: NotificationTarget,
+) {
+    let client = match target {
+        NotificationTarget::Deadlock => {
+            let Some(client) = deadlock_client_rect() else {
+                return;
+            };
+            client
+        }
+        NotificationTarget::Desktop(work_area) => work_area,
+    };
+    let width = measure_text_width(hwnd, &payload.text)
+        .map(overlay_width)
+        .unwrap_or(MIN_OVERLAY_WIDTH);
+    let (x, y) = overlay_position(client, settings.position, width);
+
+    if let Ok(mut display_text) = DISPLAY_TEXT.lock() {
+        *display_text = payload.text.clone();
+    } else {
         return;
+    }
+
+    unsafe {
+        KillTimer(hwnd, HIDE_TIMER_ID);
+        KillTimer(hwnd, FADE_TIMER_ID);
+        if let Ok(mut fade) = FADE_STATE.lock() {
+            *fade = None;
+        }
+        SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        update_window_region(hwnd, width);
+        DISPLAY_BACKGROUND.store(
+            notification_background(payload.color.as_deref(), settings.use_slot_color),
+            Ordering::Release,
+        );
+        let fade_duration = fade_duration_ms(settings.duration_ms);
+        DISPLAY_FADE_DURATION.store(fade_duration, Ordering::Release);
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            x,
+            y,
+            width,
+            OVERLAY_HEIGHT,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        InvalidateRect(hwnd, null(), 1);
+        UpdateWindow(hwnd);
+        SetTimer(
+            hwnd,
+            HIDE_TIMER_ID,
+            settings.duration_ms - fade_duration,
+            None,
+        );
+    }
+
+    let log_text = payload
+        .text
+        .strip_prefix("SPLIT · ")
+        .unwrap_or(&payload.text);
+    println!("[SPLIT] Notification: {log_text}");
+}
+
+fn deadlock_client_rect() -> Option<RECT> {
+    let Some(deadlock) = crate::deadlock::foreground_deadlock_window() else {
+        return None;
     };
 
     let mut client = RECT::default();
     if unsafe { GetClientRect(deadlock, &mut client) } == 0 {
-        return;
+        return None;
     }
 
     let mut top_left = POINT {
@@ -423,42 +676,15 @@ fn show_notification(hwnd: HWND, text: String, settings: NotificationSettings) {
         ClientToScreen(deadlock, &mut top_left) == 0
             || ClientToScreen(deadlock, &mut bottom_right) == 0
     } {
-        return;
+        return None;
     }
 
-    client = RECT {
+    Some(RECT {
         left: top_left.x,
         top: top_left.y,
         right: bottom_right.x,
         bottom: bottom_right.y,
-    };
-    let (x, y) = overlay_position(client, settings.position);
-
-    if let Ok(mut display_text) = DISPLAY_TEXT.lock() {
-        *display_text = text.clone();
-    } else {
-        return;
-    }
-
-    unsafe {
-        KillTimer(hwnd, HIDE_TIMER_ID);
-        SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            x,
-            y,
-            OVERLAY_WIDTH,
-            OVERLAY_HEIGHT,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW,
-        );
-        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        InvalidateRect(hwnd, null(), 1);
-        UpdateWindow(hwnd);
-        SetTimer(hwnd, HIDE_TIMER_ID, settings.duration_ms, None);
-    }
-
-    let log_text = text.strip_prefix("SPLIT · ").unwrap_or(&text);
-    println!("[SPLIT] Notification: {log_text}");
+    })
 }
 
 unsafe extern "system" fn window_proc(
@@ -496,7 +722,22 @@ unsafe fn window_proc_inner(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LP
         }
         WM_TIMER if wparam == HIDE_TIMER_ID => {
             KillTimer(hwnd, HIDE_TIMER_ID);
-            ShowWindow(hwnd, SW_HIDE);
+            let duration_ms = DISPLAY_FADE_DURATION.load(Ordering::Acquire);
+            if duration_ms == 0 {
+                hide_and_reset(hwnd);
+            } else {
+                if let Ok(mut fade) = FADE_STATE.lock() {
+                    *fade = Some(FadeState {
+                        started_at: GetTickCount64(),
+                        duration_ms,
+                    });
+                }
+                SetTimer(hwnd, FADE_TIMER_ID, FADE_INTERVAL_MS, None);
+            }
+            0
+        }
+        WM_TIMER if wparam == FADE_TIMER_ID => {
+            update_fade(hwnd);
             0
         }
         WM_NCHITTEST => HTTRANSPARENT as isize,
@@ -520,29 +761,13 @@ unsafe fn paint(hwnd: HWND) {
 
     let mut rect = RECT::default();
     GetClientRect(hwnd, &mut rect);
-    let brush = CreateSolidBrush(color(20, 24, 31));
+    let brush = CreateSolidBrush(DISPLAY_BACKGROUND.load(Ordering::Acquire));
     if !brush.is_null() {
         FillRect(device, &rect, brush);
         DeleteObject(brush);
     }
 
-    let face = wide("Segoe UI");
-    let font = CreateFontW(
-        -20,
-        0,
-        0,
-        0,
-        FW_SEMIBOLD as i32,
-        0,
-        0,
-        0,
-        DEFAULT_CHARSET.into(),
-        OUT_DEFAULT_PRECIS.into(),
-        CLIP_DEFAULT_PRECIS.into(),
-        5,
-        (DEFAULT_PITCH | FF_DONTCARE).into(),
-        face.as_ptr(),
-    );
+    let font = create_notification_font();
     let previous = if font.is_null() {
         null_mut()
     } else {
@@ -553,13 +778,15 @@ unsafe fn paint(hwnd: HWND) {
     SetTextColor(device, color(255, 255, 255));
     if let Ok(text) = DISPLAY_TEXT.lock() {
         if !text.is_empty() {
+            rect.left += HORIZONTAL_PADDING;
+            rect.right -= HORIZONTAL_PADDING;
             let wide_text: Vec<u16> = text.encode_utf16().collect();
             DrawTextW(
                 device,
                 wide_text.as_ptr(),
                 wide_text.len() as i32,
                 &mut rect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
             );
         }
     }
@@ -581,6 +808,74 @@ const fn color(red: u8, green: u8, blue: u8) -> u32 {
     red as u32 | ((green as u32) << 8) | ((blue as u32) << 16)
 }
 
+const fn fade_duration_ms(total_duration_ms: u32) -> u32 {
+    let proportional = total_duration_ms * 2 / 5;
+    if proportional < FADE_MAX_MS {
+        proportional
+    } else {
+        FADE_MAX_MS
+    }
+}
+
+fn parse_hex_color(value: &str) -> Option<(u8, u8, u8)> {
+    let hex = value.strip_prefix('#')?;
+    let bytes = hex.as_bytes();
+    if bytes.len() != 6 || !bytes.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let component = |offset| {
+        std::str::from_utf8(&bytes[offset..offset + 2])
+            .ok()
+            .and_then(|value| u8::from_str_radix(value, 16).ok())
+    };
+    Some((component(0)?, component(2)?, component(4)?))
+}
+
+fn notification_background(slot_color: Option<&str>, use_slot_color: bool) -> u32 {
+    let Some((red, green, blue)) = use_slot_color
+        .then_some(slot_color)
+        .flatten()
+        .and_then(parse_hex_color)
+    else {
+        return color(BASE_BACKGROUND.0, BASE_BACKGROUND.1, BASE_BACKGROUND.2);
+    };
+    let blend = |base: u8, accent: u8| ((u16::from(base) * 4 + u16::from(accent)) / 5) as u8;
+    color(
+        blend(BASE_BACKGROUND.0, red),
+        blend(BASE_BACKGROUND.1, green),
+        blend(BASE_BACKGROUND.2, blue),
+    )
+}
+
+unsafe fn hide_and_reset(hwnd: HWND) {
+    KillTimer(hwnd, HIDE_TIMER_ID);
+    KillTimer(hwnd, FADE_TIMER_ID);
+    ShowWindow(hwnd, SW_HIDE);
+    SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+    if let Ok(mut fade) = FADE_STATE.lock() {
+        *fade = None;
+    }
+}
+
+unsafe fn update_fade(hwnd: HWND) {
+    let fade = FADE_STATE.lock().ok().and_then(|fade| {
+        fade.as_ref()
+            .map(|fade| (fade.started_at, fade.duration_ms))
+    });
+    let Some((started_at, duration_ms)) = fade else {
+        hide_and_reset(hwnd);
+        return;
+    };
+    let elapsed = GetTickCount64().saturating_sub(started_at);
+    if elapsed >= u64::from(duration_ms) {
+        hide_and_reset(hwnd);
+        return;
+    }
+    let remaining = u64::from(duration_ms) - elapsed;
+    let alpha = (255 * remaining / u64::from(duration_ms)) as u8;
+    SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,30 +887,18 @@ mod tests {
             (
                 Notification::SlotSaved {
                     slot: 3,
-                    favorite: false,
+                    display_name: "Rooftop".to_string(),
+                    color: Some("#4fd1c5".to_string()),
                 },
-                "SPLIT · Slot 3 saved",
-            ),
-            (
-                Notification::SlotSaved {
-                    slot: 4,
-                    favorite: true,
-                },
-                "SPLIT · Favorite 4 saved",
+                "SPLIT · Saved · Rooftop",
             ),
             (
                 Notification::SlotLoaded {
                     slot: 2,
-                    favorite: false,
+                    display_name: "Slot 2".to_string(),
+                    color: None,
                 },
-                "SPLIT · Slot 2 loaded",
-            ),
-            (
-                Notification::SlotLoaded {
-                    slot: 7,
-                    favorite: true,
-                },
-                "SPLIT · Favorite 7 loaded",
+                "SPLIT · Loaded · Slot 2",
             ),
             (
                 Notification::SlotEmpty {
@@ -638,6 +921,7 @@ mod tests {
             (Notification::NothingToUndo, "SPLIT · Nothing to undo"),
             (Notification::NothingToRedo, "SPLIT · Nothing to redo"),
             (Notification::SaveFailed, "SPLIT · Save failed"),
+            (Notification::Test, "SPLIT · Test notification"),
         ];
 
         for (notification, expected) in cases {
@@ -646,8 +930,8 @@ mod tests {
     }
 
     #[test]
-    fn positions_overlay_inside_client_top_right() {
-        let client = RECT {
+    fn positions_overlay_inside_known_work_area() {
+        let work_area = RECT {
             left: 1_920,
             top: 120,
             right: 4_480,
@@ -655,20 +939,55 @@ mod tests {
         };
 
         assert_eq!(
-            overlay_position(client, NotificationPosition::TopRight),
+            overlay_position(work_area, NotificationPosition::TopRight, MIN_OVERLAY_WIDTH),
             (4_192, 144)
         );
         assert_eq!(
-            overlay_position(client, NotificationPosition::TopLeft),
+            overlay_position(work_area, NotificationPosition::TopLeft, MIN_OVERLAY_WIDTH),
             (1_944, 144)
         );
         assert_eq!(
-            overlay_position(client, NotificationPosition::BottomLeft),
+            overlay_position(work_area, NotificationPosition::BottomLeft, MIN_OVERLAY_WIDTH),
             (1_944, 1_480)
         );
         assert_eq!(
-            overlay_position(client, NotificationPosition::BottomRight),
+            overlay_position(work_area, NotificationPosition::BottomRight, MIN_OVERLAY_WIDTH),
             (4_192, 1_480)
+        );
+    }
+
+    #[test]
+    fn dynamic_width_uses_padding_minimum_and_maximum() {
+        assert_eq!(overlay_width(80), MIN_OVERLAY_WIDTH);
+        assert_eq!(overlay_width(300), 300 + HORIZONTAL_PADDING * 2);
+        assert_eq!(overlay_width(1_000), MAX_OVERLAY_WIDTH);
+    }
+
+    #[test]
+    fn dynamic_width_preserves_left_and_right_anchors_for_desktop_work_area() {
+        let work_area = RECT {
+            left: 1_920,
+            top: 120,
+            right: 4_480,
+            bottom: 1_560,
+        };
+        let width = 400;
+
+        assert_eq!(
+            overlay_position(work_area, NotificationPosition::TopRight, width),
+            (4_056, 144)
+        );
+        assert_eq!(
+            overlay_position(work_area, NotificationPosition::BottomRight, width),
+            (4_056, 1_480)
+        );
+        assert_eq!(
+            overlay_position(work_area, NotificationPosition::TopLeft, width),
+            (1_944, 144)
+        );
+        assert_eq!(
+            overlay_position(work_area, NotificationPosition::BottomLeft, width),
+            (1_944, 1_480)
         );
     }
 
@@ -678,6 +997,7 @@ mod tests {
         assert!(settings.enabled);
         assert_eq!(settings.position, NotificationPosition::TopRight);
         assert_eq!(settings.duration_ms, 1_500);
+        assert!(settings.use_slot_color);
     }
 
     #[test]
@@ -701,7 +1021,7 @@ mod tests {
 
     #[test]
     fn duration_validation_accepts_only_supported_values() {
-        for duration_ms in [1_000, 1_500, 2_000, 3_000] {
+        for duration_ms in [500, 1_000, 1_500, 2_000, 3_000] {
             let settings = NotificationSettings {
                 duration_ms,
                 ..NotificationSettings::default()
@@ -726,5 +1046,26 @@ mod tests {
         });
         assert!(prepare_notification(Notification::Preset(2)).is_none());
         apply_settings(NotificationSettings::default());
+    }
+
+    #[test]
+    fn slot_color_tints_the_dark_background_only_when_enabled() {
+        let base = color(BASE_BACKGROUND.0, BASE_BACKGROUND.1, BASE_BACKGROUND.2);
+        assert_eq!(notification_background(None, true), base);
+        assert_eq!(notification_background(Some("#4fd1c5"), false), base);
+        assert_eq!(notification_background(Some("invalid"), true), base);
+        assert_eq!(
+            notification_background(Some("#4fd1c5"), true),
+            color(31, 61, 64)
+        );
+    }
+
+    #[test]
+    fn fade_is_clamped_and_keeps_total_duration() {
+        assert_eq!(fade_duration_ms(500), 200);
+        assert_eq!(500 - fade_duration_ms(500), 300);
+        assert_eq!(fade_duration_ms(1_500), 200);
+        assert_eq!(1_500 - fade_duration_ms(1_500), 1_300);
+        assert_eq!(fade_duration_ms(250), 100);
     }
 }

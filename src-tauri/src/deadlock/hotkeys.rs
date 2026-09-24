@@ -2572,7 +2572,7 @@ pub(crate) fn queue_prime_after_save(slot: u8) {
 }
 
 fn prime_active_slot(slot: u8) -> Result<bool, String> {
-    let (_favorite, snapshot) = super::active_slot_state(slot)?;
+    let (_favorite, snapshot, _display_name, _color) = super::active_slot_state(slot)?;
 
     let Some(_snapshot) = snapshot else {
         return Ok(false);
@@ -2640,7 +2640,7 @@ fn prime_active_slot(slot: u8) -> Result<bool, String> {
 }
 
 fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
-    let (favorite, snapshot) = super::active_slot_state(slot)?;
+    let (favorite, snapshot, display_name, color) = super::active_slot_state(slot)?;
 
     let Some(snapshot) = snapshot else {
         if show_notification {
@@ -2783,7 +2783,8 @@ fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
     if show_notification {
         crate::notifications::show(crate::notifications::Notification::SlotLoaded {
             slot,
-            favorite,
+            display_name,
+            color,
         });
     }
 

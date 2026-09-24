@@ -68,6 +68,8 @@ pub struct SlotEditResult {
 pub(crate) struct PersistSlotResult {
     pub bank: slots::SlotBank,
     pub slots: Vec<Option<PositionSnapshot>>,
+    pub display_name: String,
+    pub color: Option<String>,
     pub history_state: HistoryState,
     pub history_changed: bool,
 }
@@ -714,6 +716,7 @@ pub(crate) fn persist_slot_position(
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
     let bank = current_slot_bank()?;
     let saved = slots::save_slot(bank, slot, position, screenshot)?;
+    let notification = slots::notification_metadata(saved.bank, saved.slot, &saved.after);
 
     let deadlock = paths::configured_deadlock_paths()
         .ok_or_else(|| "Deadlock directory is not configured".to_string())?;
@@ -732,6 +735,8 @@ pub(crate) fn persist_slot_position(
     Ok(PersistSlotResult {
         bank: saved.bank,
         slots: saved.slots,
+        display_name: notification.display_name,
+        color: notification.color,
         history_state,
         history_changed,
     })
@@ -1064,18 +1069,23 @@ pub fn toggle_favorite_mode() -> Result<ActiveBankResult, String> {
     })
 }
 
-pub(crate) fn active_slot_state(slot: u8) -> Result<(bool, Option<PositionSnapshot>), String> {
+pub(crate) fn active_slot_state(
+    slot: u8,
+) -> Result<(bool, Option<PositionSnapshot>, String, Option<String>), String> {
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid load slot {slot}"));
     }
 
     let bank = current_slot_bank()?;
+    let entry = slots::load_slot_entry(bank, slot)?;
+    let notification = slots::notification_metadata(bank, slot, &entry);
 
-    let slots = slots::load_bank(bank)?;
-
-    let snapshot = slots[usize::from(slot - 1)].clone();
-
-    Ok((favorite_mode_for_bank(bank), snapshot))
+    Ok((
+        favorite_mode_for_bank(bank),
+        entry.snapshot,
+        notification.display_name,
+        notification.color,
+    ))
 }
 
 pub(crate) fn emit_active_bank(app: &AppHandle, result: &ActiveBankResult) {

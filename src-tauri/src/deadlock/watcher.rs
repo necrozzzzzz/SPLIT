@@ -481,7 +481,8 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
 
                         crate::notifications::show(crate::notifications::Notification::SlotSaved {
                             slot,
-                            favorite: super::favorite_mode_for_bank(saved.bank),
+                            display_name: saved.display_name,
+                            color: saved.color,
                         });
 
                         crate::ui::emit_to_main_if_present(app, "deadlock-slots", saved.slots);

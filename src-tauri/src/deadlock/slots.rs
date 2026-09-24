@@ -75,6 +75,12 @@ pub struct SlotMetadata {
     pub screenshot: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SlotNotificationMetadata {
+    pub display_name: String,
+    pub color: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FavoriteSlotSummary {
@@ -240,6 +246,31 @@ fn automatic_saved_name(bank: SlotBank, slot_index: usize) -> String {
         SlotBank::Preset(_) => {
             format!("Save {number}")
         }
+    }
+}
+
+fn notification_display_name(bank: SlotBank, slot_index: usize, name: &str) -> String {
+    let trimmed = name.trim();
+    let default_name = default_slot_name(bank, slot_index);
+    let automatic_name = automatic_saved_name(bank, slot_index);
+
+    if trimmed.is_empty() || trimmed == default_name || trimmed == automatic_name {
+        default_name
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub(crate) fn notification_metadata(
+    bank: SlotBank,
+    slot: u8,
+    entry: &SlotEntry,
+) -> SlotNotificationMetadata {
+    let slot_index = usize::from(slot.saturating_sub(1));
+
+    SlotNotificationMetadata {
+        display_name: notification_display_name(bank, slot_index, &entry.name),
+        color: entry.color.clone(),
     }
 }
 
@@ -499,6 +530,18 @@ fn bank_entries_mut(state: &mut SlotsFile, bank: SlotBank) -> Result<&mut Vec<Sl
         }
 
         SlotBank::Favorites => Ok(&mut state.favorites),
+    }
+}
+
+fn bank_entries(state: &SlotsFile, bank: SlotBank) -> Result<&Vec<SlotEntry>, String> {
+    match bank {
+        SlotBank::Preset(preset) => {
+            if !(1..=PRESET_COUNT as u8).contains(&preset) {
+                return Err(format!("Invalid preset {preset}"));
+            }
+            Ok(&state.presets[usize::from(preset - 1)])
+        }
+        SlotBank::Favorites => Ok(&state.favorites),
     }
 }
 
@@ -1315,6 +1358,23 @@ pub(crate) fn load_metadata(bank: SlotBank) -> Result<Vec<SlotMetadata>, String>
     }
 }
 
+pub(crate) fn load_slot_entry(bank: SlotBank, slot: u8) -> Result<SlotEntry, String> {
+    if !(1..=SLOT_COUNT as u8).contains(&slot) {
+        return Err(format!("Invalid slot {slot}"));
+    }
+
+    let _guard = STORAGE_LOCK
+        .lock()
+        .map_err(|_| "Slots storage lock poisoned".to_string())?;
+    let state = read_state_unlocked()?;
+    let entries = bank_entries(&state, bank)?;
+
+    entries
+        .get(usize::from(slot - 1))
+        .cloned()
+        .ok_or_else(|| format!("Invalid slot {slot}"))
+}
+
 pub fn favorite_slot_summaries() -> Result<Vec<FavoriteSlotSummary>, String> {
     let _guard = STORAGE_LOCK
         .lock()
@@ -1804,6 +1864,44 @@ mod tests {
         };
 
         export_preset_from_state(&state, 2).unwrap()
+    }
+
+    #[test]
+    fn notification_metadata_uses_custom_name_and_color() {
+        let entry = SlotEntry {
+            snapshot: None,
+            name: "  Rooftop setup  ".to_string(),
+            saved_at: None,
+            color: Some("#9b8cff".to_string()),
+            screenshot: None,
+        };
+
+        let metadata = notification_metadata(SlotBank::Preset(2), 4, &entry);
+        assert_eq!(metadata.display_name, "Rooftop setup");
+        assert_eq!(metadata.color.as_deref(), Some("#9b8cff"));
+    }
+
+    #[test]
+    fn notification_metadata_falls_back_for_generated_names_in_each_bank() {
+        let mut entry = SlotEntry {
+            snapshot: None,
+            name: "Save 3".to_string(),
+            saved_at: None,
+            color: None,
+            screenshot: None,
+        };
+        let preset = notification_metadata(SlotBank::Preset(1), 3, &entry);
+        assert_eq!(preset.display_name, "Slot 3");
+        assert_eq!(preset.color, None);
+
+        entry.name = "Favorite Save 3".to_string();
+        let favorite = notification_metadata(SlotBank::Favorites, 3, &entry);
+        assert_eq!(favorite.display_name, "Favorite 3");
+        assert_eq!(favorite.color, None);
+
+        entry.name = "Favorite rooftop".to_string();
+        let renamed_favorite = notification_metadata(SlotBank::Favorites, 3, &entry);
+        assert_eq!(renamed_favorite.display_name, "Favorite rooftop");
     }
 
     #[test]
