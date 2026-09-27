@@ -248,6 +248,10 @@ struct FadeState {
 }
 
 pub fn start() -> Result<(), String> {
+    if !crate::editions::native_notifications_enabled() {
+        return Ok(());
+    }
+
     apply_settings(crate::deadlock::get_notification_settings());
     let mut runtime = RUNTIME
         .lock()
@@ -286,6 +290,10 @@ pub fn start() -> Result<(), String> {
 }
 
 pub fn show(notification: Notification) {
+    if !crate::editions::native_notifications_enabled() {
+        return;
+    }
+
     let Some((payload, settings)) = prepare_notification(notification) else {
         return;
     };
@@ -293,6 +301,10 @@ pub fn show(notification: Notification) {
 }
 
 pub fn show_test(split_hwnd: HWND) -> Result<(), String> {
+    if !crate::editions::native_notifications_enabled() {
+        return Err("Native notifications are unavailable in the Panorama edition".to_string());
+    }
+
     let settings = SETTINGS
         .lock()
         .map_err(|_| "Notification settings lock poisoned".to_string())?
@@ -348,6 +360,10 @@ fn prepare_notification(
 }
 
 pub fn stop() -> Result<(), String> {
+    if !crate::editions::native_notifications_enabled() {
+        return Ok(());
+    }
+
     let runtime = RUNTIME
         .lock()
         .map_err(|_| "Notification runtime lock poisoned".to_string())?

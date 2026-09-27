@@ -1,5 +1,6 @@
 mod app_window;
 mod deadlock;
+mod editions;
 mod notifications;
 mod panorama_bridge;
 mod quick_access;
@@ -23,7 +24,11 @@ fn get_deadlock_status() -> deadlock::DeadlockStatus {
 
 #[tauri::command]
 fn get_diagnostic_report() -> String {
-    deadlock::diagnostic_report()
+    format!(
+        "Edition: {}\n{}",
+        editions::CURRENT.label(),
+        deadlock::diagnostic_report(),
+    )
 }
 
 #[tauri::command]
@@ -498,6 +503,8 @@ async fn set_quick_access_text_input_active(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    println!("[SPLIT] Edition: {}", editions::CURRENT.label());
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Err(error) = app_window::open_main_window(app.clone()) {
@@ -590,8 +597,8 @@ pub fn run() {
                         eprintln!("[SPLIT] Console watcher unavailable: {error}");
                     }
 
-                    if let Err(error) = panorama_bridge::start(background_app.clone()) {
-                        eprintln!("[SPLIT] Panorama bridge unavailable: {error}");
+                    if let Err(error) = editions::start_quick_access_runtime(background_app.clone()) {
+                        eprintln!("[SPLIT] Edition Quick Access runtime unavailable: {error}");
                     }
 
                     if let Err(error) = deadlock::start_hotkeys(background_app.clone()) {
@@ -613,7 +620,7 @@ pub fn run() {
                      * Leur initialisation peut attendre
                      * ready_receiver.recv() sans bloquer l'UI.
                      */
-                    if let Err(error) = notifications::start() {
+                    if let Err(error) = editions::start_notification_runtime() {
                         eprintln!("[SPLIT] Native notifications unavailable: {error}");
                     }
 

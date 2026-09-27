@@ -34,6 +34,10 @@ import {
 } from "./screenshot";
 
 import {
+  splitEditionLabel,
+} from "./edition";
+
+import {
   claimStartupSound,
   playClaimedStartupSound,
   playStartupSound,
@@ -6988,6 +6992,20 @@ function App() {
           </h2>
 
           <div className="diagnostics-grid diagnostics-runtime-grid">
+        <article className="status-card">
+          <div className="status-heading">
+            <StatusDot ok />
+
+            <span>
+              SPLIT edition
+            </span>
+          </div>
+
+          <strong>
+            {splitEditionLabel}
+          </strong>
+        </article>
+
         <article
           className={`status-card ${
             status.integrationHealthy

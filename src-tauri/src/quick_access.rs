@@ -83,7 +83,7 @@ pub fn apply_settings(settings: QuickAccessSettings) {
 }
 
 pub fn is_enabled() -> bool {
-    settings().enabled
+    crate::editions::windows_quick_access_enabled() && settings().enabled
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -168,6 +168,10 @@ pub fn owns_window_handle(
     app: &AppHandle,
     hwnd: HWND,
 ) -> bool {
+    if !crate::editions::windows_quick_access_enabled() {
+        return false;
+    }
+
     app.get_webview_window(QUICK_ACCESS_LABEL)
         .and_then(|window| window.hwnd().ok())
         .is_some_and(|quick_access_hwnd| {
@@ -288,7 +292,7 @@ pub fn show(
         return Ok(());
     }
 
-    if crate::panorama_bridge::is_panorama_active() {
+    if crate::editions::legacy_panorama_renderer_active() {
         suppress_external_window_for_panorama(app)?;
         QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
         QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
@@ -358,7 +362,7 @@ fn hide_internal(
     app: &AppHandle,
     restore_deadlock_focus: bool,
 ) -> Result<(), String> {
-    let renderer = if crate::panorama_bridge::is_panorama_active() {
+    let renderer = if crate::editions::legacy_panorama_renderer_active() {
         "panorama"
     } else {
         "windows"
@@ -437,6 +441,10 @@ pub fn set_viewer_open(
     app: &AppHandle,
     open: bool,
 ) -> Result<(), String> {
+    if !crate::editions::windows_quick_access_enabled() {
+        return Ok(());
+    }
+
     let window = get_or_create(app)?;
     let rect = deadlock_rect()?;
     let width = if open {
@@ -493,7 +501,7 @@ pub fn reposition_if_visible(
     if !is_visible() {
         return Ok(());
     }
-    if crate::panorama_bridge::is_panorama_active() {
+    if crate::editions::legacy_panorama_renderer_active() {
         return suppress_external_window_for_panorama(app);
     }
 
@@ -532,7 +540,11 @@ pub fn reposition_if_visible(
 pub fn enter_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
-    if crate::panorama_bridge::is_panorama_active() {
+    if !crate::editions::windows_quick_access_enabled() {
+        return Ok(());
+    }
+
+    if crate::editions::legacy_panorama_renderer_active() {
         suppress_external_window_for_panorama(app)?;
         QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
         QUICK_ACCESS_INTERACTIVE.store(true, Ordering::SeqCst);
@@ -652,7 +664,11 @@ pub fn enter_interaction_mode(
 pub fn exit_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
-    if crate::panorama_bridge::is_panorama_active() {
+    if !crate::editions::windows_quick_access_enabled() {
+        return Ok(());
+    }
+
+    if crate::editions::legacy_panorama_renderer_active() {
         suppress_external_window_for_panorama(app)?;
         QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
         QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);

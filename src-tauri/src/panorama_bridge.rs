@@ -1,3 +1,9 @@
+//! LEGACY / EXPERIMENTAL PNG transport.
+//!
+//! Kept temporarily to preserve the existing Borderless build behavior. This
+//! module is not the renderer bridge for the Panorama edition and must not be
+//! extended with the future CitadelHTMLPanel/HTMLTitle transport.
+
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},

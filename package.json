@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:borderless": "node scripts/run-edition.mjs borderless npm run build",
+    "build:panorama": "node scripts/run-edition.mjs panorama npm run build",
+    "tauri:build:borderless": "node scripts/run-edition.mjs borderless npm run tauri -- build --no-bundle",
+    "tauri:build:panorama": "node scripts/run-edition.mjs panorama npm run tauri -- build --no-bundle",
     "tauri": "tauri"
   },
   "dependencies": {
