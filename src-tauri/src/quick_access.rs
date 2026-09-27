@@ -126,6 +126,38 @@ fn emit_interaction_mode(
     }
 }
 
+pub(crate) fn suppress_external_window_for_panorama(
+    app: &AppHandle,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(QUICK_ACCESS_LABEL) else {
+        return Ok(());
+    };
+    let was_focused = window.is_focused().unwrap_or(false);
+
+    window
+        .set_focusable(false)
+        .map_err(|error| {
+            format!("Could not disable external Quick Access focus: {error}")
+        })?;
+    emit_interaction_mode(&window, false);
+    if window.is_visible().unwrap_or(false) {
+        window
+            .hide()
+            .map_err(|error| {
+                format!("Could not suppress external Quick Access: {error}")
+            })?;
+    }
+
+    if was_focused {
+        if let Err(error) = crate::deadlock::focus_deadlock_window() {
+            eprintln!(
+                "[SPLIT][QA] Could not restore Deadlock focus while switching to Panorama: {error}"
+            );
+        }
+    }
+    Ok(())
+}
+
 
 fn deadlock_rect() -> Result<RECT, String> {
     crate::deadlock::deadlock_window_rect()
@@ -256,6 +288,14 @@ pub fn show(
         return Ok(());
     }
 
+    if crate::panorama_bridge::is_panorama_active() {
+        suppress_external_window_for_panorama(app)?;
+        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
+        QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
+        println!("[QuickAccess] state=PASSIVE renderer=panorama");
+        return Ok(());
+    }
+
     let window =
         get_or_create(app)?;
 
@@ -308,6 +348,8 @@ pub fn show(
             (),
         );
 
+    println!("[QuickAccess] state=PASSIVE renderer=windows");
+
     Ok(())
 }
 
@@ -316,6 +358,11 @@ fn hide_internal(
     app: &AppHandle,
     restore_deadlock_focus: bool,
 ) -> Result<(), String> {
+    let renderer = if crate::panorama_bridge::is_panorama_active() {
+        "panorama"
+    } else {
+        "windows"
+    };
     if let Some(window) =
         app.get_webview_window(
             QUICK_ACCESS_LABEL,
@@ -365,6 +412,8 @@ fn hide_internal(
             );
         }
     }
+
+    println!("[QuickAccess] state=HIDDEN renderer={renderer}");
 
     Ok(())
 }
@@ -444,6 +493,9 @@ pub fn reposition_if_visible(
     if !is_visible() {
         return Ok(());
     }
+    if crate::panorama_bridge::is_panorama_active() {
+        return suppress_external_window_for_panorama(app);
+    }
 
     let window = app
         .get_webview_window(QUICK_ACCESS_LABEL)
@@ -480,6 +532,21 @@ pub fn reposition_if_visible(
 pub fn enter_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
+    if crate::panorama_bridge::is_panorama_active() {
+        suppress_external_window_for_panorama(app)?;
+        QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
+        QUICK_ACCESS_INTERACTIVE.store(true, Ordering::SeqCst);
+        println!("[QuickAccess] state=INTERACTIVE renderer=panorama");
+        return Ok(());
+    }
+
+    let needs_passive_window = app
+        .get_webview_window(QUICK_ACCESS_LABEL)
+        .is_none_or(|window| !window.is_visible().unwrap_or(false));
+    if needs_passive_window {
+        show(app)?;
+    }
+
     let window = app
         .get_webview_window(
             QUICK_ACCESS_LABEL,
@@ -577,6 +644,7 @@ pub fn enter_interaction_mode(
         &window,
         true,
     );
+    println!("[QuickAccess] state=INTERACTIVE renderer=windows");
     Ok(())
 }
 
@@ -584,6 +652,21 @@ pub fn enter_interaction_mode(
 pub fn exit_interaction_mode(
     app: &AppHandle,
 ) -> Result<(), String> {
+    if crate::panorama_bridge::is_panorama_active() {
+        suppress_external_window_for_panorama(app)?;
+        QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
+        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
+        println!("[QuickAccess] state=PASSIVE renderer=panorama");
+        return Ok(());
+    }
+
+    let needs_passive_window = app
+        .get_webview_window(QUICK_ACCESS_LABEL)
+        .is_none_or(|window| !window.is_visible().unwrap_or(false));
+    if needs_passive_window {
+        return show(app);
+    }
+
     let window = app
         .get_webview_window(
             QUICK_ACCESS_LABEL,
@@ -632,6 +715,8 @@ pub fn exit_interaction_mode(
         &window,
         false,
     );
+
+    println!("[QuickAccess] state=PASSIVE renderer=windows");
 
     Ok(())
 }

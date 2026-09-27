@@ -28,7 +28,9 @@ use windows_sys::{
                 GetAsyncKeyState, GetKeyState, RegisterHotKey, SendInput, SetActiveWindow,
                 SetFocus, UnregisterHotKey, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
                 KEYEVENTF_KEYUP, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F10, VK_F11,
-                VK_F12, VK_F13, VK_F14, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9,
+                VK_F12, VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19, VK_F2,
+                VK_F20, VK_F21, VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
+                VK_F8, VK_F9,
                 VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT,
                 VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE,
                 VK_UP, VK_CAPITAL, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
@@ -234,6 +236,15 @@ impl Hotkey {
         parts.push(&self.key);
         parts.join("+")
     }
+
+    #[cfg(test)]
+    fn is_simple_text_key(&self) -> bool {
+        !self.ctrl
+            && !self.alt
+            && !self.shift
+            && self.key.len() == 1
+            && self.key.as_bytes()[0].is_ascii_alphanumeric()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -262,7 +273,7 @@ impl Default for HotkeySettings {
             }),
             undo: Hotkey::new("F9", false, false, false),
             redo: Hotkey::new("F10", false, false, false),
-            cycle_preset: Hotkey::new("V", false, false, false),
+            cycle_preset: Hotkey::new("F12", false, false, false),
             favorite_mode: Hotkey::new("F11", false, false, false),
             quick_access: Hotkey::new(
                 "CapsLock",
@@ -311,12 +322,12 @@ impl HotkeySettings {
         for hotkey in [
             &self.undo,
             &self.redo,
-            &self.cycle_preset,
             &self.favorite_mode,
             &self.quick_access,
         ] {
             validate_hotkey(hotkey, false)?;
         }
+        validate_hotkey(&self.cycle_preset, false)?;
         self.validate_conflicts()?;
         Ok(self)
     }
@@ -442,13 +453,6 @@ fn validate_hotkey(hotkey: &Hotkey, allow_historical_alt_f4: bool) -> Result<(),
         || (hotkey.ctrl && hotkey.alt && hotkey.key == "Delete")
     {
         return Err(format!("{display} is reserved by Windows."));
-    }
-
-    if matches!(
-        hotkey.key.as_str(),
-        "H" | "U" | "I" | "O" | "J" | "K" | "L" | "N" | "M"
-    ) {
-        return Err(format!("{} is reserved by SPLIT.", hotkey.key));
     }
 
     Ok(())
@@ -881,32 +885,18 @@ static HOOK_ENGINE: LazyLock<Mutex<HookEngine>> =
  * Touches internes utilisées par
  * savestate.cfg pour charger les slots.
  *
- * Slot 1 -> U
- * Slot 2 -> I
- * Slot 3 -> O
- * Slot 4 -> J
- * Slot 5 -> K
- * Slot 6 -> L
- * Slot 7 -> N
- * Slot 8 -> M
+ * Slot 1..8 -> F15..F22
  */
 fn load_transport_vk(slot: u8) -> Option<u16> {
     match slot {
-        1 => Some(b'U' as u16),
-
-        2 => Some(b'I' as u16),
-
-        3 => Some(b'O' as u16),
-
-        4 => Some(b'J' as u16),
-
-        5 => Some(b'K' as u16),
-
-        6 => Some(b'L' as u16),
-
-        7 => Some(b'N' as u16),
-
-        8 => Some(b'M' as u16),
+        1 => Some(VK_F15),
+        2 => Some(VK_F16),
+        3 => Some(VK_F17),
+        4 => Some(VK_F18),
+        5 => Some(VK_F19),
+        6 => Some(VK_F20),
+        7 => Some(VK_F21),
+        8 => Some(VK_F22),
 
         _ => None,
     }
@@ -1749,6 +1739,7 @@ fn spawn_quick_access_hotkey_service(
                                     ),
                                 }
                             }
+
                         }
                         Err(error) => eprintln!(
                             "[SPLIT][QA] Could not update hotkeys for foreground change: {error}"
@@ -2424,7 +2415,7 @@ fn send_virtual_key(vk: u16) -> Result<(), String> {
 }
 
 fn send_capture_key() -> Result<(), String> {
-    send_virtual_key(b'H' as u16)
+    send_virtual_key(VK_F23)
 }
 
 fn send_prepare_key() -> Result<(), String> {
@@ -2432,7 +2423,7 @@ fn send_prepare_key() -> Result<(), String> {
 }
 
 fn send_present_resume_key() -> Result<(), String> {
-    send_virtual_key(VK_F10)
+    send_virtual_key(VK_F24)
 }
 
 fn send_momentum_reset_key() -> Result<(), String> {
@@ -2445,7 +2436,7 @@ pub(crate) fn prepare_teleports_after_cfg_update() {
     }
 
     /*
-     * Ne JAMAIS envoyer F12 à une autre
+     * Ne JAMAIS envoyer F13 à une autre
      * application que Deadlock.
      */
     if !is_deadlock_foreground() {
@@ -2521,6 +2512,20 @@ pub fn prepare_teleports_from_ui() -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn apply_generated_cfg_now() -> Result<bool, String> {
+    if !super::process::is_deadlock_running() || !super::cfg::teleports_dirty() {
+        return Ok(false);
+    }
+
+    focus_deadlock_window()?;
+    thread::sleep(Duration::from_millis(75));
+    send_prepare_key()?;
+    super::cfg::mark_teleports_prepared();
+
+    println!("[SPLIT] Generated Deadlock CFG applied immediately via F13");
+    Ok(true)
+}
+
 pub fn resume_presentation_from_ui() -> Result<(), String> {
     /*
      * Le bouton n'est normalement visible
@@ -2534,14 +2539,14 @@ pub fn resume_presentation_from_ui() -> Result<(), String> {
     }
 
     /*
-     * Le F10 interne doit arriver dans Deadlock.
+     * Le F24 interne doit arriver dans Deadlock.
      */
     focus_deadlock_window()?;
 
     thread::sleep(Duration::from_millis(75));
 
     /*
-     * F10 est bindé dans savestate.cfg à :
+     * F24 est bindé dans savestate.cfg à :
      *
      *     r_force_no_present 0
      */
@@ -2844,7 +2849,7 @@ pub fn save_slot_from_ui(app: AppHandle, slot: u8) -> Result<(), String> {
 
     /*
      * IMPORTANT :
-     * on marque le slot AVANT d'envoyer H.
+     * on marque le slot AVANT d'envoyer F23.
      *
      * Ainsi, lorsque watcher.rs reçoit
      * le nouveau getpos_exact, il sait
@@ -2889,6 +2894,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: usize, lparam: isize)
     let settings = runtime_settings()
         .read()
         .unwrap_or_else(|error| error.into_inner());
+
     let mut hook_engine = HOOK_ENGINE
         .lock()
         .unwrap_or_else(|error| error.into_inner());
@@ -2931,9 +2937,16 @@ physical ctrl={} alt={} shift={}",
         HookDecision::Pass => CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam),
         HookDecision::Consume => 1,
         HookDecision::EmergencyF10 => {
-            PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
-            println!("[SPLIT] Emergency presentation resume via F10");
-            CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+            match send_present_resume_key() {
+                Ok(()) => {
+                    PRESENTATION_MASK_ACTIVE.store(false, Ordering::SeqCst);
+                    println!("[SPLIT] Emergency presentation resume via F10 -> F24");
+                }
+                Err(error) => {
+                    eprintln!("[SPLIT] Emergency presentation resume failed: {error}");
+                }
+            }
+            1
         }
         HookDecision::Trigger(action, hotkey) => {
             if let Some(sender) = HOTKEY_SENDER.get() {
@@ -2942,6 +2955,26 @@ physical ctrl={} alt={} shift={}",
             1
         }
     }
+}
+
+fn cycle_preset(app: &AppHandle) {
+    match super::cycle_active_preset() {
+        Ok(Some((preset, saved_slots))) => {
+            println!("[SPLIT] Preset switched to {preset}");
+            prepare_teleports_after_cfg_update();
+            crate::notifications::show(crate::notifications::Notification::Preset(preset));
+            crate::ui::emit_to_main_if_present(app, "deadlock-slots", saved_slots);
+            crate::ui::emit_to_main_if_present(app, "deadlock-preset", preset);
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("[SPLIT] Could not cycle preset: {error}"),
+    }
+}
+
+pub(crate) fn execute_shutdown_prepare() -> Result<(), String> {
+    focus_deadlock_window()?;
+    thread::sleep(Duration::from_millis(75));
+    send_prepare_key()
 }
 
 fn start_inner(app: AppHandle) -> Result<(), String> {
@@ -3033,7 +3066,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
 
                             watcher::report_save_failed(&app, slot, &error);
 
-                            eprintln!("[SPLIT] Could not send H: {error}");
+                            eprintln!("[SPLIT] Could not send F23: {error}");
                         }
                     }
 
@@ -3043,11 +3076,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                      * On NE dépend PAS des binds
                      * F1-F8 de Deadlock.
                      *
-                     * SPLIT transforme :
-                     *
-                     * F1 -> U
-                     * F2 -> I
-                     * etc.
+                     * SPLIT transforme F1-F8 en F15-F22.
                      */
                     HotkeyAction::User {
                         action: UserHotkeyAction::Load(slot),
@@ -3111,40 +3140,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         hotkey,
                     } => {
                         println!("[SPLIT] Preset hotkey: {}", hotkey.display());
-
-                        match super::cycle_active_preset() {
-                            Ok(Some((preset, saved_slots))) => {
-                                println!("[SPLIT] Preset switched to {preset}");
-
-                                prepare_teleports_after_cfg_update();
-
-                                crate::notifications::show(
-                                    crate::notifications::Notification::Preset(preset),
-                                );
-
-                                /*
-                                 * Mettre à jour les 8 cartes
-                                 * dans React.
-                                 */
-                                crate::ui::emit_to_main_if_present(
-                                    &app,
-                                    "deadlock-slots",
-                                    saved_slots,
-                                );
-
-                                /*
-                                 * Mettre à jour le bouton
-                                 * Preset actif dans React.
-                                 */
-                                crate::ui::emit_to_main_if_present(&app, "deadlock-preset", preset);
-                            }
-
-                            Ok(None) => {}
-
-                            Err(error) => {
-                                eprintln!("[SPLIT] Could not cycle preset: {error}");
-                            }
-                        }
+                        cycle_preset(&app);
                     }
 
                     HotkeyAction::User {
@@ -3353,7 +3349,7 @@ mod tests {
         }
         assert_eq!(settings.undo, Hotkey::new("F9", false, false, false));
         assert_eq!(settings.redo, Hotkey::new("F10", false, false, false));
-        assert_eq!(settings.cycle_preset, Hotkey::new("V", false, false, false));
+        assert_eq!(settings.cycle_preset, Hotkey::new("F12", false, false, false));
         assert_eq!(
             settings.favorite_mode,
             Hotkey::new("F11", false, false, false)
@@ -3374,6 +3370,17 @@ mod tests {
             classify_down(&mut save, VK_F1, &settings),
             HookDecision::Trigger(UserHotkeyAction::Save(1), _)
         ));
+    }
+
+    #[test]
+    fn cycle_preset_text_key_warning_classification_is_exact() {
+        assert!(!Hotkey::new("F12", false, false, false).is_simple_text_key());
+        assert!(Hotkey::new("V", false, false, false).is_simple_text_key());
+        assert!(Hotkey::new("C", false, false, false).is_simple_text_key());
+        assert!(Hotkey::new("1", false, false, false).is_simple_text_key());
+        assert!(!Hotkey::new("V", true, false, false).is_simple_text_key());
+        assert!(!Hotkey::new("V", false, true, false).is_simple_text_key());
+        assert!(!Hotkey::new("V", false, false, true).is_simple_text_key());
     }
 
     #[test]
@@ -3410,7 +3417,7 @@ mod tests {
             HookDecision::Trigger(UserHotkeyAction::Load(1), _)
         ));
         assert!(matches!(
-            classify_down(&mut engine, b'V' as u16, &settings),
+            classify_down(&mut engine, VK_F12, &settings),
             HookDecision::Trigger(UserHotkeyAction::CyclePreset, _)
         ));
         assert!(matches!(
@@ -3496,32 +3503,13 @@ mod tests {
     }
 
     #[test]
-    fn internal_transport_keys_are_reserved_with_or_without_modifiers() {
+    fn legacy_letter_transports_are_available_to_users_again() {
         for key in ["H", "U", "I", "O", "J", "K", "L", "N", "M"] {
-            assert!(
-                validate_hotkey(&Hotkey::new(key, false, false, false), false).is_err(),
-                "{key} should be reserved"
-            );
-
-            assert!(
-                validate_hotkey(&Hotkey::new(key, true, false, false), false).is_err(),
-                "Ctrl+{key} should be reserved"
-            );
-
-            assert!(
-                validate_hotkey(&Hotkey::new(key, false, true, false), false).is_err(),
-                "Alt+{key} should be reserved"
-            );
-
-            assert!(
-                validate_hotkey(&Hotkey::new(key, false, false, true), false).is_err(),
-                "Shift+{key} should be reserved"
-            );
-
-            assert!(
-                validate_hotkey(&Hotkey::new(key, true, true, true), false).is_err(),
-                "Ctrl+Alt+Shift+{key} should be reserved"
-            );
+            assert!(validate_hotkey(&Hotkey::new(key, false, false, false), false).is_ok());
+            assert!(validate_hotkey(&Hotkey::new(key, true, false, false), false).is_ok());
+            assert!(validate_hotkey(&Hotkey::new(key, false, true, false), false).is_ok());
+            assert!(validate_hotkey(&Hotkey::new(key, false, false, true), false).is_ok());
+            assert!(validate_hotkey(&Hotkey::new(key, true, true, true), false).is_ok());
         }
     }
 
@@ -3533,6 +3521,7 @@ mod tests {
         assert!(normalize_key("Meta").is_err());
         assert!(normalize_key("F13").is_err());
         assert!(normalize_key("F14").is_err());
+        assert!(normalize_key("F24").is_err());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "split"
-version = "2.0.0-alpha.1"
+version = "2.0.0-1"
 description = "Lightweight Deadlock savestate utility"
 authors = ["necrozzzzzz"]
 edition = "2021"

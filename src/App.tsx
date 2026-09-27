@@ -33,6 +33,13 @@ import {
   getFullScreenshotPath,
 } from "./screenshot";
 
+import {
+  claimStartupSound,
+  playClaimedStartupSound,
+  playStartupSound,
+  type StartupSoundSettings,
+} from "./startupSound";
+
 type DeadlockStatus = {
   deadlockRunning: boolean;
   deadlockPath: string | null;
@@ -72,7 +79,31 @@ type DeadlockSetupState = {
   configuredPath: string | null;
   detectedPath: string | null;
   needsSetup: boolean;
+  invalidConfiguredPath: boolean;
 };
+
+type LaunchFolderState = {
+  configuredPath: string | null;
+  pathValid: boolean;
+  reminderDue: boolean;
+};
+
+const V1_HEADER_PHRASES = [
+  "The Lash approves",
+  "Go play Makrill blyat",
+  "Expelling goo",
+  "Haze is missing",
+  "Arigato, Arighetto, uh-REG-eh-doe",
+  "Help me deliver this thing",
+  "They're in mid",
+  "Let's go mid",
+  "Yellow needs help",
+  "Broadway needs help",
+  "Nebraska is on its way",
+  "I like my pillow",
+  "Turn into frog",
+  "Why does bread taste good?",
+] as const;
 
 type PositionSnapshot = {
   x: number;
@@ -245,7 +276,7 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
   })),
   undo: { key: "F9", ctrl: false, alt: false, shift: false },
   redo: { key: "F10", ctrl: false, alt: false, shift: false },
-  cyclePreset: { key: "V", ctrl: false, alt: false, shift: false },
+  cyclePreset: { key: "F12", ctrl: false, alt: false, shift: false },
   favoriteMode: { key: "F11", ctrl: false, alt: false, shift: false },
   quickAccess: {
     key: "CapsLock",
@@ -258,6 +289,11 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
 const DEFAULT_QUICK_ACCESS_SETTINGS: QuickAccessSettings = {
   enabled: true,
   position: "left",
+};
+
+const DEFAULT_STARTUP_SOUND_SETTINGS: StartupSoundSettings = {
+  enabled: true,
+  volume: 40,
 };
 
 function formatHotkey(hotkey: Hotkey): string {
@@ -457,6 +493,15 @@ function hotkeyMayInterfereWithGameplay(hotkey: Hotkey): boolean {
   return gameplayKey;
 }
 
+function isSimpleTextHotkey(hotkey: Hotkey): boolean {
+  return (
+    !hotkey.ctrl &&
+    !hotkey.alt &&
+    !hotkey.shift &&
+    /^[A-Z0-9]$/i.test(hotkey.key)
+  );
+}
+
 const EMPTY_STATUS: DeadlockStatus = {
   deadlockRunning: false,
   deadlockPath: null,
@@ -613,6 +658,15 @@ function App() {
     setStartMinimizedSaving,
   ] = useState(false);
 
+  const [startupSoundSettings, setStartupSoundSettings] =
+    useState<StartupSoundSettings>(DEFAULT_STARTUP_SOUND_SETTINGS);
+  const [startupSoundSaving, setStartupSoundSaving] = useState(false);
+  const [startupSoundFeedback, setStartupSoundFeedback] =
+    useState<string | null>(null);
+  const startupSoundSaveTimerRef = useRef<number | undefined>(undefined);
+  const startupSoundSaveSequenceRef = useRef(0);
+  const startupSoundSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   const [
     slotColorDisplayMode,
     setSlotColorDisplayMode,
@@ -768,6 +822,28 @@ function App() {
   ] = useState(false);
 
   const [
+    pendingPresetRename,
+    setPendingPresetRename,
+  ] = useState<{
+    preset: number;
+    currentName: string;
+    value: string;
+    error: string | null;
+  } | null>(null);
+
+  const presetRenameInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!pendingPresetRename) {
+      return;
+    }
+
+    presetRenameInputRef.current?.focus();
+    presetRenameInputRef.current?.select();
+  }, [pendingPresetRename?.preset]);
+
+  const [
     clearingPreset,
     setClearingPreset,
   ] = useState(false);
@@ -881,6 +957,14 @@ function App() {
     notificationSettingsSaving,
     setNotificationSettingsSaving,
   ] = useState(false);
+
+  const [folderReminder, setFolderReminder] =
+    useState<LaunchFolderState | null>(null);
+
+  const [v1PhraseIndex, setV1PhraseIndex] =
+    useState(() => Math.floor(Math.random() * V1_HEADER_PHRASES.length));
+  const [v1PhrasePhase, setV1PhrasePhase] =
+    useState<"visible" | "exiting" | "entering">("visible");
 
   const [notificationTesting, setNotificationTesting] =
     useState(false);
@@ -1037,6 +1121,64 @@ function App() {
 
   useEffect(() => {
     let disposed = false;
+    let changeTimer: number | undefined;
+    let transitionTimer: number | undefined;
+    let enterFrame: number | undefined;
+    let settleFrame: number | undefined;
+
+    const scheduleChange = () => {
+      changeTimer = window.setTimeout(() => {
+        setV1PhrasePhase("exiting");
+        transitionTimer = window.setTimeout(() => {
+          if (disposed) return;
+          setV1PhraseIndex((current) => {
+            const offset = 1 + Math.floor(
+              Math.random() * (V1_HEADER_PHRASES.length - 1),
+            );
+            return (current + offset) % V1_HEADER_PHRASES.length;
+          });
+          setV1PhrasePhase("entering");
+          enterFrame = window.requestAnimationFrame(() => {
+            settleFrame = window.requestAnimationFrame(() => {
+              if (!disposed) setV1PhrasePhase("visible");
+            });
+          });
+          scheduleChange();
+        }, 280);
+      }, 8_000 + Math.floor(Math.random() * 4_001));
+    };
+
+    scheduleChange();
+    return () => {
+      disposed = true;
+      if (changeTimer !== undefined) window.clearTimeout(changeTimer);
+      if (transitionTimer !== undefined) window.clearTimeout(transitionTimer);
+      if (enterFrame !== undefined) window.cancelAnimationFrame(enterFrame);
+      if (settleFrame !== undefined) window.cancelAnimationFrame(settleFrame);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void claimStartupSound()
+      .then((launch) => {
+        if (!disposed) {
+          setStartupSoundSettings(launch.settings);
+        }
+        void playClaimedStartupSound(launch);
+      })
+      .catch(() => {
+        // Startup audio must never block or surface a critical error.
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
 
     void isAutostartEnabled()
       .then((enabled) => {
@@ -1061,6 +1203,87 @@ function App() {
       disposed = true;
     };
   }, []);  
+
+  const persistStartupSoundSettings = useCallback(
+    (next: StartupSoundSettings) => {
+      const sequence = ++startupSoundSaveSequenceRef.current;
+      setStartupSoundSaving(true);
+      setStartupSoundFeedback(null);
+
+      const save = async () => {
+        try {
+          const saved = await invoke<StartupSoundSettings>(
+            "update_startup_sound_settings",
+            { settings: next },
+          );
+          if (sequence === startupSoundSaveSequenceRef.current) {
+            setStartupSoundSettings(saved);
+          }
+        } catch (reason) {
+          if (sequence === startupSoundSaveSequenceRef.current) {
+            setStartupSoundFeedback(
+              `Could not save startup sound settings: ${String(reason)}`,
+            );
+          }
+        } finally {
+          if (sequence === startupSoundSaveSequenceRef.current) {
+            setStartupSoundSaving(false);
+          }
+        }
+      };
+
+      startupSoundSaveQueueRef.current =
+        startupSoundSaveQueueRef.current.then(save, save);
+    },
+    [],
+  );
+
+  const scheduleStartupSoundVolumeSave = useCallback(
+    (next: StartupSoundSettings) => {
+      if (startupSoundSaveTimerRef.current !== undefined) {
+        window.clearTimeout(startupSoundSaveTimerRef.current);
+      }
+      startupSoundSaveTimerRef.current = window.setTimeout(() => {
+        startupSoundSaveTimerRef.current = undefined;
+        persistStartupSoundSettings(next);
+      }, 250);
+    },
+    [persistStartupSoundSettings],
+  );
+
+  const flushStartupSoundVolumeSave = useCallback(
+    (next: StartupSoundSettings) => {
+      if (startupSoundSaveTimerRef.current === undefined) return;
+      window.clearTimeout(startupSoundSaveTimerRef.current);
+      startupSoundSaveTimerRef.current = undefined;
+      persistStartupSoundSettings(next);
+    },
+    [persistStartupSoundSettings],
+  );
+
+  const previewStartupSound = useCallback(async () => {
+    setStartupSoundFeedback(null);
+    try {
+      await playStartupSound(startupSoundSettings.volume);
+    } catch (reason) {
+      setStartupSoundFeedback(
+        `Could not play the startup sound: ${String(reason)}`,
+      );
+    }
+  }, [startupSoundSettings.volume]);
+
+  const toggleStartupSound = useCallback(() => {
+    if (startupSoundSaveTimerRef.current !== undefined) {
+      window.clearTimeout(startupSoundSaveTimerRef.current);
+      startupSoundSaveTimerRef.current = undefined;
+    }
+    const next = {
+      ...startupSoundSettings,
+      enabled: !startupSoundSettings.enabled,
+    };
+    setStartupSoundSettings(next);
+    persistStartupSoundSettings(next);
+  }, [persistStartupSoundSettings, startupSoundSettings]);
 
   useEffect(() => {
     let disposed = false;
@@ -1576,6 +1799,26 @@ function App() {
       setError(null);
 
       try {
+        try {
+          const launchState =
+            await invoke<LaunchFolderState>(
+              "record_successful_launch",
+            );
+
+          if (!disposed && launchState.reminderDue) {
+            setFolderReminder(launchState);
+          }
+        } catch (reason) {
+          /*
+           * Updating lastLaunchAt is useful but must never prevent
+           * the setup state from resolving. In particular, a damaged
+           * config must fall through to auto-detection/manual choice.
+           */
+          if (!disposed) {
+            setError(String(reason));
+          }
+        }
+
         const next =
           await invoke<DeadlockSetupState>(
             "get_deadlock_setup",
@@ -1593,6 +1836,9 @@ function App() {
       } catch (reason) {
         if (!disposed) {
           setError(String(reason));
+          void invoke("report_startup_error", {
+            message: `get_deadlock_setup failed: ${String(reason)}`,
+          });
         }
       } finally {
         if (!disposed) {
@@ -1607,6 +1853,26 @@ function App() {
       disposed = true;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<DeadlockStatus>(
+      "deadlock-status-changed",
+      (event) => {
+        if (!disposed) setStatus(event.payload);
+      },
+    ).then((cleanup) => {
+      if (disposed) cleanup();
+      else unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
     
   useEffect(() => {
   let disposed = false;
@@ -1627,11 +1893,6 @@ function App() {
           if (disposed) {
             return;
           }
-
-          console.log(
-            "[SPLIT UI] Position received:",
-            event.payload,
-          );
 
           setLastPosition(
             event.payload,
@@ -2228,36 +2489,54 @@ function App() {
 
       const renameActivePreset =
         useCallback(
-          async () => {
+          () => {
             const currentName =
               presetNames[
                 activePreset - 1
               ] ??
               `Preset ${activePreset}`;
 
-            const name =
-              window.prompt(
-                `Rename preset ${activePreset}`,
-                currentName,
-              );
+            setPendingPresetRename({
+              preset: activePreset,
+              currentName,
+              value: currentName,
+              error: null,
+            });
+          },
+          [
+            activePreset,
+            presetNames,
+          ],
+        );
 
-            if (name === null) {
+
+      const submitPresetRename =
+        useCallback(
+          async () => {
+            if (!pendingPresetRename || renamingPreset) {
               return;
             }
 
-            const trimmed =
-              name.trim();
+            const trimmed = pendingPresetRename.value.trim();
 
             if (!trimmed) {
-              setError(
-                "Preset name cannot be empty",
+              setPendingPresetRename((current) =>
+                current
+                  ? {
+                      ...current,
+                      error: "Preset name cannot be empty",
+                    }
+                  : current,
               );
-
               return;
             }
 
             setRenamingPreset(true);
-            setError(null);
+            setPendingPresetRename((current) =>
+              current
+                ? { ...current, error: null }
+                : current,
+            );
 
             try {
               const names =
@@ -2267,7 +2546,7 @@ function App() {
                   "rename_preset",
                   {
                     preset:
-                      activePreset,
+                      pendingPresetRename.preset,
                     name:
                       trimmed,
                   },
@@ -2285,9 +2564,15 @@ function App() {
               setHistoryState(
                 history,
               );
+              setPendingPresetRename(null);
             } catch (reason) {
-              setError(
-                String(reason),
+              setPendingPresetRename((current) =>
+                current
+                  ? {
+                      ...current,
+                      error: String(reason),
+                    }
+                  : current,
               );
             } finally {
               setRenamingPreset(
@@ -2296,8 +2581,8 @@ function App() {
             }
           },
           [
-            activePreset,
-            presetNames,
+            pendingPresetRename,
+            renamingPreset,
           ],
         );  
 
@@ -3449,6 +3734,7 @@ function App() {
             configuredPath: path,
             detectedPath: null,
             needsSetup: false,
+            invalidConfiguredPath: false,
           });
         } catch (reason) {
           setError(String(reason));
@@ -3481,6 +3767,37 @@ function App() {
       await confirmPath(selected);
     }, [confirmPath]);
 
+  const chooseReminderFolder =
+    useCallback(async () => {
+      setError(null);
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Choose the Deadlock installation folder",
+      });
+      if (selected === null || Array.isArray(selected)) return;
+
+      setSetupWorking(true);
+      try {
+        const nextStatus = await invoke<DeadlockStatus>(
+          "confirm_deadlock_path",
+          { path: selected },
+        );
+        setStatus(nextStatus);
+        setSetup({
+          configuredPath: selected,
+          detectedPath: null,
+          needsSetup: false,
+          invalidConfiguredPath: false,
+        });
+        setFolderReminder(null);
+      } catch (reason) {
+        setError(String(reason));
+      } finally {
+        setSetupWorking(false);
+      }
+    }, []);
+
   const rescan =
     useCallback(async () => {
       setSetupWorking(true);
@@ -3496,6 +3813,7 @@ function App() {
           configuredPath: null,
           detectedPath: detected,
           needsSetup: true,
+          invalidConfiguredPath: false,
         });
       } catch (reason) {
         setError(String(reason));
@@ -3517,7 +3835,7 @@ function App() {
         <section className="setup-card setup-loading-card">
           <div className="setup-loading-content">
             <p className="eyebrow">
-              SPLIT 2
+              SPLIT
             </p>
 
             <div className="setup-loading-heading">
@@ -3563,7 +3881,7 @@ function App() {
    */
   if (setup.needsSetup) {
     const detected =
-      setup.detectedPath;
+      setup.invalidConfiguredPath ? null : setup.detectedPath;
 
     return (
       <main className="shell setup-shell">
@@ -3571,7 +3889,7 @@ function App() {
           <div className="setup-onboarding-grid">
             <div className="setup-onboarding-main">
               <p className="eyebrow">
-                SPLIT 2 · FIRST SETUP
+                SPLIT · FIRST SETUP
               </p>
 
               <h1>
@@ -3631,9 +3949,17 @@ function App() {
               ) : (
                 <>
                   <p className="setup-description">
-                    SPLIT couldn't detect a Deadlock installation
-                    in your Steam libraries.
+                    {setup.invalidConfiguredPath
+                      ? "Your configured Deadlock folder is no longer valid. Choose the current installation folder to continue."
+                      : "SPLIT couldn't detect a Deadlock installation in your Steam libraries."}
                   </p>
+
+                  {setup.invalidConfiguredPath && setup.configuredPath && (
+                    <div className="detected-folder invalid-folder">
+                      <span>INVALID CONFIGURED FOLDER</span>
+                      <code>{setup.configuredPath}</code>
+                    </div>
+                  )}
 
                   <div className="setup-manual-folder">
                     <div className="setup-manual-folder-icon">
@@ -3821,6 +4147,7 @@ function App() {
           description: "The Windows keyboard hook is not running.",
         }
       : null,
+    status.deadlockRunning &&
     !status.consoleWatcherRunning
       ? {
           tone: "error" as const,
@@ -3979,6 +4306,45 @@ function App() {
             <footer className="screenshot-viewer-footer">
               Right click a saved slot to open its screenshot · Esc to close
             </footer>
+          </section>
+        </div>
+      )}
+
+      {folderReminder?.configuredPath && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog folder-reminder-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="folder-reminder-title"
+          >
+            <h3 id="folder-reminder-title" className="confirmation-title">
+              It's been a while since you last opened SPLIT.
+            </h3>
+            <p className="confirmation-message">
+              Is this still your Deadlock folder?
+            </p>
+            <code className="folder-reminder-path">
+              {folderReminder.configuredPath}
+            </code>
+            <div className="confirmation-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={setupWorking}
+                onClick={() => void chooseReminderFolder()}
+              >
+                Choose another folder
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={setupWorking}
+                onClick={() => setFolderReminder(null)}
+              >
+                Yes, keep this folder
+              </button>
+            </div>
           </section>
         </div>
       )}
@@ -4524,10 +4890,100 @@ function App() {
         </div>
       )}
 
+      {pendingPresetRename && (
+        <div
+          className="confirmation-backdrop"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !renamingPreset
+            ) {
+              setPendingPresetRename(null);
+            }
+          }}
+        >
+          <form
+            className="confirmation-dialog preset-rename-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-preset-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitPresetRename();
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Escape" &&
+                !renamingPreset
+              ) {
+                event.preventDefault();
+                setPendingPresetRename(null);
+              }
+            }}
+          >
+            <h3
+              id="rename-preset-title"
+              className="confirmation-title"
+            >
+              Rename preset
+            </h3>
+
+            <p className="confirmation-description">
+              Preset {pendingPresetRename.preset}
+            </p>
+
+            <label className="preset-rename-field">
+              <span>Preset name</span>
+              <input
+                ref={presetRenameInputRef}
+                type="text"
+                value={pendingPresetRename.value}
+                disabled={renamingPreset}
+                onChange={(event) =>
+                  setPendingPresetRename((current) =>
+                    current
+                      ? {
+                          ...current,
+                          value: event.target.value,
+                          error: null,
+                        }
+                      : current,
+                  )
+                }
+              />
+            </label>
+
+            {pendingPresetRename.error && (
+              <p className="preset-rename-error" role="alert">
+                {pendingPresetRename.error}
+              </p>
+            )}
+
+            <div className="confirmation-actions">
+              <button
+                className="preset-button"
+                type="button"
+                disabled={renamingPreset}
+                onClick={() => setPendingPresetRename(null)}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="preset-button confirmation-primary-button"
+                type="submit"
+                disabled={renamingPreset}
+              >
+                {renamingPreset ? "Renamingâ€¦" : "Rename"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <aside className="sidebar">
-        <div className="brand" aria-label="SPLIT version 2">
+        <div className="brand" aria-label="SPLIT">
           <strong>SPLIT</strong>
-          <span>v2</span>
         </div>
 
         <nav className="sidebar-nav" aria-label="Main navigation">
@@ -4596,6 +5052,16 @@ function App() {
             </p>
           )}
         </div>
+
+        {activeView === "slots" && !favoriteMode ? (
+          <div className="slots-v1-ticker" aria-live="off">
+            <span className="slots-v1-rail" aria-hidden="true" />
+            <span className={`slots-v1-message ${v1PhrasePhase}`}>
+              {V1_HEADER_PHRASES[v1PhraseIndex]}
+            </span>
+            <span className="slots-v1-rail" aria-hidden="true" />
+          </div>
+        ) : null}
 
         {activeView === "slots" ? (
           <div className="history-actions header-history-actions">
@@ -5804,6 +6270,97 @@ function App() {
 
             <div className="general-settings-list">
               <div className="general-settings-group">
+                <h3>STARTUP</h3>
+
+                <div className="general-setting-row">
+                  <div>
+                    <strong>Startup sound</strong>
+                    <span>
+                      Play the SPLIT startup sound when the app launches.
+                    </span>
+                  </div>
+
+                  <button
+                    className={`general-toggle ${
+                      startupSoundSettings.enabled ? "active" : ""
+                    }`}
+                    type="button"
+                    role="switch"
+                    aria-checked={startupSoundSettings.enabled}
+                    onClick={toggleStartupSound}
+                  >
+                    {startupSoundSettings.enabled ? "On" : "Off"}
+                  </button>
+                </div>
+
+                <div className="general-setting-row startup-sound-volume-row">
+                  <div>
+                    <strong id="startup-sound-volume-label">Volume</strong>
+                    <span>Adjust playback without changing Windows volume.</span>
+                  </div>
+
+                  <div className="startup-sound-volume-control">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={startupSoundSettings.volume}
+                      aria-labelledby="startup-sound-volume-label"
+                      aria-valuetext={`${startupSoundSettings.volume}%`}
+                      onChange={(event) => {
+                        const next = {
+                          ...startupSoundSettings,
+                          volume: Number(event.currentTarget.value),
+                        };
+                        setStartupSoundSettings(next);
+                        scheduleStartupSoundVolumeSave(next);
+                      }}
+                      onPointerUp={(event) =>
+                        flushStartupSoundVolumeSave({
+                          ...startupSoundSettings,
+                          volume: Number(event.currentTarget.value),
+                        })
+                      }
+                      onKeyUp={(event) =>
+                        flushStartupSoundVolumeSave({
+                          ...startupSoundSettings,
+                          volume: Number(event.currentTarget.value),
+                        })
+                      }
+                      onBlur={(event) =>
+                        flushStartupSoundVolumeSave({
+                          ...startupSoundSettings,
+                          volume: Number(event.currentTarget.value),
+                        })
+                      }
+                    />
+                    <output aria-live="polite">
+                      {startupSoundSettings.volume}%
+                    </output>
+                    <button
+                      className="general-restore-button startup-sound-preview"
+                      type="button"
+                      onClick={() => void previewStartupSound()}
+                    >
+                      Preview
+                    </button>
+                  </div>
+                </div>
+
+                {(startupSoundSaving || startupSoundFeedback) && (
+                  <p
+                    className={`startup-sound-feedback ${
+                      startupSoundFeedback ? "error" : ""
+                    }`}
+                    role={startupSoundFeedback ? "alert" : "status"}
+                  >
+                    {startupSoundFeedback ?? "Saving startup sound settings…"}
+                  </p>
+                )}
+              </div>
+
+              <div className="general-settings-group">
                 <h3>DESKTOP</h3>
 
               <div className="general-setting-row">
@@ -6248,22 +6805,30 @@ function App() {
               const target: HotkeyTarget = { group };
               const capturing = isHotkeyTarget(capturingHotkey, target);
               return (
-                <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={group}>
-                  <span>{label}</span>
-                  <HotkeyKeys
-                    hotkey={hotkey}
-                    capturing={capturing}
-                  />
-                  <button
-                    type="button"
-                    disabled={hotkeySettingsSaving}
-                    onClick={() => {
-                      setHotkeyMessage(null);
-                      setCapturingHotkey(capturing ? null : target);
-                    }}
-                  >
-                    {capturing ? "Cancel" : "Change"}
-                  </button>
+                <div className="hotkey-action-item" key={group}>
+                  <div className={`hotkey-row ${capturing ? "capturing" : ""}`}>
+                    <span>{label}</span>
+                    <HotkeyKeys
+                      hotkey={hotkey}
+                      capturing={capturing}
+                    />
+                    <button
+                      type="button"
+                      disabled={hotkeySettingsSaving}
+                      onClick={() => {
+                        setHotkeyMessage(null);
+                        setCapturingHotkey(capturing ? null : target);
+                      }}
+                    >
+                      {capturing ? "Cancel" : "Change"}
+                    </button>
+                  </div>
+                  {group === "cyclePreset" && isSimpleTextHotkey(hotkey) && (
+                    <p className="hotkey-text-key-note">
+                      Text keys may be captured while the Deadlock console is open.
+                      Use a function key or modified shortcut to avoid interfering with typing.
+                    </p>
+                  )}
                 </div>
               );
             })}

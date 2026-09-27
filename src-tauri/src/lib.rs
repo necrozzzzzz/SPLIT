@@ -1,12 +1,20 @@
 mod app_window;
 mod deadlock;
 mod notifications;
+mod panorama_bridge;
 mod quick_access;
 mod storage;
 mod tray;
 mod ui;
 
 use tauri::Manager;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartupSoundLaunch {
+    settings: deadlock::StartupSoundSettings,
+    should_play: bool,
+}
 
 #[tauri::command]
 fn get_deadlock_status() -> deadlock::DeadlockStatus {
@@ -20,7 +28,39 @@ fn get_diagnostic_report() -> String {
 
 #[tauri::command]
 fn get_deadlock_setup() -> deadlock::DeadlockSetupState {
-    deadlock::get_setup_state()
+    deadlock::trace_startup(false, "frontend init command: get_deadlock_setup");
+    deadlock::trace_startup(false, "get_deadlock_setup begin");
+    let state = deadlock::get_setup_state();
+    deadlock::trace_startup(false, "get_deadlock_setup end");
+    deadlock::finalize_startup_diagnostics();
+    state
+}
+
+#[tauri::command]
+fn record_successful_launch() -> Result<deadlock::LaunchFolderState, String> {
+    deadlock::trace_startup(true, "frontend init command: record_successful_launch");
+    deadlock::trace_startup(false, "record_successful_launch begin");
+    let result = deadlock::record_successful_launch();
+    deadlock::trace_startup(
+        false,
+        if result.is_ok() {
+            "record_successful_launch end: ok"
+        } else {
+            "record_successful_launch end: error"
+        },
+    );
+    if let Err(error) = &result {
+        deadlock::persist_startup_diagnostics(&format!(
+            "record_successful_launch failed: {error}"
+        ));
+    }
+    result
+}
+
+#[tauri::command]
+fn report_startup_error(message: String) {
+    deadlock::trace_startup(false, "frontend reported an unexpected setup error");
+    deadlock::persist_startup_diagnostics(&message);
 }
 
 #[tauri::command]
@@ -123,6 +163,21 @@ fn copy_slot_to_favorite(
 #[tauri::command]
 fn get_notification_settings() -> notifications::NotificationSettings {
     deadlock::get_notification_settings()
+}
+
+#[tauri::command]
+fn claim_startup_sound(app: tauri::AppHandle) -> StartupSoundLaunch {
+    StartupSoundLaunch {
+        settings: deadlock::get_startup_sound_settings(),
+        should_play: app_window::claim_visible_startup_sound(&app),
+    }
+}
+
+#[tauri::command]
+fn update_startup_sound_settings(
+    settings: deadlock::StartupSoundSettings,
+) -> Result<deadlock::StartupSoundSettings, String> {
+    deadlock::update_startup_sound_settings(settings)
 }
 
 #[tauri::command]
@@ -469,17 +524,7 @@ pub fn run() {
         .setup(|app| {
             tray::setup(app)?;
 
-            let launched_from_autostart =
-                std::env::args()
-                    .any(|argument| {
-                        argument == "--autostart"
-                    });
-
-            if launched_from_autostart
-                && app_window::start_minimized_to_tray_enabled(
-                    app.handle(),
-                )
-            {
+            if app_window::should_start_minimized_to_tray(app.handle()) {
                 if let Err(error) =
                     app_window::close_main_window_to_background(
                         app.handle().clone(),
@@ -533,6 +578,10 @@ pub fn run() {
                         }
                     }
 
+                    if app_window::exit_requested() {
+                        return;
+                    }
+
                     /*
                      * Le watcher doit être prêt avant
                      * les hotkeys de Save.
@@ -541,8 +590,20 @@ pub fn run() {
                         eprintln!("[SPLIT] Console watcher unavailable: {error}");
                     }
 
+                    if let Err(error) = panorama_bridge::start(background_app.clone()) {
+                        eprintln!("[SPLIT] Panorama bridge unavailable: {error}");
+                    }
+
                     if let Err(error) = deadlock::start_hotkeys(background_app.clone()) {
                         eprintln!("[SPLIT] Hotkeys unavailable: {error}");
+                    }
+
+                    if let Err(error) = deadlock::apply_generated_cfg_now() {
+                        eprintln!("[SPLIT] Startup CFG application failed: {error}");
+                    }
+
+                    if let Err(error) = deadlock::start_process_monitor(background_app.clone()) {
+                        eprintln!("[SPLIT] Deadlock process monitor unavailable: {error}");
                     }
 
                     /*
@@ -600,6 +661,8 @@ pub fn run() {
             get_deadlock_status,
             get_diagnostic_report,
             get_deadlock_setup,
+            record_successful_launch,
+            report_startup_error,
             scan_deadlock_path,
             confirm_deadlock_path,
             get_close_to_tray,
@@ -626,6 +689,8 @@ pub fn run() {
             clear_preset,
             get_notification_settings,
             update_notification_settings,
+            claim_startup_sound,
+            update_startup_sound_settings,
             test_notification,
             get_hotkey_settings,
             update_hotkey_settings,

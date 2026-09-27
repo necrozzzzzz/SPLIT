@@ -11,6 +11,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
 static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+static STARTUP_SOUND_CLAIMED: AtomicBool = AtomicBool::new(false);
 static WINDOW_OPERATION_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn exit_requested() -> bool {
@@ -86,6 +87,22 @@ pub fn start_minimized_to_tray_enabled(
     start_minimized_marker(app)
         .map(|path| path.exists())
         .unwrap_or(false)
+}
+
+pub fn should_start_minimized_to_tray(app: &AppHandle) -> bool {
+    std::env::args().any(|argument| argument == "--autostart")
+        && start_minimized_to_tray_enabled(app)
+}
+
+pub fn claim_visible_startup_sound(app: &AppHandle) -> bool {
+    startup_sound_allowed(
+        STARTUP_SOUND_CLAIMED.swap(true, Ordering::SeqCst),
+        should_start_minimized_to_tray(app),
+    )
+}
+
+fn startup_sound_allowed(already_claimed: bool, starts_minimized: bool) -> bool {
+    !already_claimed && !starts_minimized
 }
 
 
@@ -325,6 +342,10 @@ pub fn request_true_quit(app: &AppHandle) {
         eprintln!("[SPLIT] Could not stop native notifications: {error}");
     }
     crate::deadlock::shutdown_background_services();
+    if let Err(error) = crate::panorama_bridge::stop() {
+        eprintln!("[SPLIT] Could not stop Panorama bridge: {error}");
+    }
+    crate::deadlock::cleanup_transport_on_true_quit();
     app.exit(0);
 }
 
@@ -339,5 +360,13 @@ mod tests {
         EXIT_REQUESTED.store(true, Ordering::SeqCst);
         assert!(exit_requested());
         EXIT_REQUESTED.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn startup_sound_only_plays_for_the_first_visible_claim() {
+        assert!(startup_sound_allowed(false, false));
+        assert!(!startup_sound_allowed(true, false));
+        assert!(!startup_sound_allowed(false, true));
+        assert!(!startup_sound_allowed(true, true));
     }
 }

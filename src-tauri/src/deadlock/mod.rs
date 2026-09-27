@@ -5,6 +5,7 @@ mod hotkeys;
 mod parser;
 mod paths;
 mod process;
+mod process_monitor;
 mod screenshot;
 mod slots;
 mod watcher;
@@ -12,6 +13,19 @@ pub use history::HistoryState;
 pub use hotkeys::HotkeySettings;
 pub use parser::PositionSnapshot;
 pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
+pub use paths::{LaunchFolderState, StartupSoundSettings};
+
+pub(crate) fn trace_startup(reset: bool, message: &str) {
+    paths::trace_startup(reset, message);
+}
+
+pub(crate) fn persist_startup_diagnostics(problem: &str) {
+    paths::persist_startup_diagnostics(problem);
+}
+
+pub(crate) fn finalize_startup_diagnostics() {
+    paths::finalize_startup_diagnostics();
+}
 
 pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     hotkeys::foreground_deadlock_window()
@@ -37,6 +51,11 @@ use tauri::AppHandle;
 
 static SLOT_OPERATION_LOCK: Mutex<()> = Mutex::new(());
 static FAVORITE_MODE: AtomicBool = AtomicBool::new(false);
+static QUIT_CLEANUP_STARTED: AtomicBool = AtomicBool::new(false);
+
+fn begin_quit_cleanup(flag: &AtomicBool) -> bool {
+    !flag.swap(true, Ordering::SeqCst)
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,7 +93,7 @@ pub(crate) struct PersistSlotResult {
     pub history_changed: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeadlockStatus {
     deadlock_running: bool,
@@ -115,6 +134,15 @@ pub struct DeadlockSetupState {
     configured_path: Option<String>,
     detected_path: Option<String>,
     needs_setup: bool,
+    invalid_configured_path: bool,
+}
+
+pub fn record_successful_launch() -> Result<LaunchFolderState, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("System clock is before Unix epoch: {error}"))?
+        .as_secs();
+    paths::record_successful_launch(now)
 }
 
 pub fn launch_deadlock() -> Result<(), String> {
@@ -265,6 +293,16 @@ pub fn copy_slot_to_favorite(
 
 pub fn get_notification_settings() -> crate::notifications::NotificationSettings {
     paths::load_notification_settings()
+}
+
+pub fn get_startup_sound_settings() -> StartupSoundSettings {
+    paths::load_startup_sound_settings()
+}
+
+pub fn update_startup_sound_settings(
+    settings: StartupSoundSettings,
+) -> Result<StartupSoundSettings, String> {
+    paths::save_startup_sound_settings(settings)
 }
 
 pub fn update_notification_settings(
@@ -1107,6 +1145,9 @@ pub fn sync_slots_to_deadlock() -> Result<(), String> {
 }
 
 pub fn repair_integration_on_startup() -> Result<bool, String> {
+    if crate::app_window::exit_requested() {
+        return Ok(false);
+    }
     /*
      * Premier lancement :
      * aucun chemin Deadlock n'est encore confirmé.
@@ -1331,6 +1372,16 @@ pub fn get_setup_state() -> DeadlockSetupState {
             detected_path: None,
 
             needs_setup: false,
+            invalid_configured_path: false,
+        };
+    }
+
+    if let Some(configured) = paths::configured_deadlock_root() {
+        return DeadlockSetupState {
+            configured_path: Some(paths::path_to_string(&configured)),
+            detected_path: None,
+            needs_setup: true,
+            invalid_configured_path: true,
         };
     }
 
@@ -1338,7 +1389,16 @@ pub fn get_setup_state() -> DeadlockSetupState {
      * Aucun chemin configuré :
      * scan automatique.
      */
+    trace_startup(false, "scan begin");
     let detected = paths::scan_deadlock_root();
+    trace_startup(
+        false,
+        if detected.is_some() {
+            "scan end: found"
+        } else {
+            "scan end: not found or timed out"
+        },
+    );
 
     DeadlockSetupState {
         configured_path: None,
@@ -1346,6 +1406,7 @@ pub fn get_setup_state() -> DeadlockSetupState {
         detected_path: detected.as_deref().map(paths::path_to_string),
 
         needs_setup: true,
+        invalid_configured_path: false,
     }
 }
 
@@ -1364,7 +1425,7 @@ pub fn confirm_deadlock_path(app: AppHandle, path: String) -> Result<DeadlockSta
      * Maintenant seulement on démarre
      * le watcher sur le dossier CONFIRMÉ.
      */
-    watcher::start(app, found.console_log.clone())?;
+    start_console_watcher(app)?;
 
     Ok(status_from_paths(found))
 }
@@ -1507,7 +1568,7 @@ pub fn diagnostic_report() -> String {
     let camera_error = status.camera_runtime_error.as_deref().unwrap_or("None");
 
     format!(
-        "SPLIT 2 Diagnostic Report\n\
+        "SPLIT Diagnostic Report\n\
          =========================\n\
          SPLIT version: {}\n\
          Platform: {} / {}\n\
@@ -1560,6 +1621,10 @@ pub fn start_hotkeys(app: AppHandle) -> Result<(), String> {
     hotkeys::start(app)
 }
 
+pub fn apply_generated_cfg_now() -> Result<bool, String> {
+    hotkeys::apply_generated_cfg_now()
+}
+
 pub fn quick_access_hidden() {
     hotkeys::quick_access_hidden()
 }
@@ -1584,15 +1649,47 @@ pub fn start_console_watcher(app: AppHandle) -> Result<(), String> {
         return Ok(());
     };
 
+    if !process::is_deadlock_running() {
+        return Ok(());
+    }
+
     watcher::start(app, paths.console_log)
 }
 
+pub fn start_process_monitor(app: AppHandle) -> Result<(), String> {
+    process_monitor::start(app)
+}
+
 pub fn shutdown_background_services() {
+    if let Err(error) = process_monitor::stop() {
+        eprintln!("[SPLIT] Could not stop process monitor cleanly: {error}");
+    }
     if let Err(error) = hotkeys::stop() {
         eprintln!("[SPLIT] Could not stop hotkeys cleanly: {error}");
     }
     if let Err(error) = watcher::stop() {
         eprintln!("[SPLIT] Could not stop console watcher cleanly: {error}");
+    }
+}
+
+pub fn cleanup_transport_on_true_quit() {
+    if !begin_quit_cleanup(&QUIT_CLEANUP_STARTED) {
+        return;
+    }
+    let Some(paths) = paths::configured_deadlock_paths() else {
+        return;
+    };
+
+    if let Err(error) = cfg::write_shutdown_prepare(&paths.cfg_file) {
+        eprintln!("[SPLIT] Could not stage Deadlock transport cleanup: {error}");
+    } else if process::is_deadlock_running() {
+        if let Err(error) = hotkeys::execute_shutdown_prepare() {
+            eprintln!("[SPLIT] Could not execute live Deadlock transport cleanup: {error}");
+        }
+    }
+
+    if let Err(error) = cfg::write_shutdown_main(&paths.cfg_file) {
+        eprintln!("[SPLIT] Could not persist safe Deadlock transport state: {error}");
     }
 }
 
@@ -1604,6 +1701,13 @@ mod tests {
     fn history_actions_are_refused_while_save_is_pending() {
         assert!(ensure_history_action_allowed(true).is_err());
         assert!(ensure_history_action_allowed(false).is_ok());
+    }
+
+    #[test]
+    fn quit_cleanup_guard_is_idempotent() {
+        let flag = AtomicBool::new(false);
+        assert!(begin_quit_cleanup(&flag));
+        assert!(!begin_quit_cleanup(&flag));
     }
 
     #[test]

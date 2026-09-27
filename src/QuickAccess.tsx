@@ -406,21 +406,12 @@ export default function QuickAccess() {
         slot: number,
         name: string,
       ) => {
-        console.log(
-          "[SPLIT][QA][UI] rename begin",
-        );
         setError(null);
 
         try {
-          console.log(
-            "[SPLIT][QA][UI] suspending native hotkeys",
-          );
           await invoke(
             "set_quick_access_text_input_active",
             { active: true },
-          );
-          console.log(
-            "[SPLIT][QA][UI] native hotkeys suspended",
           );
           textInputActiveRef.current = true;
           setEditingName(name);

@@ -1,7 +1,12 @@
 use std::{
     env, fs,
+    os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Mutex,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -11,8 +16,105 @@ use super::process::running_deadlock_root;
 use crate::notifications::NotificationSettings;
 use crate::quick_access::QuickAccessSettings;
 use crate::storage::atomic_write;
+use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
 
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
+static DEADLOCK_SCAN_RUNNING: AtomicBool = AtomicBool::new(false);
+static STARTUP_TRACE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static STARTUP_INCIDENT: AtomicBool = AtomicBool::new(false);
+static STARTUP_PROBLEM: Mutex<Option<String>> = Mutex::new(None);
+
+const DEADLOCK_SCAN_TIMEOUT: Duration = Duration::from_secs(4);
+const DRIVE_REMOVABLE: u32 = 2;
+const DRIVE_FIXED: u32 = 3;
+const DRIVE_RAMDISK: u32 = 6;
+
+fn startup_directory() -> Option<PathBuf> {
+    env::var_os("APPDATA").map(|app_data| PathBuf::from(app_data).join("SPLIT"))
+}
+
+fn cleanup_legacy_startup_logs(directory: &Path) {
+    for legacy_name in ["startup-boot.log", "startup-scan.log"] {
+        match fs::remove_file(directory.join(legacy_name)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {}
+        }
+    }
+}
+
+pub(crate) fn trace_startup(reset: bool, message: &str) {
+    if reset {
+        if let Some(directory) = startup_directory() {
+            cleanup_legacy_startup_logs(&directory);
+        }
+    }
+
+    let unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or_default();
+    let sanitized = message.chars().take(512).collect::<String>();
+    if let Ok(mut trace) = STARTUP_TRACE.lock() {
+        if reset {
+            trace.clear();
+            STARTUP_INCIDENT.store(false, Ordering::Release);
+            if let Ok(mut problem) = STARTUP_PROBLEM.lock() {
+                *problem = None;
+            }
+        }
+        if trace.len() >= 128 {
+            trace.remove(0);
+        }
+        trace.push(format!("[{unix_ms}] {sanitized}"));
+    }
+}
+
+pub(crate) fn persist_startup_diagnostics(problem: &str) {
+    STARTUP_INCIDENT.store(true, Ordering::Release);
+    if let Ok(mut stored_problem) = STARTUP_PROBLEM.lock() {
+        *stored_problem = Some(problem.chars().take(1_024).collect());
+    }
+    write_startup_diagnostics(problem);
+}
+
+pub(crate) fn finalize_startup_diagnostics() {
+    if !STARTUP_INCIDENT.load(Ordering::Acquire) {
+        return;
+    }
+    let problem = STARTUP_PROBLEM
+        .lock()
+        .ok()
+        .and_then(|problem| problem.clone())
+        .unwrap_or_else(|| "unspecified startup incident".to_string());
+    write_startup_diagnostics(&problem);
+}
+
+fn write_startup_diagnostics(problem: &str) {
+    let Some(app_data) = env::var_os("APPDATA") else {
+        return;
+    };
+    let directory = PathBuf::from(app_data).join("SPLIT");
+    let trace = STARTUP_TRACE
+        .lock()
+        .map(|trace| trace.clone())
+        .unwrap_or_default();
+    let unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or_default();
+    let problem = problem.chars().take(1_024).collect::<String>();
+    let mut contents = format!(
+        "SPLIT startup diagnostics\nversion: {}\ntimestamp_unix_ms: {unix_ms}\nproblem: {problem}\n\nstartup trace:\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    for entry in trace {
+        contents.push_str(&entry);
+        contents.push('\n');
+    }
+
+    let _ = atomic_write(&directory.join("startup-diagnostics.log"), contents);
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum PathSource {
@@ -41,23 +143,124 @@ pub struct DeadlockPaths {
 #[serde(rename_all = "camelCase", default)]
 struct SplitConfig {
     deadlock_path: String,
+    last_launch_at: Option<u64>,
     #[serde(deserialize_with = "deserialize_notification_settings")]
     notifications: NotificationSettings,
     #[serde(deserialize_with = "deserialize_hotkey_settings")]
     hotkeys: HotkeySettings,
     #[serde(deserialize_with = "deserialize_quick_access_settings")]
     quick_access: QuickAccessSettings,
+    #[serde(deserialize_with = "deserialize_startup_sound_settings")]
+    startup_sound: StartupSoundSettings,
 }
 
 impl Default for SplitConfig {
     fn default() -> Self {
         Self {
             deadlock_path: String::new(),
+            last_launch_at: None,
             notifications: NotificationSettings::default(),
             hotkeys: HotkeySettings::default(),
             quick_access: QuickAccessSettings::default(),
+            startup_sound: StartupSoundSettings::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StartupSoundSettings {
+    pub enabled: bool,
+    pub volume: u8,
+}
+
+impl Default for StartupSoundSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            volume: 40,
+        }
+    }
+}
+
+impl StartupSoundSettings {
+    fn normalized(self) -> Self {
+        Self {
+            volume: self.volume.min(100),
+            ..self
+        }
+    }
+}
+
+const THIRTY_DAYS_SECONDS: u64 = 30 * 24 * 60 * 60;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchFolderState {
+    pub configured_path: Option<String>,
+    pub path_valid: bool,
+    pub reminder_due: bool,
+}
+
+fn reminder_due(last_launch_at: Option<u64>, now: u64) -> bool {
+    last_launch_at.is_some_and(|last| now.saturating_sub(last) > THIRTY_DAYS_SECONDS)
+}
+
+pub fn record_successful_launch(now: u64) -> Result<LaunchFolderState, String> {
+    let (configured_path, launch_was_stale) = {
+        let _guard = CONFIG_LOCK
+            .lock()
+            .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+        let path = config_path()?;
+        update_successful_launch_at_path(&path, now)?
+    };
+
+    Ok(launch_folder_state(configured_path, launch_was_stale))
+}
+
+#[cfg(test)]
+fn record_successful_launch_at_path(path: &Path, now: u64) -> Result<LaunchFolderState, String> {
+    let (configured_path, launch_was_stale) = update_successful_launch_at_path(path, now)?;
+    Ok(launch_folder_state(configured_path, launch_was_stale))
+}
+
+fn update_successful_launch_at_path(
+    path: &Path,
+    now: u64,
+) -> Result<(Option<String>, bool), String> {
+    let mut config = load_config_for_write(path, "record_successful_launch")?;
+
+    let configured_path =
+        (!config.deadlock_path.trim().is_empty()).then(|| config.deadlock_path.clone());
+    let launch_was_stale = reminder_due(config.last_launch_at, now);
+
+    config.last_launch_at = Some(now);
+    write_config(path, &config, "record_successful_launch")?;
+
+    Ok((configured_path, launch_was_stale))
+}
+
+fn launch_folder_state(
+    configured_path: Option<String>,
+    launch_was_stale: bool,
+) -> LaunchFolderState {
+    let path_valid = configured_path.as_ref().is_some_and(|root| {
+        DeadlockPaths::from_root(PathBuf::from(root), PathSource::UserConfig).is_some()
+    });
+
+    LaunchFolderState {
+        configured_path,
+        path_valid,
+        reminder_due: path_valid && launch_was_stale,
+    }
+}
+
+pub fn configured_deadlock_root() -> Option<PathBuf> {
+    let _guard = CONFIG_LOCK.lock().ok()?;
+    let path = config_path().ok()?;
+    let raw = fs::read_to_string(path).ok()?;
+    let config: SplitConfig = serde_json::from_str(&raw).ok()?;
+    (!config.deadlock_path.trim().is_empty()).then(|| PathBuf::from(config.deadlock_path))
 }
 
 fn deserialize_hotkey_settings<'de, D>(deserializer: D) -> Result<HotkeySettings, D::Error>
@@ -89,6 +292,18 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+fn deserialize_startup_sound_settings<'de, D>(
+    deserializer: D,
+) -> Result<StartupSoundSettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value::<StartupSoundSettings>(value)
+        .unwrap_or_default()
+        .normalized())
 }
 
 impl DeadlockPaths {
@@ -131,18 +346,48 @@ fn config_path() -> Result<PathBuf, String> {
         .join("split2-config.json"))
 }
 
+fn load_config_for_write(path: &Path, writer: &str) -> Result<SplitConfig, String> {
+    match fs::read_to_string(path) {
+        Ok(raw) => serde_json::from_str::<SplitConfig>(&raw).map_err(|error| {
+            format!(
+                "Could not parse SPLIT configuration for {writer}; refusing to overwrite it: {error}"
+            )
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(SplitConfig::default()),
+        Err(error) => Err(format!(
+            "Could not read SPLIT configuration for {writer}: {error}"
+        )),
+    }
+}
+
+fn write_config(path: &Path, config: &SplitConfig, writer: &str) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
+    atomic_write(path, json)
+        .map_err(|error| format!("Could not save SPLIT configuration ({writer}): {error}"))
+}
+
 pub fn configured_deadlock_paths() -> Option<DeadlockPaths> {
-    let _guard = CONFIG_LOCK.lock().ok()?;
-    let path = config_path().ok()?;
+    let configured_path = {
+        let _guard = CONFIG_LOCK.lock().ok()?;
+        let path = config_path().ok()?;
+        let raw = fs::read_to_string(path).ok()?;
+        let config: SplitConfig = serde_json::from_str(&raw).ok()?;
+        config.deadlock_path
+    };
 
-    let raw = fs::read_to_string(path).ok()?;
-
-    let config: SplitConfig = serde_json::from_str(&raw).ok()?;
-
-    DeadlockPaths::from_root(PathBuf::from(config.deadlock_path), PathSource::UserConfig)
+    DeadlockPaths::from_root(PathBuf::from(configured_path), PathSource::UserConfig)
 }
 
 pub fn save_deadlock_root(root: &Path) -> Result<DeadlockPaths, String> {
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let config_path = config_path()?;
+    save_deadlock_root_at_path(root, &config_path)
+}
+
+fn save_deadlock_root_at_path(root: &Path, config_path: &Path) -> Result<DeadlockPaths, String> {
     let paths =
         DeadlockPaths::from_root(root.to_path_buf(), PathSource::UserConfig).ok_or_else(|| {
             format!(
@@ -151,11 +396,6 @@ pub fn save_deadlock_root(root: &Path) -> Result<DeadlockPaths, String> {
             )
         })?;
 
-    let _guard = CONFIG_LOCK
-        .lock()
-        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
-    let config_path = config_path()?;
-
     let Some(parent) = config_path.parent() else {
         return Err("SPLIT configuration directory is invalid".to_string());
     };
@@ -163,17 +403,16 @@ pub fn save_deadlock_root(root: &Path) -> Result<DeadlockPaths, String> {
     fs::create_dir_all(parent)
         .map_err(|error| format!("Could not create SPLIT configuration directory: {error}"))?;
 
-    let mut config = fs::read_to_string(&config_path)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
-        .unwrap_or_default();
+    let mut config = load_config_for_write(config_path, "save_deadlock_root")?;
     config.deadlock_path = path_to_string(&paths.root);
+    write_config(config_path, &config, "save_deadlock_root")?;
 
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
-
-    atomic_write(&config_path, json)
-        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+    let persisted = load_config_for_write(config_path, "save_deadlock_root verification")?;
+    if persisted.deadlock_path != config.deadlock_path {
+        return Err(
+            "Deadlock directory verification failed after saving SPLIT configuration".to_string(),
+        );
+    }
 
     println!("[SPLIT] Deadlock directory saved: {}", paths.root.display());
 
@@ -202,15 +441,17 @@ pub fn save_notification_settings(
         .lock()
         .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
     let path = config_path()?;
-    let mut config = fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
-        .unwrap_or_default();
+    save_notification_settings_at_path(&path, settings)
+}
+
+fn save_notification_settings_at_path(
+    path: &Path,
+    settings: NotificationSettings,
+) -> Result<NotificationSettings, String> {
+    settings.validate()?;
+    let mut config = load_config_for_write(path, "save_notification_settings")?;
     config.notifications = settings.clone();
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
-    atomic_write(&path, json)
-        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+    write_config(path, &config, "save_notification_settings")?;
     Ok(settings)
 }
 
@@ -234,15 +475,17 @@ pub fn save_hotkey_settings(settings: HotkeySettings) -> Result<HotkeySettings, 
         .lock()
         .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
     let path = config_path()?;
-    let mut config = fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
-        .unwrap_or_default();
+    save_hotkey_settings_at_path(&path, settings)
+}
+
+fn save_hotkey_settings_at_path(
+    path: &Path,
+    settings: HotkeySettings,
+) -> Result<HotkeySettings, String> {
+    let settings = settings.normalized()?;
+    let mut config = load_config_for_write(path, "save_hotkey_settings")?;
     config.hotkeys = settings.clone();
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
-    atomic_write(&path, json)
-        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+    write_config(path, &config, "save_hotkey_settings")?;
     Ok(settings)
 }
 
@@ -267,15 +510,51 @@ pub fn save_quick_access_settings(
         .lock()
         .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
     let path = config_path()?;
-    let mut config = fs::read_to_string(&path)
+    save_quick_access_settings_at_path(&path, settings)
+}
+
+fn save_quick_access_settings_at_path(
+    path: &Path,
+    settings: QuickAccessSettings,
+) -> Result<QuickAccessSettings, String> {
+    let mut config = load_config_for_write(path, "save_quick_access_settings")?;
+    config.quick_access = settings;
+    write_config(path, &config, "save_quick_access_settings")?;
+    Ok(settings)
+}
+
+pub fn load_startup_sound_settings() -> StartupSoundSettings {
+    let Ok(_guard) = CONFIG_LOCK.lock() else {
+        return StartupSoundSettings::default();
+    };
+    let Ok(path) = config_path() else {
+        return StartupSoundSettings::default();
+    };
+    fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
-        .unwrap_or_default();
-    config.quick_access = settings;
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Could not serialize SPLIT configuration: {error}"))?;
-    atomic_write(&path, json)
-        .map_err(|error| format!("Could not save SPLIT configuration: {error}"))?;
+        .map(|config| config.startup_sound.normalized())
+        .unwrap_or_default()
+}
+
+pub fn save_startup_sound_settings(
+    settings: StartupSoundSettings,
+) -> Result<StartupSoundSettings, String> {
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let path = config_path()?;
+    save_startup_sound_settings_at_path(&path, settings)
+}
+
+fn save_startup_sound_settings_at_path(
+    path: &Path,
+    settings: StartupSoundSettings,
+) -> Result<StartupSoundSettings, String> {
+    let settings = settings.normalized();
+    let mut config = load_config_for_write(path, "save_startup_sound_settings")?;
+    config.startup_sound = settings;
+    write_config(path, &config, "save_startup_sound_settings")?;
     Ok(settings)
 }
 
@@ -317,16 +596,10 @@ fn extract_quoted_fields(line: &str) -> Vec<String> {
     fields
 }
 
-fn steam_library_roots(steam_root: &Path) -> Vec<PathBuf> {
+fn steam_library_roots_from_vdf(steam_root: &Path, raw: &str) -> Vec<PathBuf> {
     let mut libraries = Vec::new();
 
     push_unique(&mut libraries, steam_root.to_path_buf());
-
-    let vdf = steam_root.join("steamapps").join("libraryfolders.vdf");
-
-    let Ok(raw) = fs::read_to_string(vdf) else {
-        return libraries;
-    };
 
     for line in raw.lines() {
         let fields = extract_quoted_fields(line);
@@ -353,6 +626,31 @@ fn steam_library_roots(steam_root: &Path) -> Vec<PathBuf> {
     libraries
 }
 
+fn steam_library_roots(steam_root: &Path, log: &mut ScanTrace) -> Vec<PathBuf> {
+    let vdf = steam_root.join("steamapps").join("libraryfolders.vdf");
+    log.write(format!("reading library file: {}", vdf.display()));
+
+    match fs::read_to_string(&vdf) {
+        Ok(raw) => {
+            log.write(format!("read library file: {}", vdf.display()));
+            steam_library_roots_from_vdf(steam_root, &raw)
+        }
+        Err(error) => {
+            log.write(format!(
+                "library file unavailable: {} ({error})",
+                vdf.display()
+            ));
+            if error.kind() != std::io::ErrorKind::NotFound {
+                persist_startup_diagnostics(&format!(
+                    "could not read Steam library file {}: {error}",
+                    vdf.display()
+                ));
+            }
+            vec![steam_root.to_path_buf()]
+        }
+    }
+}
+
 fn primary_steam_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
@@ -367,15 +665,90 @@ fn primary_steam_roots() -> Vec<PathBuf> {
     roots
 }
 
-pub fn scan_deadlock_root() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
+fn supported_drive_type(drive_type: u32) -> bool {
+    matches!(drive_type, DRIVE_REMOVABLE | DRIVE_FIXED | DRIVE_RAMDISK)
+}
+
+fn available_local_volume(path: &Path) -> bool {
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+
+    if wide.starts_with(&['\\' as u16, '\\' as u16]) {
+        return false;
+    }
+    if wide.len() < 2 || wide[1] != ':' as u16 {
+        return false;
+    }
+
+    let root = [wide[0], ':' as u16, '\\' as u16, 0];
+    supported_drive_type(unsafe { GetDriveTypeW(root.as_ptr()) })
+}
+
+struct ScanTrace {
+    started: Instant,
+}
+
+impl ScanTrace {
+    fn start() -> Self {
+        let mut trace = Self {
+            started: Instant::now(),
+        };
+        trace.write("scan started");
+        trace
+    }
+
+    fn write(&mut self, message: impl AsRef<str>) {
+        trace_startup(
+            false,
+            &format!(
+                "scan +{}ms: {}",
+                self.started.elapsed().as_millis(),
+                message.as_ref()
+            ),
+        );
+    }
+}
+
+#[cfg(test)]
+fn first_valid_candidate<F>(
+    candidates: impl IntoIterator<Item = PathBuf>,
+    mut valid: F,
+) -> Option<PathBuf>
+where
+    F: FnMut(&Path) -> bool,
+{
+    candidates.into_iter().find(|candidate| valid(candidate))
+}
+
+fn scan_deadlock_root_inner() -> Option<PathBuf> {
+    let mut log = ScanTrace::start();
 
     /*
      * 1. Si Deadlock tourne,
      * son installation est un excellent candidat.
      */
-    if let Some(root) = running_deadlock_root() {
-        push_unique(&mut candidates, root);
+    log.write("checking running Deadlock process");
+    let running_root = running_deadlock_root();
+    log.write(format!(
+        "running process root: {}",
+        running_root
+            .as_deref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_string())
+    ));
+    if let Some(root) = running_root {
+        if available_local_volume(&root) {
+            log.write(format!("validating: {}", root.display()));
+            let valid = DeadlockPaths::from_root(root.clone(), PathSource::UserConfig).is_some();
+            log.write(format!(
+                "validation result: {} ({})",
+                root.display(),
+                if valid { "valid" } else { "invalid" }
+            ));
+            if valid {
+                log.write(format!("found from running process: {}", root.display()));
+                return Some(root);
+            }
+        }
     }
 
     /*
@@ -383,28 +756,93 @@ pub fn scan_deadlock_root() -> Option<PathBuf> {
      * déclarées dans libraryfolders.vdf.
      */
     for steam_root in primary_steam_roots() {
-        for library in steam_library_roots(&steam_root) {
+        log.write(format!("primary Steam root: {}", steam_root.display()));
+        if !available_local_volume(&steam_root) {
+            log.write(format!(
+                "skipping unavailable/non-local Steam root: {}",
+                steam_root.display()
+            ));
+            continue;
+        }
+
+        for library in steam_library_roots(&steam_root, &mut log) {
+            log.write(format!("library detected: {}", library.display()));
+            if !available_local_volume(&library) {
+                log.write(format!(
+                    "skipping unavailable/non-local library: {}",
+                    library.display()
+                ));
+                continue;
+            }
             let deadlock_root = library.join("steamapps").join("common").join("Deadlock");
 
-            push_unique(&mut candidates, deadlock_root);
-        }
-    }
+            log.write(format!("candidate: {}", deadlock_root.display()));
+            log.write(format!("validating: {}", deadlock_root.display()));
 
-    println!("[SPLIT] Deadlock scan: {} candidate(s)", candidates.len());
-
-    for candidate in candidates {
-        println!("[SPLIT] Checking: {}", candidate.display());
-
-        if DeadlockPaths::from_root(candidate.clone(), PathSource::UserConfig).is_some() {
-            println!("[SPLIT] Deadlock detected: {}", candidate.display());
-
-            return Some(candidate);
+            let valid =
+                DeadlockPaths::from_root(deadlock_root.clone(), PathSource::UserConfig).is_some();
+            log.write(format!(
+                "validation result: {} ({})",
+                deadlock_root.display(),
+                if valid { "valid" } else { "invalid" }
+            ));
+            if valid {
+                println!("[SPLIT] Deadlock detected: {}", deadlock_root.display());
+                log.write(format!("found: {}", deadlock_root.display()));
+                return Some(deadlock_root);
+            }
         }
     }
 
     println!("[SPLIT] Deadlock was not automatically detected");
+    log.write("completed: Deadlock not found");
 
     None
+}
+
+struct ScanRunningGuard;
+
+impl Drop for ScanRunningGuard {
+    fn drop(&mut self) {
+        DEADLOCK_SCAN_RUNNING.store(false, Ordering::Release);
+    }
+}
+
+pub fn scan_deadlock_root() -> Option<PathBuf> {
+    if DEADLOCK_SCAN_RUNNING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return None;
+    }
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let spawn_result = std::thread::Builder::new()
+        .name("deadlock-install-scan".to_string())
+        .spawn(move || {
+            let _guard = ScanRunningGuard;
+            let _ = sender.send(scan_deadlock_root_inner());
+        });
+
+    if spawn_result.is_err() {
+        DEADLOCK_SCAN_RUNNING.store(false, Ordering::Release);
+        persist_startup_diagnostics("could not start Deadlock installation scan worker");
+        return None;
+    }
+
+    match receiver.recv_timeout(DEADLOCK_SCAN_TIMEOUT) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            trace_startup(false, "scan timeout after 4000ms");
+            persist_startup_diagnostics("Deadlock installation scan timed out after 4000ms");
+            None
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            trace_startup(false, "scan worker disconnected unexpectedly");
+            persist_startup_diagnostics("Deadlock installation scan worker disconnected");
+            None
+        }
+    }
 }
 
 pub fn path_to_string(path: &Path) -> String {
@@ -416,6 +854,31 @@ mod tests {
     use super::*;
     use crate::notifications::NotificationPosition;
 
+    fn temporary_test_directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "split-path-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn create_valid_deadlock_root(base: &Path) -> PathBuf {
+        let root = base.join("Deadlock");
+        let cfg = root.join("game").join("citadel").join("cfg");
+        let exe = root
+            .join("game")
+            .join("bin")
+            .join("win64")
+            .join("deadlock.exe");
+        fs::create_dir_all(cfg).unwrap();
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        fs::write(exe, []).unwrap();
+        root
+    }
+
     #[test]
     fn legacy_config_without_notifications_uses_defaults() {
         let config: SplitConfig =
@@ -425,6 +888,213 @@ mod tests {
         assert_eq!(config.notifications, NotificationSettings::default());
         assert_eq!(config.hotkeys, HotkeySettings::default());
         assert_eq!(config.quick_access, QuickAccessSettings::default());
+        assert_eq!(config.startup_sound, StartupSoundSettings::default());
+        assert_eq!(config.last_launch_at, None);
+    }
+
+    #[test]
+    fn startup_sound_volume_is_clamped_during_deserialization() {
+        let config: SplitConfig = serde_json::from_str(
+            r#"{
+                "startupSound": {
+                    "enabled": false,
+                    "volume": 180
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.startup_sound,
+            StartupSoundSettings {
+                enabled: false,
+                volume: 100,
+            }
+        );
+    }
+
+    #[test]
+    fn launch_reminder_uses_strict_thirty_day_threshold() {
+        let now = 10_000_000;
+        assert!(!reminder_due(Some(now - THIRTY_DAYS_SECONDS), now));
+        assert!(!reminder_due(Some(now - 20 * 24 * 60 * 60), now));
+        assert!(reminder_due(Some(now - THIRTY_DAYS_SECONDS - 1), now));
+        assert!(!reminder_due(None, now));
+    }
+
+    #[test]
+    fn setting_writers_preserve_deadlock_path() {
+        let directory = temporary_test_directory("preserve-config");
+        let path = directory.join("split2-config.json");
+        let config = SplitConfig {
+            deadlock_path: r"C:\Deadlock".to_string(),
+            ..SplitConfig::default()
+        };
+        write_config(&path, &config, "test setup").unwrap();
+
+        record_successful_launch_at_path(&path, 10_000_000).unwrap();
+        save_hotkey_settings_at_path(&path, HotkeySettings::default()).unwrap();
+        save_notification_settings_at_path(&path, NotificationSettings::default()).unwrap();
+        save_quick_access_settings_at_path(&path, QuickAccessSettings::default()).unwrap();
+        save_startup_sound_settings_at_path(&path, StartupSoundSettings::default()).unwrap();
+
+        let saved = load_config_for_write(&path, "test read").unwrap();
+        assert_eq!(saved.deadlock_path, r"C:\Deadlock");
+        assert_eq!(saved.last_launch_at, Some(10_000_000));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn save_deadlock_root_survives_all_follow_up_writers() {
+        let directory = temporary_test_directory("first-setup");
+        let root = create_valid_deadlock_root(&directory);
+        let path = directory.join("split2-config.json");
+
+        save_deadlock_root_at_path(&root, &path).unwrap();
+        record_successful_launch_at_path(&path, 10_000_000).unwrap();
+        save_hotkey_settings_at_path(&path, HotkeySettings::default()).unwrap();
+        save_notification_settings_at_path(&path, NotificationSettings::default()).unwrap();
+        save_quick_access_settings_at_path(&path, QuickAccessSettings::default()).unwrap();
+        save_startup_sound_settings_at_path(&path, StartupSoundSettings::default()).unwrap();
+
+        let saved = load_config_for_write(&path, "test read").unwrap();
+        assert_eq!(saved.deadlock_path, path_to_string(&root));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn malformed_config_is_never_replaced_with_defaults() {
+        let directory = temporary_test_directory("malformed-config");
+        let path = directory.join("split2-config.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, b"{\"deadlockPath\":\"C:\\\\Deadlock\",\"hotkeys\":").unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let error =
+            save_notification_settings_at_path(&path, NotificationSettings::default()).unwrap_err();
+
+        assert!(error.contains("refusing to overwrite"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn startup_sound_writer_preserves_all_other_settings() {
+        let directory = temporary_test_directory("startup-sound-preserves-config");
+        let path = directory.join("split2-config.json");
+        let notifications = NotificationSettings {
+            enabled: false,
+            ..NotificationSettings::default()
+        };
+        let hotkeys = HotkeySettings::default();
+        let quick_access = QuickAccessSettings {
+            enabled: false,
+            position: crate::quick_access::QuickAccessPosition::Right,
+        };
+        let original = SplitConfig {
+            deadlock_path: r"C:\Deadlock".to_string(),
+            last_launch_at: Some(12_345),
+            notifications: notifications.clone(),
+            hotkeys: hotkeys.clone(),
+            quick_access,
+            startup_sound: StartupSoundSettings::default(),
+        };
+        write_config(&path, &original, "test setup").unwrap();
+
+        let saved_settings = save_startup_sound_settings_at_path(
+            &path,
+            StartupSoundSettings {
+                enabled: false,
+                volume: 255,
+            },
+        )
+        .unwrap();
+        let saved = load_config_for_write(&path, "test read").unwrap();
+
+        assert_eq!(saved_settings.volume, 100);
+        assert!(!saved_settings.enabled);
+        assert_eq!(saved.deadlock_path, r"C:\Deadlock");
+        assert_eq!(saved.last_launch_at, Some(12_345));
+        assert_eq!(saved.notifications, notifications);
+        assert_eq!(saved.hotkeys, hotkeys);
+        assert_eq!(saved.quick_access, quick_access);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn startup_sound_writer_refuses_malformed_config() {
+        let directory = temporary_test_directory("malformed-startup-sound-config");
+        let path = directory.join("split2-config.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, b"{\"deadlockPath\":\"C:\\\\Deadlock\",\"hotkeys\":").unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let error = save_startup_sound_settings_at_path(
+            &path,
+            StartupSoundSettings::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("refusing to overwrite"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn successful_launch_update_rejects_malformed_config_without_hanging() {
+        let directory = temporary_test_directory("malformed-launch-config");
+        let path = directory.join("split2-config.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, b"{\"deadlockPath\":\"\",\"lastLaunchAt\":123").unwrap();
+        let before = fs::read(&path).unwrap();
+        let (sender, receiver) = mpsc::channel();
+
+        std::thread::spawn({
+            let path = path.clone();
+            move || {
+                let result = record_successful_launch_at_path(&path, 10_000_000);
+                let _ = sender.send(result);
+            }
+        });
+
+        let result = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("malformed config handling must return instead of hanging");
+        assert!(result.unwrap_err().contains("refusing to overwrite"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn deadlock_path_validation_distinguishes_valid_and_invalid_folders() {
+        let root = std::env::temp_dir().join(format!(
+            "split-path-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cfg = root.join("game").join("citadel").join("cfg");
+        let exe = root
+            .join("game")
+            .join("bin")
+            .join("win64")
+            .join("deadlock.exe");
+        fs::create_dir_all(&cfg).unwrap();
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+
+        assert!(DeadlockPaths::from_root(root.clone(), PathSource::UserConfig).is_none());
+        fs::write(&exe, []).unwrap();
+        assert!(DeadlockPaths::from_root(root.clone(), PathSource::UserConfig).is_some());
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -483,5 +1153,69 @@ mod tests {
             config.quick_access.position,
             crate::quick_access::QuickAccessPosition::Right,
         );
+    }
+
+    #[test]
+    fn libraryfolders_keeps_primary_adds_libraries_and_removes_duplicates() {
+        let primary = Path::new(r"C:\Program Files (x86)\Steam");
+        let raw = r#"
+            "path" "D:\\SteamLibrary"
+            "path" "E:\\Games\\Steam"
+            "path" "d:\\steamlibrary"
+        "#;
+
+        let libraries = steam_library_roots_from_vdf(primary, raw);
+
+        assert_eq!(libraries.len(), 3);
+        assert_eq!(libraries[0], primary);
+        assert_eq!(libraries[1], PathBuf::from(r"D:\SteamLibrary"));
+        assert_eq!(libraries[2], PathBuf::from(r"E:\Games\Steam"));
+    }
+
+    #[test]
+    fn inaccessible_and_network_drive_types_are_rejected() {
+        assert!(!supported_drive_type(0));
+        assert!(!supported_drive_type(1));
+        assert!(!supported_drive_type(4));
+        assert!(supported_drive_type(DRIVE_REMOVABLE));
+        assert!(supported_drive_type(DRIVE_FIXED));
+    }
+
+    #[test]
+    fn startup_log_migration_removes_only_legacy_scan_logs() {
+        let directory = temporary_test_directory("startup-log-migration");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("startup-boot.log"), b"old boot").unwrap();
+        fs::write(directory.join("startup-scan.log"), b"old scan").unwrap();
+        fs::write(directory.join("split_debug.log"), b"keep").unwrap();
+
+        cleanup_legacy_startup_logs(&directory);
+
+        assert!(!directory.join("startup-boot.log").exists());
+        assert!(!directory.join("startup-scan.log").exists());
+        assert_eq!(
+            fs::read(directory.join("split_debug.log")).unwrap(),
+            b"keep"
+        );
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn candidate_scan_finds_second_library_and_stops_after_match() {
+        let candidates = vec![
+            PathBuf::from(r"C:\Steam\Deadlock"),
+            PathBuf::from(r"D:\SteamLibrary\Deadlock"),
+            PathBuf::from(r"E:\SteamLibrary\Deadlock"),
+        ];
+        let mut checked = Vec::new();
+
+        let found = first_valid_candidate(candidates, |candidate| {
+            checked.push(candidate.to_path_buf());
+            candidate.starts_with(r"D:\")
+        });
+
+        assert_eq!(found, Some(PathBuf::from(r"D:\SteamLibrary\Deadlock")));
+        assert_eq!(checked.len(), 2);
     }
 }
