@@ -1,0 +1,6 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SPLIT Panorama",
+  "mainBinaryName": "SPLIT-Panorama",
+  "identifier": "com.necrozzzzzz.split.panorama"
+}

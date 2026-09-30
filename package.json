@@ -8,8 +8,12 @@
     "build": "tsc --noEmit && vite build",
     "build:borderless": "node scripts/run-edition.mjs borderless npm run build",
     "build:panorama": "node scripts/run-edition.mjs panorama npm run build",
-    "tauri:build:borderless": "node scripts/run-edition.mjs borderless npm run tauri -- build --no-bundle",
-    "tauri:build:panorama": "node scripts/run-edition.mjs panorama npm run tauri -- build --no-bundle",
+    "tauri:build:borderless": "node scripts/build-tauri-edition.mjs borderless app",
+    "tauri:build:panorama": "node scripts/build-tauri-edition.mjs panorama app",
+    "tauri:bundle:borderless": "node scripts/build-tauri-edition.mjs borderless bundle",
+    "tauri:bundle:panorama": "node scripts/build-tauri-edition.mjs panorama bundle",
+    "build:editions": "npm run tauri:build:borderless && npm run tauri:build:panorama",
+    "bundle:editions": "npm run tauri:bundle:borderless && npm run tauri:bundle:panorama",
     "tauri": "tauri"
   },
   "dependencies": {

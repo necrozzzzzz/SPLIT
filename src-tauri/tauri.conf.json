@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SPLIT",
+  "productName": "SPLIT Borderless",
+  "mainBinaryName": "SPLIT-Borderless",
   "version": "2.0.0-1",
-  "identifier": "com.necrozzzzzz.split",
+  "identifier": "com.necrozzzzzz.split.borderless",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

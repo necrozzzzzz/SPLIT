@@ -1,6 +1,7 @@
 # SPLIT v2
 node_modules/
 dist/
+artifacts/
 src-tauri/target/
 src-tauri/gen/
 .tmp-*/

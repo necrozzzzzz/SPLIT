@@ -29,13 +29,19 @@ Both historical commands default to the Borderless edition.
 ### Edition builds
 
 `SPLIT_EDITION` is the single build-time selector shared by Vite and Rust. Use
-the dedicated commands instead of setting it manually:
+the dedicated commands instead of setting it manually. Each Tauri command also
+merges its small edition override after the shared `tauri.conf.json`; conflicting
+values from the override win, while all common configuration remains inherited.
 
 ```bash
 npm run build:borderless
 npm run build:panorama
 npm run tauri:build:borderless
 npm run tauri:build:panorama
+npm run tauri:bundle:borderless
+npm run tauri:bundle:panorama
+npm run build:editions
+npm run bundle:editions
 ```
 
 - `borderless` keeps the current Windows/Tauri Quick Access and native Win32
@@ -43,3 +49,22 @@ npm run tauri:build:panorama
 - `panorama` builds the shared application and backend without those Windows
   renderer services. The future Panorama bridge is intentionally not present
   yet.
+
+The application builds are retained side by side:
+
+```text
+artifacts/borderless/SPLIT-Borderless.exe
+artifacts/panorama/SPLIT-Panorama.exe
+```
+
+The bundle commands additionally retain these NSIS installers:
+
+```text
+artifacts/borderless/SPLIT-Borderless-Setup-2.0.0-1.exe
+artifacts/panorama/SPLIT-Panorama-Setup-2.0.0-1.exe
+```
+
+The two Tauri identities are deliberately distinct, so Windows installation,
+shortcuts, autostart entries, WebView data, window state and single-instance
+mutexes do not collide. SPLIT's explicitly managed savestates, screenshots and
+configuration remain shared under `%APPDATA%\\SPLIT`.
