@@ -13,36 +13,31 @@ use std::{
 use windows_sys::{
     core::BOOL,
     Win32::{
-        Foundation::{
-            CloseHandle, GetLastError, SetLastError, HWND, LPARAM, RECT, ERROR_SUCCESS,
-        },
+        Foundation::{CloseHandle, GetLastError, SetLastError, ERROR_SUCCESS, HWND, LPARAM, RECT},
         System::Threading::{
             AttachThreadInput, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW,
             PROCESS_QUERY_LIMITED_INFORMATION,
         },
         UI::{
-            Accessibility::{
-                SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK,
-            },
+            Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK},
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, GetKeyState, RegisterHotKey, SendInput, SetActiveWindow,
                 SetFocus, UnregisterHotKey, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F10, VK_F11,
-                VK_F12, VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19, VK_F2,
-                VK_F20, VK_F21, VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
-                VK_F8, VK_F9,
-                VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT,
-                VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE,
-                VK_UP, VK_CAPITAL, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
+                KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_CAPITAL,
+                VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F10, VK_F11, VK_F12,
+                VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19, VK_F2, VK_F20, VK_F21,
+                VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_HOME,
+                VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT, VK_PRIOR,
+                VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE, VK_UP,
             },
             WindowsAndMessaging::{
                 BringWindowToTop, CallNextHookEx, DispatchMessageW, EnumWindows,
-                GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
-                IsWindowVisible, PostThreadMessageW, SetForegroundWindow, SetWindowsHookExW,
-                ShowWindow, TranslateMessage, UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG,
-                EVENT_SYSTEM_FOREGROUND, SW_RESTORE, WH_KEYBOARD_LL, WINEVENT_OUTOFCONTEXT,
-                WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN,
-                WM_SYSKEYUP,
+                GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowThreadProcessId,
+                IsIconic, IsWindowVisible, PostThreadMessageW, SetForegroundWindow,
+                SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx,
+                EVENT_SYSTEM_FOREGROUND, KBDLLHOOKSTRUCT, MSG, SW_RESTORE, WH_KEYBOARD_LL,
+                WINEVENT_OUTOFCONTEXT, WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_QUIT,
+                WM_SYSKEYDOWN, WM_SYSKEYUP,
             },
         },
     },
@@ -91,10 +86,7 @@ enum QuickAccessMode {
     Interactive,
 }
 
-fn quick_access_mode_from_state(
-    visible: bool,
-    interactive: bool,
-) -> QuickAccessMode {
+fn quick_access_mode_from_state(visible: bool, interactive: bool) -> QuickAccessMode {
     if interactive {
         QuickAccessMode::Interactive
     } else if visible {
@@ -122,21 +114,12 @@ fn resynced_quick_access_mode(
     }
 }
 
-fn resync_quick_access_mode(
-    mode: &mut QuickAccessMode,
-) {
+fn resync_quick_access_mode(mode: &mut QuickAccessMode) {
     let actual = actual_quick_access_mode();
-    let resynced = resynced_quick_access_mode(
-        *mode,
-        actual,
-    );
+    let resynced = resynced_quick_access_mode(*mode, actual);
 
     if *mode != resynced {
-        println!(
-            "[SPLIT][QA] mode resynced {:?} -> {:?}",
-            *mode,
-            resynced,
-        );
+        println!("[SPLIT][QA] mode resynced {:?} -> {:?}", *mode, resynced,);
         *mode = resynced;
     }
 }
@@ -158,8 +141,7 @@ fn quick_access_auto_hide_mode(
     foreground: QuickAccessForeground,
     visible: bool,
 ) -> Option<QuickAccessMode> {
-    (foreground == QuickAccessForeground::Other && visible)
-        .then_some(QuickAccessMode::Hidden)
+    (foreground == QuickAccessForeground::Other && visible).then_some(QuickAccessMode::Hidden)
 }
 
 fn quick_access_registration_plan(
@@ -170,20 +152,15 @@ fn quick_access_registration_plan(
 ) -> QuickAccessRegistrationPlan {
     let context_active = matches!(
         foreground,
-        QuickAccessForeground::Deadlock |
-            QuickAccessForeground::QuickAccess
+        QuickAccessForeground::Deadlock | QuickAccessForeground::QuickAccess
     );
 
     QuickAccessRegistrationPlan {
-        caps_lock:
-            quick_access_enabled &&
-                context_active &&
-                !text_input_active,
-        escape:
-            quick_access_enabled &&
-                context_active &&
-                !text_input_active &&
-                quick_access_visible,
+        caps_lock: quick_access_enabled && context_active && !text_input_active,
+        escape: quick_access_enabled
+            && context_active
+            && !text_input_active
+            && quick_access_visible,
     }
 }
 
@@ -248,10 +225,7 @@ impl Hotkey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    rename_all = "camelCase",
-    default
-)]
+#[serde(rename_all = "camelCase", default)]
 pub struct HotkeySettings {
     pub load_slots: [Hotkey; 8],
     pub save_slots: [Hotkey; 8],
@@ -275,12 +249,7 @@ impl Default for HotkeySettings {
             redo: Hotkey::new("F10", false, false, false),
             cycle_preset: Hotkey::new("F12", false, false, false),
             favorite_mode: Hotkey::new("F11", false, false, false),
-            quick_access: Hotkey::new(
-                "CapsLock",
-                false,
-                false,
-                false,
-            ),
+            quick_access: Hotkey::new("CapsLock", false, false, false),
         }
     }
 }
@@ -538,9 +507,8 @@ pub fn presentation_mask_active() -> bool {
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static QUICK_ACCESS_HOTKEY_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static QUICK_ACCESS_HOTKEY_SHUTDOWN: AtomicBool = AtomicBool::new(false);
-static QUICK_ACCESS_CONTROL_SENDER: Mutex<
-    Option<mpsc::Sender<QuickAccessControlAction>>,
-> = Mutex::new(None);
+static QUICK_ACCESS_CONTROL_SENDER: Mutex<Option<mpsc::Sender<QuickAccessControlAction>>> =
+    Mutex::new(None);
 
 unsafe extern "system" fn quick_access_foreground_event(
     _hook: HWINEVENTHOOK,
@@ -551,16 +519,10 @@ unsafe extern "system" fn quick_access_foreground_event(
     _event_thread: u32,
     _event_time: u32,
 ) {
-    let thread_id =
-        QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
+    let thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
 
     if thread_id != 0 {
-        PostThreadMessageW(
-            thread_id,
-            QUICK_ACCESS_FOREGROUND_MESSAGE,
-            0,
-            0,
-        );
+        PostThreadMessageW(thread_id, QUICK_ACCESS_FOREGROUND_MESSAGE, 0, 0);
     }
 }
 
@@ -592,17 +554,9 @@ pub fn stop() -> Result<(), String> {
             true
         };
 
-        let quick_access_thread_id =
-            QUICK_ACCESS_HOTKEY_THREAD_ID.swap(0, Ordering::SeqCst);
+        let quick_access_thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.swap(0, Ordering::SeqCst);
         let quick_access_stop_posted = if quick_access_thread_id != 0 {
-            unsafe {
-                PostThreadMessageW(
-                    quick_access_thread_id,
-                    WM_QUIT,
-                    0,
-                    0,
-                ) != 0
-            }
+            unsafe { PostThreadMessageW(quick_access_thread_id, WM_QUIT, 0, 0) != 0 }
         } else {
             true
         };
@@ -624,13 +578,9 @@ pub fn stop() -> Result<(), String> {
             runtime
                 .quick_access
                 .join()
-                .map_err(|_| {
-                    "Quick Access hotkey service panicked while stopping".to_string()
-                })?;
+                .map_err(|_| "Quick Access hotkey service panicked while stopping".to_string())?;
         } else {
-            return Err(
-                "Could not post WM_QUIT to Quick Access hotkey thread".to_string()
-            );
+            return Err("Could not post WM_QUIT to Quick Access hotkey thread".to_string());
         }
     }
 
@@ -927,23 +877,14 @@ fn restore_caps_lock_toggle(
         return Ok(());
     }
 
-    unregister_caps_lock_hotkey(registered)
-        .map_err(|error| {
-            format!(
-                "Could not pause CapsLock system hotkey for toggle restoration: {error}"
-            )
-        })?;
+    unregister_caps_lock_hotkey(registered).map_err(|error| {
+        format!("Could not pause CapsLock system hotkey for toggle restoration: {error}")
+    })?;
 
     let restore_result = send_virtual_key(VK_CAPITAL);
     thread::sleep(Duration::from_millis(10));
-    let register_result = register_caps_lock_hotkey(
-        registered,
-        registration,
-    )
-    .map_err(|error| {
-        format!(
-            "Could not re-register CapsLock system hotkey after toggle restoration: {error}"
-        )
+    let register_result = register_caps_lock_hotkey(registered, registration).map_err(|error| {
+        format!("Could not re-register CapsLock system hotkey after toggle restoration: {error}")
     });
 
     match (restore_result, register_result) {
@@ -953,9 +894,7 @@ fn restore_caps_lock_toggle(
     }
 }
 
-fn quick_access_registration(
-    hotkey: &Hotkey,
-) -> Result<SystemHotkeyRegistration, String> {
+fn quick_access_registration(hotkey: &Hotkey) -> Result<SystemHotkeyRegistration, String> {
     let vk = key_to_vk(&hotkey.key)
         .ok_or_else(|| format!("Unsupported Quick Access hotkey: {}", hotkey.key))?;
     let mut modifiers = MOD_NOREPEAT;
@@ -976,15 +915,10 @@ fn quick_access_registration(
     })
 }
 
-fn caps_lock_release_transition(
-    mode: QuickAccessMode,
-    held_for: Duration,
-) -> QuickAccessMode {
+fn caps_lock_release_transition(mode: QuickAccessMode, held_for: Duration) -> QuickAccessMode {
     match mode {
         QuickAccessMode::Hidden => QuickAccessMode::Passive,
-        QuickAccessMode::Passive
-            if held_for >= QUICK_ACCESS_HOLD_DURATION =>
-        {
+        QuickAccessMode::Passive if held_for >= QUICK_ACCESS_HOLD_DURATION => {
             QuickAccessMode::Interactive
         }
         QuickAccessMode::Passive => QuickAccessMode::Hidden,
@@ -1045,20 +979,12 @@ fn register_escape_hotkey(registered: &mut bool) {
     }
 }
 
-fn unregister_caps_lock_hotkey(
-    registered: &mut bool,
-) -> Result<(), String> {
+fn unregister_caps_lock_hotkey(registered: &mut bool) -> Result<(), String> {
     if !*registered {
         return Ok(());
     }
 
-    if unsafe {
-        UnregisterHotKey(
-            std::ptr::null_mut(),
-            QUICK_ACCESS_CAPSLOCK_ID,
-        )
-    } == 0
-    {
+    if unsafe { UnregisterHotKey(std::ptr::null_mut(), QUICK_ACCESS_CAPSLOCK_ID) } == 0 {
         return Err(format!(
             "UnregisterHotKey failed for Quick Access shortcut: {}",
             std::io::Error::last_os_error(),
@@ -1096,10 +1022,7 @@ fn register_caps_lock_hotkey(
     Ok(())
 }
 
-fn quick_access_foreground(
-    app: &AppHandle,
-    hwnd: HWND,
-) -> QuickAccessForeground {
+fn quick_access_foreground(app: &AppHandle, hwnd: HWND) -> QuickAccessForeground {
     if hwnd.is_null() {
         return QuickAccessForeground::Other;
     }
@@ -1111,10 +1034,7 @@ fn quick_access_foreground(
 
     if is_deadlock_process(pid) {
         QuickAccessForeground::Deadlock
-    } else if crate::quick_access::owns_window_handle(
-        app,
-        hwnd,
-    ) {
+    } else if crate::quick_access::owns_window_handle(app, hwnd) {
         QuickAccessForeground::QuickAccess
     } else {
         QuickAccessForeground::Other
@@ -1128,14 +1048,9 @@ fn apply_quick_access_registration_plan(
     registration: SystemHotkeyRegistration,
 ) -> Result<(), String> {
     if plan.caps_lock {
-        register_caps_lock_hotkey(
-            caps_lock_registered,
-            registration,
-        )?;
+        register_caps_lock_hotkey(caps_lock_registered, registration)?;
     } else {
-        unregister_caps_lock_hotkey(
-            caps_lock_registered,
-        )?;
+        unregister_caps_lock_hotkey(caps_lock_registered)?;
     }
 
     if plan.escape {
@@ -1166,8 +1081,7 @@ fn reconcile_quick_access_hotkeys(
     registration: SystemHotkeyRegistration,
 ) -> Result<QuickAccessForeground, String> {
     let hwnd = unsafe { GetForegroundWindow() };
-    let foreground =
-        quick_access_foreground(app, hwnd);
+    let foreground = quick_access_foreground(app, hwnd);
     let plan = quick_access_registration_plan(
         foreground,
         text_input_active,
@@ -1185,18 +1099,14 @@ fn reconcile_quick_access_hotkeys(
     Ok(foreground)
 }
 
-fn log_quick_access_foreground(
-    foreground: QuickAccessForeground,
-) {
+fn log_quick_access_foreground(foreground: QuickAccessForeground) {
     println!(
         "[SPLIT][QA] foreground reconcile -> {}",
         quick_access_foreground_name(foreground),
     );
 }
 
-fn quick_access_foreground_name(
-    foreground: QuickAccessForeground,
-) -> &'static str {
+fn quick_access_foreground_name(foreground: QuickAccessForeground) -> &'static str {
     match foreground {
         QuickAccessForeground::Deadlock => "Deadlock",
         QuickAccessForeground::QuickAccess => "QuickAccess",
@@ -1264,8 +1174,7 @@ fn handle_caps_lock_system_hotkey(
     println!("[SPLIT][QA] CapsLock hotkey");
     resync_quick_access_mode(mode);
 
-    let previous_toggle = (registration.vk == VK_CAPITAL as u32)
-        .then(caps_lock_toggle_enabled);
+    let previous_toggle = (registration.vk == VK_CAPITAL as u32).then(caps_lock_toggle_enabled);
     let vk = registration.vk as u16;
 
     match *mode {
@@ -1275,14 +1184,10 @@ fn handle_caps_lock_system_hotkey(
             };
 
             if let Some(expected) = previous_toggle {
-                if let Err(error) = restore_caps_lock_toggle(
-                    expected,
-                    caps_lock_registered,
-                    registration,
-                ) {
-                    eprintln!(
-                        "[SPLIT][QA] Could not restore CapsLock system toggle: {error}"
-                    );
+                if let Err(error) =
+                    restore_caps_lock_toggle(expected, caps_lock_registered, registration)
+                {
+                    eprintln!("[SPLIT][QA] Could not restore CapsLock system toggle: {error}");
                 }
             }
 
@@ -1300,9 +1205,7 @@ fn handle_caps_lock_system_hotkey(
         QuickAccessMode::Passive => {
             let started_at = Instant::now();
 
-            while physical_key_is_down(vk)
-                && started_at.elapsed() < QUICK_ACCESS_HOLD_DURATION
-            {
+            while physical_key_is_down(vk) && started_at.elapsed() < QUICK_ACCESS_HOLD_DURATION {
                 if QUICK_ACCESS_HOTKEY_SHUTDOWN.load(Ordering::SeqCst) {
                     return;
                 }
@@ -1321,9 +1224,7 @@ fn handle_caps_lock_system_hotkey(
 
             if held_long_enough {
                 if let Err(error) = crate::quick_access::enter_interaction_mode(app) {
-                    eprintln!(
-                        "[SPLIT][QA] Could not enter Quick Access interaction mode: {error}"
-                    );
+                    eprintln!("[SPLIT][QA] Could not enter Quick Access interaction mode: {error}");
                 } else {
                     *mode = next;
                     println!("[SPLIT][QA] Passive -> Interactive");
@@ -1341,14 +1242,10 @@ fn handle_caps_lock_system_hotkey(
             }
 
             if let Some(expected) = previous_toggle {
-                if let Err(error) = restore_caps_lock_toggle(
-                    expected,
-                    caps_lock_registered,
-                    registration,
-                ) {
-                    eprintln!(
-                        "[SPLIT][QA] Could not restore CapsLock system toggle: {error}"
-                    );
+                if let Err(error) =
+                    restore_caps_lock_toggle(expected, caps_lock_registered, registration)
+                {
+                    eprintln!("[SPLIT][QA] Could not restore CapsLock system toggle: {error}");
                 }
             }
         }
@@ -1357,9 +1254,7 @@ fn handle_caps_lock_system_hotkey(
             let next = caps_lock_press_transition(*mode);
 
             if let Err(error) = crate::quick_access::exit_interaction_mode(app) {
-                eprintln!(
-                    "[SPLIT][QA] Could not leave Quick Access interaction mode: {error}"
-                );
+                eprintln!("[SPLIT][QA] Could not leave Quick Access interaction mode: {error}");
             } else {
                 *mode = next;
                 println!("[SPLIT][QA] Interactive -> Passive");
@@ -1370,14 +1265,10 @@ fn handle_caps_lock_system_hotkey(
             }
 
             if let Some(expected) = previous_toggle {
-                if let Err(error) = restore_caps_lock_toggle(
-                    expected,
-                    caps_lock_registered,
-                    registration,
-                ) {
-                    eprintln!(
-                        "[SPLIT][QA] Could not restore CapsLock system toggle: {error}"
-                    );
+                if let Err(error) =
+                    restore_caps_lock_toggle(expected, caps_lock_registered, registration)
+                {
+                    eprintln!("[SPLIT][QA] Could not restore CapsLock system toggle: {error}");
                 }
             }
         }
@@ -1396,9 +1287,7 @@ fn handle_escape_system_hotkey(
     match *mode {
         QuickAccessMode::Interactive => {
             if let Err(error) = crate::quick_access::exit_interaction_mode(app) {
-                eprintln!(
-                    "[SPLIT][QA] Could not leave Quick Access interaction mode: {error}"
-                );
+                eprintln!("[SPLIT][QA] Could not leave Quick Access interaction mode: {error}");
             } else {
                 *mode = next;
                 println!("[SPLIT][QA] Interactive -> Passive");
@@ -1419,21 +1308,14 @@ fn handle_escape_system_hotkey(
     }
 }
 
-fn spawn_quick_access_hotkey_service(
-    app: AppHandle,
-) -> Result<JoinHandle<()>, String> {
+fn spawn_quick_access_hotkey_service(app: AppHandle) -> Result<JoinHandle<()>, String> {
     QUICK_ACCESS_HOTKEY_SHUTDOWN.store(false, Ordering::SeqCst);
-    let initial_registration = quick_access_registration(
-        &current_settings().quick_access,
-    )?;
+    let initial_registration = quick_access_registration(&current_settings().quick_access)?;
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (control_tx, control_rx) = mpsc::channel();
     *QUICK_ACCESS_CONTROL_SENDER
         .lock()
-        .map_err(|_| {
-            "Quick Access control lock poisoned"
-                .to_string()
-        })? = Some(control_tx);
+        .map_err(|_| "Quick Access control lock poisoned".to_string())? = Some(control_tx);
     let service = thread::Builder::new()
         .name("split-quick-access-hotkeys".to_string())
         .spawn(move || {
@@ -1792,30 +1674,18 @@ fn spawn_quick_access_hotkey_service(
     }
 }
 
-pub fn set_quick_access_text_input_active(
-    active: bool,
-) -> Result<(), String> {
+pub fn set_quick_access_text_input_active(active: bool) -> Result<(), String> {
     let sender = {
         QUICK_ACCESS_CONTROL_SENDER
             .lock()
-            .map_err(|_| {
-                "Quick Access control lock poisoned"
-                    .to_string()
-            })?
+            .map_err(|_| "Quick Access control lock poisoned".to_string())?
             .clone()
-            .ok_or_else(|| {
-                "Quick Access hotkey service is not running"
-                    .to_string()
-            })?
+            .ok_or_else(|| "Quick Access hotkey service is not running".to_string())?
     };
-    let thread_id =
-        QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
+    let thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
 
     if thread_id == 0 {
-        return Err(
-            "Quick Access hotkey service is not running"
-                .to_string(),
-        );
+        return Err("Quick Access hotkey service is not running".to_string());
     }
 
     let (response_tx, response_rx) = mpsc::sync_channel(1);
@@ -1824,25 +1694,11 @@ pub fn set_quick_access_text_input_active(
             active,
             response: response_tx,
         })
-        .map_err(|error| {
-            format!(
-                "Could not send Quick Access hotkey control: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not send Quick Access hotkey control: {error}"))?;
 
-    println!(
-        "[SPLIT][QA] text input request queued"
-    );
+    println!("[SPLIT][QA] text input request queued");
 
-    if unsafe {
-        PostThreadMessageW(
-            thread_id,
-            QUICK_ACCESS_CONTROL_MESSAGE,
-            0,
-            0,
-        )
-    } == 0
-    {
+    if unsafe { PostThreadMessageW(thread_id, QUICK_ACCESS_CONTROL_MESSAGE, 0, 0) } == 0 {
         return Err(format!(
             "Could not wake Quick Access hotkey service: {}",
             std::io::Error::last_os_error(),
@@ -1853,32 +1709,21 @@ pub fn set_quick_access_text_input_active(
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             if active {
-                let (rollback_tx, _rollback_rx) =
-                    mpsc::sync_channel(1);
+                let (rollback_tx, _rollback_rx) = mpsc::sync_channel(1);
                 if sender
-                    .send(
-                        QuickAccessControlAction::SetTextInputActive {
-                            active: false,
-                            response: rollback_tx,
-                        },
-                    )
+                    .send(QuickAccessControlAction::SetTextInputActive {
+                        active: false,
+                        response: rollback_tx,
+                    })
                     .is_ok()
                 {
                     unsafe {
-                        PostThreadMessageW(
-                            thread_id,
-                            QUICK_ACCESS_CONTROL_MESSAGE,
-                            0,
-                            0,
-                        );
+                        PostThreadMessageW(thread_id, QUICK_ACCESS_CONTROL_MESSAGE, 0, 0);
                     }
                 }
             }
 
-            Err(
-                "Quick Access hotkey service did not acknowledge text input mode"
-                    .to_string(),
-            )
+            Err("Quick Access hotkey service did not acknowledge text input mode".to_string())
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => Err(
             "Quick Access hotkey service disconnected before acknowledging text input mode"
@@ -1887,21 +1732,15 @@ pub fn set_quick_access_text_input_active(
     }
 }
 
-pub fn reconfigure_quick_access_hotkey(
-    hotkey: &Hotkey,
-) -> Result<(), String> {
+pub fn reconfigure_quick_access_hotkey(hotkey: &Hotkey) -> Result<(), String> {
     let registration = quick_access_registration(hotkey)?;
     let sender = {
         QUICK_ACCESS_CONTROL_SENDER
             .lock()
-            .map_err(|_| {
-                "Quick Access control lock poisoned"
-                    .to_string()
-            })?
+            .map_err(|_| "Quick Access control lock poisoned".to_string())?
             .clone()
     };
-    let thread_id =
-        QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
+    let thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
 
     let Some(sender) = sender else {
         return Ok(());
@@ -1916,21 +1755,9 @@ pub fn reconfigure_quick_access_hotkey(
             registration,
             response: response_tx,
         })
-        .map_err(|error| {
-            format!(
-                "Could not queue Quick Access shortcut update: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not queue Quick Access shortcut update: {error}"))?;
 
-    if unsafe {
-        PostThreadMessageW(
-            thread_id,
-            QUICK_ACCESS_CONTROL_MESSAGE,
-            0,
-            0,
-        )
-    } == 0
-    {
+    if unsafe { PostThreadMessageW(thread_id, QUICK_ACCESS_CONTROL_MESSAGE, 0, 0) } == 0 {
         return Err(format!(
             "Could not wake Quick Access hotkey service: {}",
             std::io::Error::last_os_error(),
@@ -1940,8 +1767,7 @@ pub fn reconfigure_quick_access_hotkey(
     response_rx
         .recv_timeout(Duration::from_secs(1))
         .map_err(|_| {
-            "Quick Access hotkey service did not acknowledge shortcut update"
-                .to_string()
+            "Quick Access hotkey service did not acknowledge shortcut update".to_string()
         })?
 }
 
@@ -1949,14 +1775,10 @@ pub fn refresh_quick_access_hotkeys() -> Result<(), String> {
     let sender = {
         QUICK_ACCESS_CONTROL_SENDER
             .lock()
-            .map_err(|_| {
-                "Quick Access control lock poisoned"
-                    .to_string()
-            })?
+            .map_err(|_| "Quick Access control lock poisoned".to_string())?
             .clone()
     };
-    let thread_id =
-        QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
+    let thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.load(Ordering::SeqCst);
 
     let Some(sender) = sender else {
         return Ok(());
@@ -1970,21 +1792,9 @@ pub fn refresh_quick_access_hotkeys() -> Result<(), String> {
         .send(QuickAccessControlAction::Refresh {
             response: response_tx,
         })
-        .map_err(|error| {
-            format!(
-                "Could not queue Quick Access state refresh: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not queue Quick Access state refresh: {error}"))?;
 
-    if unsafe {
-        PostThreadMessageW(
-            thread_id,
-            QUICK_ACCESS_CONTROL_MESSAGE,
-            0,
-            0,
-        )
-    } == 0
-    {
+    if unsafe { PostThreadMessageW(thread_id, QUICK_ACCESS_CONTROL_MESSAGE, 0, 0) } == 0 {
         return Err(format!(
             "Could not wake Quick Access hotkey service: {}",
             std::io::Error::last_os_error(),
@@ -1994,8 +1804,7 @@ pub fn refresh_quick_access_hotkeys() -> Result<(), String> {
     response_rx
         .recv_timeout(Duration::from_secs(1))
         .map_err(|_| {
-            "Quick Access hotkey service did not acknowledge settings update"
-                .to_string()
+            "Quick Access hotkey service did not acknowledge settings update".to_string()
         })?
 }
 
@@ -2004,12 +1813,7 @@ pub fn quick_access_hidden() {
 
     if thread_id != 0 {
         unsafe {
-            PostThreadMessageW(
-                thread_id,
-                QUICK_ACCESS_HIDDEN_MESSAGE,
-                0,
-                0,
-            );
+            PostThreadMessageW(thread_id, QUICK_ACCESS_HIDDEN_MESSAGE, 0, 0);
         }
     }
 }
@@ -2142,11 +1946,8 @@ fn find_deadlock_window() -> Option<HWND> {
 }
 
 pub(crate) fn deadlock_window_rect() -> Result<RECT, String> {
-    let hwnd = find_deadlock_window()
-        .ok_or_else(|| {
-            "Could not find the Deadlock window"
-                .to_string()
-        })?;
+    let hwnd =
+        find_deadlock_window().ok_or_else(|| "Could not find the Deadlock window".to_string())?;
     let mut rect = RECT {
         left: 0,
         top: 0,
@@ -2260,8 +2061,7 @@ fn focus_deadlock_once(hwnd: HWND) -> Result<(), String> {
     } else {
         unsafe { GetWindowThreadProcessId(foreground, std::ptr::null_mut()) }
     };
-    let deadlock_thread =
-        unsafe { GetWindowThreadProcessId(hwnd, std::ptr::null_mut()) };
+    let deadlock_thread = unsafe { GetWindowThreadProcessId(hwnd, std::ptr::null_mut()) };
 
     if deadlock_thread == 0 {
         return Err(format!(
@@ -2338,24 +2138,18 @@ pub(crate) fn focus_deadlock_window() -> Result<(), String> {
                         return Ok(());
                     }
 
-                    last_error = Some(
-                        "Deadlock lost foreground focus after activation".to_string(),
-                    );
+                    last_error =
+                        Some("Deadlock lost foreground focus after activation".to_string());
 
                     if attempt == 0 {
-                        println!(
-                            "[SPLIT][QA] Deadlock focus lost after activation, retrying"
-                        );
+                        println!("[SPLIT][QA] Deadlock focus lost after activation, retrying");
                     }
                 } else {
-                    last_error = Some(
-                        "Deadlock did not receive foreground focus within 200 ms".to_string(),
-                    );
+                    last_error =
+                        Some("Deadlock did not receive foreground focus within 200 ms".to_string());
 
                     if attempt == 0 {
-                        eprintln!(
-                            "[SPLIT][QA] Deadlock foreground not acquired, retrying"
-                        );
+                        eprintln!("[SPLIT][QA] Deadlock foreground not acquired, retrying");
                     }
                 }
             }
@@ -2369,9 +2163,8 @@ pub(crate) fn focus_deadlock_window() -> Result<(), String> {
         }
     }
 
-    Err(last_error.unwrap_or_else(|| {
-        "Deadlock focus activation failed for an unknown reason".to_string()
-    }))
+    Err(last_error
+        .unwrap_or_else(|| "Deadlock focus activation failed for an unknown reason".to_string()))
 }
 
 fn make_keyboard_input(vk: u16, flags: u32) -> INPUT {
@@ -2512,9 +2305,9 @@ pub fn prepare_teleports_from_ui() -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn apply_generated_cfg_now() -> Result<bool, String> {
-    if !super::process::is_deadlock_running() || !super::cfg::teleports_dirty() {
-        return Ok(false);
+pub(crate) fn reload_savestate_cfg_now() -> Result<(), String> {
+    if !super::process::is_deadlock_running() {
+        return Err("Deadlock is not running".to_string());
     }
 
     focus_deadlock_window()?;
@@ -2522,8 +2315,18 @@ pub(crate) fn apply_generated_cfg_now() -> Result<bool, String> {
     send_prepare_key()?;
     super::cfg::mark_teleports_prepared();
 
-    println!("[SPLIT] Generated Deadlock CFG applied immediately via F13");
-    Ok(true)
+    Ok(())
+}
+
+pub(crate) fn retry_capture_after_cfg_reload() -> Result<(), String> {
+    reload_savestate_cfg_now()?;
+
+    /*
+     * Laisse Source 2 exécuter savestate.cfg avant
+     * de redéclencher exactement la même capture F23.
+     */
+    thread::sleep(Duration::from_millis(50));
+    send_capture_key()
 }
 
 pub fn resume_presentation_from_ui() -> Result<(), String> {
@@ -2922,14 +2725,14 @@ physical ctrl={} alt={} shift={}",
     }
 
     let decision = hook_engine.classify(
-            keyboard.vkCode as u16,
-            key_down,
-            key_up,
-            false,
-            deadlock_foreground,
-            PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst),
-            &settings,
-        );
+        keyboard.vkCode as u16,
+        key_down,
+        key_up,
+        false,
+        deadlock_foreground,
+        PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst),
+        &settings,
+    );
 
     drop(hook_engine);
 
@@ -3001,11 +2804,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                     Err(_) => break,
                 };
 
-                if let HotkeyAction::User {
-                    action: _,
-                    hotkey,
-                } = &action
-                {
+                if let HotkeyAction::User { action: _, hotkey } = &action {
                     if !wait_for_hotkey_release(hotkey) {
                         eprintln!(
                             "[SPLIT] {} cancelled: physical shortcut was held too long",
@@ -3185,10 +2984,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         action: UserHotkeyAction::ToggleFavorites,
                         hotkey,
                     } => {
-                        println!(
-                            "[SPLIT] Favorite Mode hotkey: {}",
-                            hotkey.display()
-                        );
+                        println!("[SPLIT] Favorite Mode hotkey: {}", hotkey.display());
 
                         match super::toggle_favorite_mode() {
                             Ok(result) => {
@@ -3198,13 +2994,10 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             }
 
                             Err(error) => {
-                                eprintln!(
-                                    "[SPLIT] Could not toggle Favorite Mode: {error}"
-                                );
+                                eprintln!("[SPLIT] Could not toggle Favorite Mode: {error}");
                             }
                         }
                     }
-
 
                     HotkeyAction::Shutdown => {
                         break;
@@ -3268,18 +3061,14 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
         })
         .map_err(|error| format!("Could not start keyboard hook: {error}"))?;
 
-    let quick_access = match spawn_quick_access_hotkey_service(
-        quick_access_app,
-    ) {
+    let quick_access = match spawn_quick_access_hotkey_service(quick_access_app) {
         Ok(service) => service,
         Err(error) => {
             if let Some(sender) = HOTKEY_SENDER.get() {
                 let _ = sender.send(HotkeyAction::Shutdown);
             }
 
-            while HOOK_THREAD_ID.load(Ordering::SeqCst) == 0
-                && !hook.is_finished()
-            {
+            while HOOK_THREAD_ID.load(Ordering::SeqCst) == 0 && !hook.is_finished() {
                 thread::sleep(Duration::from_millis(1));
             }
 
@@ -3298,12 +3087,11 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
 
     *HOTKEY_RUNTIME
         .lock()
-        .map_err(|_| "Hotkey runtime lock poisoned".to_string())? =
-        Some(HotkeyRuntime {
-            worker,
-            hook,
-            quick_access,
-        });
+        .map_err(|_| "Hotkey runtime lock poisoned".to_string())? = Some(HotkeyRuntime {
+        worker,
+        hook,
+        quick_access,
+    });
 
     Ok(())
 }
@@ -3349,7 +3137,10 @@ mod tests {
         }
         assert_eq!(settings.undo, Hotkey::new("F9", false, false, false));
         assert_eq!(settings.redo, Hotkey::new("F10", false, false, false));
-        assert_eq!(settings.cycle_preset, Hotkey::new("F12", false, false, false));
+        assert_eq!(
+            settings.cycle_preset,
+            Hotkey::new("F12", false, false, false)
+        );
         assert_eq!(
             settings.favorite_mode,
             Hotkey::new("F11", false, false, false)
@@ -3408,9 +3199,7 @@ mod tests {
 
         classify_down(&mut engine, VK_LMENU, &settings);
         assert!(engine.modifier_state().alt);
-        assert!(engine
-            .reconcile_modifiers(false, false, false)
-            .is_some());
+        assert!(engine.reconcile_modifiers(false, false, false).is_some());
 
         assert!(matches!(
             classify_down(&mut engine, VK_F1, &settings),
@@ -3431,9 +3220,7 @@ mod tests {
         let settings = HotkeySettings::default();
         let mut engine = HookEngine::default();
 
-        assert!(engine
-            .reconcile_modifiers(false, true, false)
-            .is_some());
+        assert!(engine.reconcile_modifiers(false, true, false).is_some());
         assert!(matches!(
             classify_down(&mut engine, VK_F1, &settings),
             HookDecision::Trigger(UserHotkeyAction::Save(1), _)
@@ -3585,10 +3372,8 @@ mod tests {
 
     #[test]
     fn default_quick_access_setting_maps_to_caps_lock_system_hotkey() {
-        let registration = quick_access_registration(
-            &HotkeySettings::default().quick_access,
-        )
-        .unwrap();
+        let registration =
+            quick_access_registration(&HotkeySettings::default().quick_access).unwrap();
 
         assert_eq!(registration.vk, VK_CAPITAL as u32);
         assert_eq!(registration.modifiers, MOD_NOREPEAT);
@@ -3596,66 +3381,40 @@ mod tests {
 
     #[test]
     fn runtime_quick_access_shortcut_maps_modifiers_and_main_key() {
-        let registration = quick_access_registration(
-            &Hotkey::new("Q", true, true, true),
-        )
-        .unwrap();
+        let registration = quick_access_registration(&Hotkey::new("Q", true, true, true)).unwrap();
 
         assert_eq!(registration.vk, b'Q' as u32);
         assert_eq!(
             registration.modifiers,
-            MOD_CONTROL |
-                MOD_ALT |
-                MOD_SHIFT |
-                MOD_NOREPEAT,
+            MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
         );
     }
 
     #[test]
     fn quick_access_hotkeys_follow_foreground_and_visibility() {
         assert_eq!(
-            quick_access_registration_plan(
-                QuickAccessForeground::Deadlock,
-                false,
-                false,
-                true,
-            ),
+            quick_access_registration_plan(QuickAccessForeground::Deadlock, false, false, true,),
             QuickAccessRegistrationPlan {
                 caps_lock: true,
                 escape: false,
             },
         );
         assert_eq!(
-            quick_access_registration_plan(
-                QuickAccessForeground::Deadlock,
-                false,
-                true,
-                true,
-            ),
+            quick_access_registration_plan(QuickAccessForeground::Deadlock, false, true, true,),
             QuickAccessRegistrationPlan {
                 caps_lock: true,
                 escape: true,
             },
         );
         assert_eq!(
-            quick_access_registration_plan(
-                QuickAccessForeground::QuickAccess,
-                false,
-                true,
-                true,
-            ),
+            quick_access_registration_plan(QuickAccessForeground::QuickAccess, false, true, true,),
             QuickAccessRegistrationPlan {
                 caps_lock: true,
                 escape: true,
             },
         );
         assert_eq!(
-            quick_access_registration_plan(
-                QuickAccessForeground::Other,
-                false,
-                true,
-                true,
-            ),
+            quick_access_registration_plan(QuickAccessForeground::Other, false, true, true,),
             QuickAccessRegistrationPlan {
                 caps_lock: false,
                 escape: false,
@@ -3666,31 +3425,19 @@ mod tests {
     #[test]
     fn quick_access_auto_hide_only_applies_to_visible_other_foreground() {
         assert_eq!(
-            quick_access_auto_hide_mode(
-                QuickAccessForeground::Deadlock,
-                true,
-            ),
+            quick_access_auto_hide_mode(QuickAccessForeground::Deadlock, true,),
             None,
         );
         assert_eq!(
-            quick_access_auto_hide_mode(
-                QuickAccessForeground::QuickAccess,
-                true,
-            ),
+            quick_access_auto_hide_mode(QuickAccessForeground::QuickAccess, true,),
             None,
         );
         assert_eq!(
-            quick_access_auto_hide_mode(
-                QuickAccessForeground::Other,
-                false,
-            ),
+            quick_access_auto_hide_mode(QuickAccessForeground::Other, false,),
             None,
         );
         assert_eq!(
-            quick_access_auto_hide_mode(
-                QuickAccessForeground::Other,
-                true,
-            ),
+            quick_access_auto_hide_mode(QuickAccessForeground::Other, true,),
             Some(QuickAccessMode::Hidden),
         );
     }
@@ -3698,12 +3445,8 @@ mod tests {
     #[test]
     fn current_foreground_wins_over_a_stale_event_hint() {
         let _stale_other_hint = QuickAccessForeground::Other;
-        let current_deadlock = quick_access_registration_plan(
-            QuickAccessForeground::Deadlock,
-            false,
-            false,
-            true,
-        );
+        let current_deadlock =
+            quick_access_registration_plan(QuickAccessForeground::Deadlock, false, false, true);
         assert_eq!(
             current_deadlock,
             QuickAccessRegistrationPlan {
@@ -3713,12 +3456,8 @@ mod tests {
         );
 
         let _stale_deadlock_hint = QuickAccessForeground::Deadlock;
-        let current_other = quick_access_registration_plan(
-            QuickAccessForeground::Other,
-            false,
-            true,
-            true,
-        );
+        let current_other =
+            quick_access_registration_plan(QuickAccessForeground::Other, false, true, true);
         assert_eq!(
             current_other,
             QuickAccessRegistrationPlan {
@@ -3731,19 +3470,12 @@ mod tests {
     #[test]
     fn post_auto_hide_plan_uses_the_second_foreground_read() {
         assert_eq!(
-            quick_access_auto_hide_mode(
-                QuickAccessForeground::Other,
-                true,
-            ),
+            quick_access_auto_hide_mode(QuickAccessForeground::Other, true,),
             Some(QuickAccessMode::Hidden),
         );
 
-        let returned_to_deadlock = quick_access_registration_plan(
-            QuickAccessForeground::Deadlock,
-            false,
-            false,
-            true,
-        );
+        let returned_to_deadlock =
+            quick_access_registration_plan(QuickAccessForeground::Deadlock, false, false, true);
         assert_eq!(
             returned_to_deadlock,
             QuickAccessRegistrationPlan {
@@ -3752,12 +3484,8 @@ mod tests {
             },
         );
 
-        let remained_elsewhere = quick_access_registration_plan(
-            QuickAccessForeground::Other,
-            false,
-            false,
-            true,
-        );
+        let remained_elsewhere =
+            quick_access_registration_plan(QuickAccessForeground::Other, false, false, true);
         assert_eq!(
             remained_elsewhere,
             QuickAccessRegistrationPlan {
@@ -3770,12 +3498,7 @@ mod tests {
     #[test]
     fn text_input_suspends_quick_access_hotkeys() {
         assert_eq!(
-            quick_access_registration_plan(
-                QuickAccessForeground::QuickAccess,
-                true,
-                true,
-                true,
-            ),
+            quick_access_registration_plan(QuickAccessForeground::QuickAccess, true, true, true,),
             QuickAccessRegistrationPlan {
                 caps_lock: false,
                 escape: false,
@@ -3786,12 +3509,7 @@ mod tests {
     #[test]
     fn disabled_quick_access_registers_no_hotkeys() {
         assert_eq!(
-            quick_access_registration_plan(
-                QuickAccessForeground::Deadlock,
-                false,
-                true,
-                false,
-            ),
+            quick_access_registration_plan(QuickAccessForeground::Deadlock, false, true, false,),
             QuickAccessRegistrationPlan {
                 caps_lock: false,
                 escape: false,
@@ -3810,10 +3528,7 @@ mod tests {
     #[test]
     fn passive_fifty_millisecond_caps_lock_becomes_hidden() {
         assert_eq!(
-            caps_lock_release_transition(
-                QuickAccessMode::Passive,
-                Duration::from_millis(50),
-            ),
+            caps_lock_release_transition(QuickAccessMode::Passive, Duration::from_millis(50),),
             QuickAccessMode::Hidden
         );
     }
@@ -3832,10 +3547,7 @@ mod tests {
     #[test]
     fn passive_long_caps_lock_becomes_interactive() {
         assert_eq!(
-            caps_lock_release_transition(
-                QuickAccessMode::Passive,
-                QUICK_ACCESS_HOLD_DURATION,
-            ),
+            caps_lock_release_transition(QuickAccessMode::Passive, QUICK_ACCESS_HOLD_DURATION,),
             QuickAccessMode::Interactive
         );
     }
@@ -3869,10 +3581,7 @@ mod tests {
         let actual = quick_access_mode_from_state(true, false);
 
         assert_eq!(
-            resynced_quick_access_mode(
-                QuickAccessMode::Interactive,
-                actual,
-            ),
+            resynced_quick_access_mode(QuickAccessMode::Interactive, actual,),
             QuickAccessMode::Passive,
         );
     }
@@ -3882,10 +3591,7 @@ mod tests {
         let actual = quick_access_mode_from_state(false, false);
 
         assert_eq!(
-            resynced_quick_access_mode(
-                QuickAccessMode::Passive,
-                actual,
-            ),
+            resynced_quick_access_mode(QuickAccessMode::Passive, actual,),
             QuickAccessMode::Hidden,
         );
     }
@@ -3895,12 +3601,8 @@ mod tests {
         let actual = quick_access_mode_from_state(true, true);
 
         assert_eq!(
-            resynced_quick_access_mode(
-                QuickAccessMode::Hidden,
-                actual,
-            ),
+            resynced_quick_access_mode(QuickAccessMode::Hidden, actual,),
             QuickAccessMode::Interactive,
         );
     }
-
 }

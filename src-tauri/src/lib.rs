@@ -1,5 +1,6 @@
 mod app_window;
 mod deadlock;
+mod discord;
 mod editions;
 mod notifications;
 mod panorama_bridge;
@@ -55,9 +56,7 @@ fn record_successful_launch() -> Result<deadlock::LaunchFolderState, String> {
         },
     );
     if let Err(error) = &result {
-        deadlock::persist_startup_diagnostics(&format!(
-            "record_successful_launch failed: {error}"
-        ));
+        deadlock::persist_startup_diagnostics(&format!("record_successful_launch failed: {error}"));
     }
     result
 }
@@ -122,17 +121,9 @@ fn import_preset(
 }
 
 #[tauri::command]
-fn rename_preset(
-    app: tauri::AppHandle,
-    preset: u8,
-    name: String,
-) -> Result<Vec<String>, String> {
+fn rename_preset(app: tauri::AppHandle, preset: u8, name: String) -> Result<Vec<String>, String> {
     let names = deadlock::rename_preset(preset, name)?;
-    ui::emit_to_main_if_present(
-        &app,
-        "quick-access-refresh",
-        (),
-    );
+    ui::emit_to_main_if_present(&app, "quick-access-refresh", ());
     Ok(names)
 }
 
@@ -186,6 +177,18 @@ fn update_startup_sound_settings(
 }
 
 #[tauri::command]
+fn get_discord_presence_enabled() -> bool {
+    deadlock::get_discord_presence_enabled()
+}
+
+#[tauri::command]
+fn update_discord_presence_enabled(enabled: bool) -> Result<bool, String> {
+    let saved = deadlock::update_discord_presence_enabled(enabled)?;
+    discord::set_enabled(saved)?;
+    Ok(saved)
+}
+
+#[tauri::command]
 fn update_notification_settings(
     settings: notifications::NotificationSettings,
 ) -> Result<notifications::NotificationSettings, String> {
@@ -213,29 +216,20 @@ fn get_hotkey_settings() -> deadlock::HotkeySettings {
 async fn update_hotkey_settings(
     settings: deadlock::HotkeySettings,
 ) -> Result<deadlock::HotkeySettings, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        deadlock::update_hotkey_settings(settings)
-    })
-    .await
-    .map_err(|error| {
-        format!("Hotkey settings task failed: {error}")
-    })?
+    tauri::async_runtime::spawn_blocking(move || deadlock::update_hotkey_settings(settings))
+        .await
+        .map_err(|error| format!("Hotkey settings task failed: {error}"))?
 }
 
 #[tauri::command]
 async fn reset_hotkey_settings() -> Result<deadlock::HotkeySettings, String> {
-    tauri::async_runtime::spawn_blocking(
-        deadlock::reset_hotkey_settings,
-    )
-    .await
-    .map_err(|error| {
-        format!("Hotkey reset task failed: {error}")
-    })?
+    tauri::async_runtime::spawn_blocking(deadlock::reset_hotkey_settings)
+        .await
+        .map_err(|error| format!("Hotkey reset task failed: {error}"))?
 }
 
 #[tauri::command]
-fn get_quick_access_settings(
-) -> quick_access::QuickAccessSettings {
+fn get_quick_access_settings() -> quick_access::QuickAccessSettings {
     deadlock::get_quick_access_settings()
 }
 
@@ -245,39 +239,28 @@ async fn update_quick_access_settings(
     settings: quick_access::QuickAccessSettings,
 ) -> Result<quick_access::QuickAccessSettings, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        deadlock::update_quick_access_settings(
-            &app,
-            settings,
-        )
+        deadlock::update_quick_access_settings(&app, settings)
     })
     .await
-    .map_err(|error| {
-        format!("Quick Access settings task failed: {error}")
-    })?
+    .map_err(|error| format!("Quick Access settings task failed: {error}"))?
 }
 
 #[tauri::command]
-fn toggle_favorite_mode(
-    app: tauri::AppHandle,
-) -> Result<deadlock::ActiveBankResult, String> {
+fn toggle_favorite_mode(app: tauri::AppHandle) -> Result<deadlock::ActiveBankResult, String> {
     let result = deadlock::toggle_favorite_mode()?;
     deadlock::emit_active_bank(&app, &result);
     Ok(result)
 }
 
 #[tauri::command]
-fn undo_last_action(
-    app: tauri::AppHandle,
-) -> Result<deadlock::HistoryOperationResult, String> {
+fn undo_last_action(app: tauri::AppHandle) -> Result<deadlock::HistoryOperationResult, String> {
     let result = deadlock::undo_last_action()?;
     deadlock::emit_history_operation(&app, &result);
     Ok(result)
 }
 
 #[tauri::command]
-fn redo_last_action(
-    app: tauri::AppHandle,
-) -> Result<deadlock::HistoryOperationResult, String> {
+fn redo_last_action(app: tauri::AppHandle) -> Result<deadlock::HistoryOperationResult, String> {
     let result = deadlock::redo_last_action()?;
     deadlock::emit_history_operation(&app, &result);
     Ok(result)
@@ -287,32 +270,14 @@ fn redo_last_action(
 fn set_active_preset(
     app: tauri::AppHandle,
     preset: u8,
-) -> Result<
-    Vec<Option<deadlock::PositionSnapshot>>,
-    String,
-> {
-    let slots =
-        deadlock::set_active_preset(
-            preset,
-        )?;
+) -> Result<Vec<Option<deadlock::PositionSnapshot>>, String> {
+    let slots = deadlock::set_active_preset(preset)?;
 
-    ui::emit_to_main_if_present(
-        &app,
-        "deadlock-slots",
-        &slots,
-    );
+    ui::emit_to_main_if_present(&app, "deadlock-slots", &slots);
 
-    ui::emit_to_main_if_present(
-        &app,
-        "deadlock-preset",
-        preset,
-    );
+    ui::emit_to_main_if_present(&app, "deadlock-preset", preset);
 
-    ui::emit_to_main_if_present(
-        &app,
-        "deadlock-favorite-mode",
-        false,
-    );
+    ui::emit_to_main_if_present(&app, "deadlock-favorite-mode", false);
 
     Ok(slots)
 }
@@ -334,10 +299,7 @@ fn rename_slot(
 }
 
 #[tauri::command]
-fn clear_slot(
-    app: tauri::AppHandle,
-    slot: u8,
-) -> Result<deadlock::SlotEditResult, String> {
+fn clear_slot(app: tauri::AppHandle, slot: u8) -> Result<deadlock::SlotEditResult, String> {
     let result = deadlock::clear_slot(slot)?;
     deadlock::emit_slot_edit(&app, &result);
     Ok(result)
@@ -402,56 +364,29 @@ fn confirm_deadlock_path(
     deadlock::confirm_deadlock_path(app, path)
 }
 
-
 #[tauri::command]
-fn get_start_minimized_to_tray(
-    app: tauri::AppHandle,
-) -> bool {
-    app_window::start_minimized_to_tray_enabled(
-        &app,
-    )
-}
-
-
-#[tauri::command]
-fn set_start_minimized_to_tray(
-    app: tauri::AppHandle,
-    enabled: bool,
-) -> Result<bool, String> {
-    app_window::set_start_minimized_to_tray(
-        &app,
-        enabled,
-    )
+fn get_start_minimized_to_tray(app: tauri::AppHandle) -> bool {
+    app_window::start_minimized_to_tray_enabled(&app)
 }
 
 #[tauri::command]
-fn get_close_to_tray(
-    app: tauri::AppHandle,
-) -> bool {
-    app_window::close_to_tray_enabled(
-        &app,
-    )
-}
-
-
-#[tauri::command]
-fn set_close_to_tray(
-    app: tauri::AppHandle,
-    enabled: bool,
-) -> Result<bool, String> {
-    app_window::set_close_to_tray(
-        &app,
-        enabled,
-    )
+fn set_start_minimized_to_tray(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    app_window::set_start_minimized_to_tray(&app, enabled)
 }
 
 #[tauri::command]
-fn reset_main_window(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
-    app_window::reset_main_window(
-        &app,
-    )
+fn get_close_to_tray(app: tauri::AppHandle) -> bool {
+    app_window::close_to_tray_enabled(&app)
+}
+
+#[tauri::command]
+fn set_close_to_tray(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    app_window::set_close_to_tray(&app, enabled)
+}
+
+#[tauri::command]
+fn reset_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    app_window::reset_main_window(&app)
 }
 
 #[tauri::command]
@@ -460,45 +395,31 @@ fn launch_deadlock() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn hide_quick_access(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+fn hide_quick_access(app: tauri::AppHandle) -> Result<(), String> {
     quick_access::hide(&app)?;
     deadlock::quick_access_hidden();
     Ok(())
 }
 
 #[tauri::command]
-fn get_quick_access_state(
-) -> quick_access::QuickAccessState {
+fn get_quick_access_state() -> quick_access::QuickAccessState {
     quick_access::state()
 }
 
 #[tauri::command]
-fn set_quick_access_viewer_open(
-    app: tauri::AppHandle,
-    open: bool,
-) -> Result<(), String> {
+fn set_quick_access_viewer_open(app: tauri::AppHandle, open: bool) -> Result<(), String> {
     quick_access::set_viewer_open(&app, open)
 }
 
 #[tauri::command]
-async fn set_quick_access_text_input_active(
-    active: bool,
-) -> Result<(), String> {
-    println!(
-        "[SPLIT][QA] text input command active={active}"
-    );
+async fn set_quick_access_text_input_active(active: bool) -> Result<(), String> {
+    println!("[SPLIT][QA] text input command active={active}");
 
     tauri::async_runtime::spawn_blocking(move || {
         deadlock::set_quick_access_text_input_active(active)
     })
     .await
-    .map_err(|error| {
-        format!(
-            "Quick Access text input command task failed: {error}"
-        )
-    })?
+    .map_err(|error| format!("Quick Access text input command task failed: {error}"))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -508,9 +429,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Err(error) = app_window::open_main_window(app.clone()) {
-                eprintln!(
-                    "[SPLIT] Could not open window from second instance: {error}"
-                );
+                eprintln!("[SPLIT] Could not open window from second instance: {error}");
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -533,18 +452,14 @@ pub fn run() {
 
             if app_window::should_start_minimized_to_tray(app.handle()) {
                 if let Err(error) =
-                    app_window::close_main_window_to_background(
-                        app.handle().clone(),
-                    )
+                    app_window::close_main_window_to_background(app.handle().clone())
                 {
-                    eprintln!(
-                        "[SPLIT] Could not start minimized to tray: {error}"
-                    );
+                    eprintln!("[SPLIT] Could not start minimized to tray: {error}");
                 }
             }
 
             /*
-            * IMPORTANT :
+             * IMPORTANT :
              *
              * Ne jamais bloquer le thread de setup Tauri
              * avec les services Deadlock / notifications.
@@ -597,7 +512,8 @@ pub fn run() {
                         eprintln!("[SPLIT] Console watcher unavailable: {error}");
                     }
 
-                    if let Err(error) = editions::start_quick_access_runtime(background_app.clone()) {
+                    if let Err(error) = editions::start_quick_access_runtime(background_app.clone())
+                    {
                         eprintln!("[SPLIT] Edition Quick Access runtime unavailable: {error}");
                     }
 
@@ -605,12 +521,12 @@ pub fn run() {
                         eprintln!("[SPLIT] Hotkeys unavailable: {error}");
                     }
 
-                    if let Err(error) = deadlock::apply_generated_cfg_now() {
-                        eprintln!("[SPLIT] Startup CFG application failed: {error}");
-                    }
-
                     if let Err(error) = deadlock::start_process_monitor(background_app.clone()) {
                         eprintln!("[SPLIT] Deadlock process monitor unavailable: {error}");
+                    }
+
+                    if let Err(error) = discord::start(deadlock::get_discord_presence_enabled()) {
+                        eprintln!("[SPLIT] Discord Presence unavailable: {error}");
                     }
 
                     /*
@@ -638,26 +554,16 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
 
-                if app_window::close_to_tray_enabled(
-                    window.app_handle(),
-                ) {
-                    app_window::show_background_notice_once(
-                        window.app_handle(),
-                    );
+                if app_window::close_to_tray_enabled(window.app_handle()) {
+                    app_window::show_background_notice_once(window.app_handle());
 
                     if let Err(error) =
-                        app_window::close_main_window_to_background(
-                            window.app_handle().clone(),
-                        )
+                        app_window::close_main_window_to_background(window.app_handle().clone())
                     {
-                        eprintln!(
-                            "[SPLIT] Could not close main window to background: {error}"
-                        );
+                        eprintln!("[SPLIT] Could not close main window to background: {error}");
                     }
                 } else {
-                    app_window::request_true_quit(
-                        window.app_handle(),
-                    );
+                    app_window::request_true_quit(window.app_handle());
                 }
             }
         })
@@ -698,6 +604,8 @@ pub fn run() {
             update_notification_settings,
             claim_startup_sound,
             update_startup_sound_settings,
+            get_discord_presence_enabled,
+            update_discord_presence_enabled,
             test_notification,
             get_hotkey_settings,
             update_hotkey_settings,

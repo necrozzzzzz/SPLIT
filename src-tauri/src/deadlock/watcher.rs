@@ -32,6 +32,7 @@ struct PendingSave {
     slot: u8,
     generation: u64,
     requested_at: Instant,
+    retried_after_cfg_reload: bool,
 
     camera: Option<CameraSnapshot>,
 
@@ -63,6 +64,7 @@ static WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
  * forcément le watcher.
  */
 static WATCHER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+const PHASE_RESYNC_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 pub fn is_running() -> bool {
     WATCHER_RUNNING.load(Ordering::SeqCst)
@@ -122,14 +124,78 @@ pub(crate) fn report_save_failed(app: &AppHandle, slot: u8, reason: impl Into<St
     crate::notifications::show(crate::notifications::Notification::SaveFailed);
 }
 
-fn take_expired_generation(pending: &mut Option<PendingSave>, generation: u64) -> Option<u8> {
-    if pending.as_ref().is_some_and(|request| {
-        request.generation == generation && request.requested_at.elapsed() >= SAVE_TIMEOUT
-    }) {
+#[derive(Debug, PartialEq, Eq)]
+enum SaveTimeoutAction {
+    Retry,
+    Fail(u8),
+}
+
+fn timeout_action(pending: &mut Option<PendingSave>, generation: u64) -> Option<SaveTimeoutAction> {
+    let request = pending.as_mut()?;
+
+    if request.generation != generation || request.requested_at.elapsed() < SAVE_TIMEOUT {
+        return None;
+    }
+
+    if request.retried_after_cfg_reload {
+        return pending
+            .take()
+            .map(|request| SaveTimeoutAction::Fail(request.slot));
+    }
+
+    request.retried_after_cfg_reload = true;
+    request.requested_at = Instant::now();
+
+    Some(SaveTimeoutAction::Retry)
+}
+
+fn finish_failed_retry(generation: u64) -> Option<u8> {
+    let mut pending = PENDING_SAVE.lock().ok()?;
+
+    if pending
+        .as_ref()
+        .is_some_and(|request| request.generation == generation)
+    {
         pending.take().map(|request| request.slot)
     } else {
         None
     }
+}
+
+fn wait_for_save_timeout(app: AppHandle, generation: u64) {
+    thread::spawn(move || {
+        thread::sleep(SAVE_TIMEOUT);
+
+        let action = PENDING_SAVE
+            .lock()
+            .ok()
+            .and_then(|mut pending| timeout_action(&mut pending, generation));
+
+        match action {
+            Some(SaveTimeoutAction::Retry) => {
+                eprintln!(
+                    "[SPLIT][Save] getpos_exact timed out, reapplying savestate.cfg and retrying once"
+                );
+
+                if let Err(error) = super::hotkeys::retry_capture_after_cfg_reload() {
+                    if let Some(slot) = finish_failed_retry(generation) {
+                        eprintln!("[SPLIT][Save] capture failed after cfg reload retry: {error}");
+                        report_save_failed(&app, slot, error);
+                    }
+                    return;
+                }
+
+                wait_for_save_timeout(app, generation);
+            }
+            Some(SaveTimeoutAction::Fail(slot)) => {
+                let reason = "Timed out waiting for Deadlock getpos_exact response";
+                eprintln!("[SPLIT][Save] capture failed after cfg reload retry");
+                eprintln!("[SPLIT] Save {slot} failed: {reason}");
+                report_save_failed(&app, slot, reason);
+            }
+            None => {}
+        }
+    });
 }
 
 pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
@@ -224,25 +290,13 @@ pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
         slot,
         generation,
         requested_at: Instant::now(),
+        retried_after_cfg_reload: false,
         camera,
         screenshot,
     });
     drop(pending);
 
-    thread::spawn(move || {
-        thread::sleep(SAVE_TIMEOUT);
-
-        let expired_slot = PENDING_SAVE
-            .lock()
-            .ok()
-            .and_then(|mut pending| take_expired_generation(&mut pending, generation));
-
-        if let Some(expired_slot) = expired_slot {
-            let reason = "Timed out waiting for Deadlock getpos_exact response";
-            eprintln!("[SPLIT] Save {expired_slot} failed: {reason}");
-            report_save_failed(&app, expired_slot, reason);
-        }
-    });
+    wait_for_save_timeout(app, generation);
 
     Ok(generation)
 }
@@ -273,6 +327,7 @@ enum PendingSaveResult {
 
     Ready {
         slot: u8,
+        retried_after_cfg_reload: bool,
         camera: Option<CameraSnapshot>,
         screenshot: Option<String>,
     },
@@ -302,6 +357,7 @@ fn take_pending_save_slot() -> PendingSaveResult {
 
     PendingSaveResult::Ready {
         slot: request.slot,
+        retried_after_cfg_reload: request.retried_after_cfg_reload,
         camera: request.camera,
         screenshot: request.screenshot,
     }
@@ -320,15 +376,11 @@ struct ConsoleTail {
 }
 
 impl ConsoleTail {
-    fn new(path: PathBuf) -> Self {
+    fn new(path: PathBuf, offset: u64) -> Self {
         /*
          * On démarre à la fin du fichier :
          * aucune ancienne ligne n'est reparsée.
          */
-        let offset = std::fs::metadata(&path)
-            .map(|metadata| metadata.len())
-            .unwrap_or(0);
-
         Self {
             path,
             offset,
@@ -345,6 +397,7 @@ impl ConsoleTail {
         if metadata.len() < self.offset {
             self.offset = 0;
             self.pending.clear();
+            super::console_phase::reset_for_session();
         }
 
         /*
@@ -392,6 +445,30 @@ impl ConsoleTail {
     }
 }
 
+fn resync_console_phase(path: &PathBuf) -> std::io::Result<u64> {
+    let mut file = File::open(path)?;
+    let file_len = file.metadata()?.len();
+    let read_start = file_len.saturating_sub(PHASE_RESYNC_MAX_BYTES);
+    file.seek(SeekFrom::Start(read_start))?;
+
+    let mut bytes = Vec::with_capacity((file_len - read_start) as usize);
+    file.read_to_end(&mut bytes)?;
+
+    let content_start = if read_start > 0 {
+        bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|position| position + 1)
+            .unwrap_or(bytes.len())
+    } else {
+        0
+    };
+    let content = String::from_utf8_lossy(&bytes[content_start..]);
+    super::console_phase::replace_from_lines(content.lines());
+
+    Ok(file_len)
+}
+
 fn event_touches_console(event: &Event) -> bool {
     event.paths.iter().any(|path| {
         path.file_name()
@@ -402,6 +479,8 @@ fn event_touches_console(event: &Event) -> bool {
 
 fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAssembler) {
     for line in lines {
+        super::console_phase::observe_line(&line);
+
         if line.contains("setpos") || line.contains("setang") || line.contains("getpos") {
             println!("[SPLIT] Deadlock console -> {}", line);
         }
@@ -434,9 +513,14 @@ fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAs
         match pending_save {
             PendingSaveResult::Ready {
                 slot,
+                retried_after_cfg_reload,
                 camera: _,
                 screenshot,
             } => {
+                if retried_after_cfg_reload {
+                    println!("[SPLIT][Save] capture recovered after cfg reload");
+                }
+
                 match super::persist_slot_position(slot, position.clone(), screenshot) {
                     Ok(saved) => {
                         println!("[SPLIT] Hotkey save completed: slot {slot}");
@@ -561,7 +645,18 @@ fn start_inner(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
 
             println!("[SPLIT] Safety tail active: 100 ms");
 
-            let mut tail = ConsoleTail::new(console_log.clone());
+            super::console_phase::reset_for_session();
+            let initial_offset = match resync_console_phase(&console_log) {
+                Ok(offset) => offset,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+                Err(error) => {
+                    eprintln!("[SPLIT] Console phase resync unavailable: {error}");
+                    std::fs::metadata(&console_log)
+                        .map(|metadata| metadata.len())
+                        .unwrap_or(0)
+                }
+            };
+            let mut tail = ConsoleTail::new(console_log.clone(), initial_offset);
 
             let mut assembler = PositionAssembler::default();
 
@@ -665,18 +760,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_old_timeout_cannot_cancel_a_newer_capture() {
+    fn a_save_timeout_allows_exactly_one_cfg_reload_retry() {
         let mut pending = Some(PendingSave {
             slot: 2,
             generation: 12,
             requested_at: Instant::now() - SAVE_TIMEOUT,
+            retried_after_cfg_reload: false,
             camera: None,
             screenshot: None,
         });
 
-        assert_eq!(take_expired_generation(&mut pending, 11), None);
+        assert_eq!(timeout_action(&mut pending, 11), None);
         assert_eq!(pending.as_ref().map(|request| request.generation), Some(12));
-        assert_eq!(take_expired_generation(&mut pending, 12), Some(2));
+        assert_eq!(
+            timeout_action(&mut pending, 12),
+            Some(SaveTimeoutAction::Retry)
+        );
+        assert!(pending
+            .as_ref()
+            .is_some_and(|request| request.retried_after_cfg_reload));
+
+        if let Some(request) = pending.as_mut() {
+            request.requested_at = Instant::now() - SAVE_TIMEOUT;
+        }
+
+        assert_eq!(
+            timeout_action(&mut pending, 12),
+            Some(SaveTimeoutAction::Fail(2))
+        );
         assert!(pending.is_none());
     }
 }

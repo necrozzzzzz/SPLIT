@@ -15,29 +15,52 @@ static PROCESS_MONITOR: Mutex<Option<ProcessMonitorRuntime>> = Mutex::new(None);
 
 #[derive(Debug, Default)]
 struct TransitionDetector {
-    previous: Option<bool>,
+    previous_pid: Option<u32>,
 }
 
 impl TransitionDetector {
-    fn observe(&mut self, running: bool) -> Option<bool> {
-        match self.previous.replace(running) {
-            Some(previous) if previous != running => Some(running),
-            _ => None,
+    fn observe(&mut self, pid: Option<u32>) -> Option<ProcessTransition> {
+        if self.previous_pid == pid {
+            return None;
+        }
+
+        let previous_pid = self.previous_pid;
+        self.previous_pid = pid;
+
+        match pid {
+            Some(pid) => Some(ProcessTransition::Started(pid)),
+            None if previous_pid.is_some() => Some(ProcessTransition::Stopped),
+            None => None,
         }
     }
 }
 
-fn apply_transition(app: &AppHandle, running: bool) {
-    if running {
+#[derive(Debug, PartialEq, Eq)]
+enum ProcessTransition {
+    Started(u32),
+    Stopped,
+}
+
+fn apply_transition(app: &AppHandle, transition: ProcessTransition) {
+    if let ProcessTransition::Started(pid) = transition {
+        println!("[SPLIT][Deadlock] new game session detected (PID {pid}), applying savestate.cfg");
+
         if let Err(error) = super::repair_integration_on_startup() {
             eprintln!("[SPLIT] Deadlock start integration repair failed: {error}");
         }
-        if let Err(error) = super::hotkeys::apply_generated_cfg_now() {
+
+        if let Err(error) = super::hotkeys::reload_savestate_cfg_now() {
             eprintln!("[SPLIT] Deadlock start CFG application failed: {error}");
+        } else {
+            println!("[SPLIT][Deadlock] savestate.cfg applied");
         }
-        if let Err(error) = super::start_console_watcher(app.clone()) {
-            eprintln!("[SPLIT] Deadlock start console watcher failed: {error}");
+
+        if !super::watcher::is_running() {
+            if let Err(error) = super::start_console_watcher(app.clone()) {
+                eprintln!("[SPLIT] Deadlock start console watcher failed: {error}");
+            }
         }
+
         for _ in 0..30 {
             if super::watcher::is_running() {
                 break;
@@ -64,20 +87,18 @@ pub fn start(app: AppHandle) -> Result<(), String> {
         .name("split-deadlock-process-monitor".to_string())
         .spawn(move || {
             let mut detector = TransitionDetector::default();
-            let _ = detector.observe(super::process::is_deadlock_running());
+
+            if let Some(transition) = detector.observe(super::process::deadlock_pid()) {
+                apply_transition(&app, transition);
+            }
 
             loop {
                 match stop_rx.recv_timeout(Duration::from_millis(1_500)) {
                     Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {
-                        if let Some(running) =
-                            detector.observe(super::process::is_deadlock_running())
-                        {
-                            println!(
-                                "[SPLIT] Deadlock process transition: {}",
-                                if running { "running" } else { "stopped" }
-                            );
-                            apply_transition(&app, running);
+                        if let Some(transition) = detector.observe(super::process::deadlock_pid()) {
+                            println!("[SPLIT] Deadlock process transition: {transition:?}");
+                            apply_transition(&app, transition);
                         }
                     }
                 }
@@ -112,13 +133,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn process_transitions_emit_once_per_change() {
+    fn process_transitions_emit_once_per_pid() {
         let mut detector = TransitionDetector::default();
-        assert_eq!(detector.observe(false), None);
-        assert_eq!(detector.observe(false), None);
-        assert_eq!(detector.observe(true), Some(true));
-        assert_eq!(detector.observe(true), None);
-        assert_eq!(detector.observe(false), Some(false));
-        assert_eq!(detector.observe(false), None);
+        assert_eq!(detector.observe(None), None);
+        assert_eq!(
+            detector.observe(Some(41)),
+            Some(ProcessTransition::Started(41))
+        );
+        assert_eq!(detector.observe(Some(41)), None);
+        assert_eq!(
+            detector.observe(Some(84)),
+            Some(ProcessTransition::Started(84))
+        );
+        assert_eq!(detector.observe(None), Some(ProcessTransition::Stopped));
+        assert_eq!(detector.observe(None), None);
     }
 }

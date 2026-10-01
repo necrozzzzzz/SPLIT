@@ -1,5 +1,8 @@
 mod camera;
 mod cfg;
+pub(crate) mod console_phase;
+#[allow(dead_code)]
+pub(crate) mod deadlock_state;
 mod history;
 mod hotkeys;
 mod parser;
@@ -12,8 +15,8 @@ mod watcher;
 pub use history::HistoryState;
 pub use hotkeys::HotkeySettings;
 pub use parser::PositionSnapshot;
-pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
 pub use paths::{LaunchFolderState, StartupSoundSettings};
+pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
 
 pub(crate) fn trace_startup(reset: bool, message: &str) {
     paths::trace_startup(reset, message);
@@ -31,9 +34,7 @@ pub(crate) fn foreground_deadlock_window() -> Option<windows_sys::Win32::Foundat
     hotkeys::foreground_deadlock_window()
 }
 
-pub(crate) fn focus_deadlock_window()
-    -> Result<(), String>
-{
+pub(crate) fn focus_deadlock_window() -> Result<(), String> {
     hotkeys::focus_deadlock_window()
 }
 
@@ -148,7 +149,6 @@ pub fn record_successful_launch() -> Result<LaunchFolderState, String> {
 pub fn launch_deadlock() -> Result<(), String> {
     process::launch_deadlock()
 }
-
 
 pub fn is_deadlock_running() -> bool {
     process::is_deadlock_running()
@@ -299,6 +299,14 @@ pub fn get_startup_sound_settings() -> StartupSoundSettings {
     paths::load_startup_sound_settings()
 }
 
+pub fn get_discord_presence_enabled() -> bool {
+    paths::load_discord_presence_enabled()
+}
+
+pub fn update_discord_presence_enabled(enabled: bool) -> Result<bool, String> {
+    paths::save_discord_presence_enabled(enabled)
+}
+
 pub fn update_startup_sound_settings(
     settings: StartupSoundSettings,
 ) -> Result<StartupSoundSettings, String> {
@@ -323,17 +331,13 @@ pub fn update_hotkey_settings(settings: HotkeySettings) -> Result<HotkeySettings
     normalized.validate_update_from(&previous)?;
 
     if normalized.quick_access != previous.quick_access {
-        hotkeys::reconfigure_quick_access_hotkey(
-            &normalized.quick_access,
-        )?;
+        hotkeys::reconfigure_quick_access_hotkey(&normalized.quick_access)?;
     }
 
     let saved = match paths::save_hotkey_settings(normalized) {
         Ok(saved) => saved,
         Err(error) => {
-            let _ = hotkeys::reconfigure_quick_access_hotkey(
-                &previous.quick_access,
-            );
+            let _ = hotkeys::reconfigure_quick_access_hotkey(&previous.quick_access);
             return Err(error);
         }
     };
@@ -346,17 +350,13 @@ pub fn reset_hotkey_settings() -> Result<HotkeySettings, String> {
     let defaults = HotkeySettings::default();
 
     if defaults.quick_access != previous.quick_access {
-        hotkeys::reconfigure_quick_access_hotkey(
-            &defaults.quick_access,
-        )?;
+        hotkeys::reconfigure_quick_access_hotkey(&defaults.quick_access)?;
     }
 
     let saved = match paths::save_hotkey_settings(defaults) {
         Ok(saved) => saved,
         Err(error) => {
-            let _ = hotkeys::reconfigure_quick_access_hotkey(
-                &previous.quick_access,
-            );
+            let _ = hotkeys::reconfigure_quick_access_hotkey(&previous.quick_access);
             return Err(error);
         }
     };
@@ -364,13 +364,11 @@ pub fn reset_hotkey_settings() -> Result<HotkeySettings, String> {
     Ok(saved)
 }
 
-pub fn load_quick_access_settings(
-) -> crate::quick_access::QuickAccessSettings {
+pub fn load_quick_access_settings() -> crate::quick_access::QuickAccessSettings {
     paths::load_quick_access_settings()
 }
 
-pub fn get_quick_access_settings(
-) -> crate::quick_access::QuickAccessSettings {
+pub fn get_quick_access_settings() -> crate::quick_access::QuickAccessSettings {
     crate::quick_access::settings()
 }
 
@@ -389,9 +387,7 @@ pub fn update_quick_access_settings(
         return Err(error);
     }
 
-    let apply_result = if
-        !saved.enabled && crate::quick_access::is_visible()
-    {
+    let apply_result = if !saved.enabled && crate::quick_access::is_visible() {
         crate::quick_access::hide(app).map(|()| {
             hotkeys::quick_access_hidden();
         })
@@ -1046,28 +1042,11 @@ pub(crate) fn emit_history_operation(app: &AppHandle, result: &HistoryOperationR
     emit_history_state(app, result.history_state);
 }
 
-pub(crate) fn emit_slot_edit(
-    app: &AppHandle,
-    result: &SlotEditResult,
-) {
-    crate::ui::emit_to_main_if_present(
-        app,
-        "deadlock-slots",
-        &result.slots,
-    );
-    crate::ui::emit_to_main_if_present(
-        app,
-        "deadlock-preset",
-        result.preset,
-    );
-    emit_favorite_mode(
-        app,
-        result.favorite_active,
-    );
-    emit_history_state(
-        app,
-        result.history_state,
-    );
+pub(crate) fn emit_slot_edit(app: &AppHandle, result: &SlotEditResult) {
+    crate::ui::emit_to_main_if_present(app, "deadlock-slots", &result.slots);
+    crate::ui::emit_to_main_if_present(app, "deadlock-preset", result.preset);
+    emit_favorite_mode(app, result.favorite_active);
+    emit_history_state(app, result.history_state);
 }
 
 pub(crate) fn emit_favorite_mode(app: &AppHandle, active: bool) {
@@ -1621,22 +1600,15 @@ pub fn start_hotkeys(app: AppHandle) -> Result<(), String> {
     hotkeys::start(app)
 }
 
-pub fn apply_generated_cfg_now() -> Result<bool, String> {
-    hotkeys::apply_generated_cfg_now()
-}
-
 pub fn quick_access_hidden() {
     hotkeys::quick_access_hidden()
 }
 
-pub fn set_quick_access_text_input_active(
-    active: bool,
-) -> Result<(), String> {
+pub fn set_quick_access_text_input_active(active: bool) -> Result<(), String> {
     hotkeys::set_quick_access_text_input_active(active)
 }
 
-pub(crate) fn deadlock_window_rect(
-) -> Result<windows_sys::Win32::Foundation::RECT, String> {
+pub(crate) fn deadlock_window_rect() -> Result<windows_sys::Win32::Foundation::RECT, String> {
     hotkeys::deadlock_window_rect()
 }
 

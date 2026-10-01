@@ -309,7 +309,7 @@ fn wide_to_string(value: &[u16]) -> String {
         .into_owned()
 }
 
-fn find_module(pid: u32, module_name: &str) -> Result<(usize, usize), String> {
+pub(crate) fn find_module(pid: u32, module_name: &str) -> Result<(usize, usize), String> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
 
@@ -394,7 +394,7 @@ fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-fn read_value<T: Copy>(process: HANDLE, address: usize) -> Result<T, String> {
+pub(crate) fn read_value<T: Copy>(process: HANDLE, address: usize) -> Result<T, String> {
     let mut value = std::mem::MaybeUninit::<T>::uninit();
 
     let mut read = 0_usize;

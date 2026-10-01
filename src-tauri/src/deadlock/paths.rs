@@ -152,6 +152,7 @@ struct SplitConfig {
     quick_access: QuickAccessSettings,
     #[serde(deserialize_with = "deserialize_startup_sound_settings")]
     startup_sound: StartupSoundSettings,
+    discord_presence_enabled: bool,
 }
 
 impl Default for SplitConfig {
@@ -163,6 +164,7 @@ impl Default for SplitConfig {
             hotkeys: HotkeySettings::default(),
             quick_access: QuickAccessSettings::default(),
             startup_sound: StartupSoundSettings::default(),
+            discord_presence_enabled: true,
         }
     }
 }
@@ -556,6 +558,36 @@ fn save_startup_sound_settings_at_path(
     config.startup_sound = settings;
     write_config(path, &config, "save_startup_sound_settings")?;
     Ok(settings)
+}
+
+pub fn load_discord_presence_enabled() -> bool {
+    let Ok(_guard) = CONFIG_LOCK.lock() else {
+        return true;
+    };
+
+    let Ok(path) = config_path() else {
+        return true;
+    };
+
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .map(|config| config.discord_presence_enabled)
+        .unwrap_or(true)
+}
+
+pub fn save_discord_presence_enabled(enabled: bool) -> Result<bool, String> {
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+
+    let path = config_path()?;
+
+    let mut config = load_config_for_write(&path, "save_discord_presence_enabled")?;
+    config.discord_presence_enabled = enabled;
+    write_config(&path, &config, "save_discord_presence_enabled")?;
+
+    Ok(enabled)
 }
 
 fn push_unique(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
@@ -1001,6 +1033,7 @@ mod tests {
             hotkeys: hotkeys.clone(),
             quick_access,
             startup_sound: StartupSoundSettings::default(),
+            discord_presence_enabled: true,
         };
         write_config(&path, &original, "test setup").unwrap();
 
