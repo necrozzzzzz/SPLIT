@@ -5,6 +5,8 @@ use std::{
     os::windows::ffi::OsStringExt,
     path::PathBuf,
     sync::Mutex,
+    thread,
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -309,7 +311,14 @@ fn wide_to_string(value: &[u16]) -> String {
         .into_owned()
 }
 
-pub(crate) fn find_module(pid: u32, module_name: &str) -> Result<(usize, usize), String> {
+#[derive(Debug)]
+struct ModuleScan {
+    found: Option<(usize, usize)>,
+    schema_names: Vec<String>,
+    first_names: Vec<String>,
+}
+
+fn scan_modules(pid: u32, module_name: &str) -> Result<ModuleScan, String> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
 
@@ -324,28 +333,91 @@ pub(crate) fn find_module(pid: u32, module_name: &str) -> Result<(usize, usize),
 
         entry.dwSize = size_of::<MODULEENTRY32W>() as u32;
 
-        let mut result = None;
+        let mut scan = ModuleScan {
+            found: None,
+            schema_names: Vec::new(),
+            first_names: Vec::new(),
+        };
 
-        if Module32FirstW(snapshot, &mut entry) != 0 {
-            loop {
-                let name = wide_to_string(&entry.szModule);
+        if Module32FirstW(snapshot, &mut entry) == 0 {
+            let error = std::io::Error::last_os_error();
+            let _ = CloseHandle(snapshot);
+            return Err(format!(
+                "Could not read the first module for Deadlock PID {pid}: {error}"
+            ));
+        }
 
-                if name.eq_ignore_ascii_case(module_name) {
-                    result = Some((entry.modBaseAddr as usize, entry.modBaseSize as usize));
+        loop {
+            let name = wide_to_string(&entry.szModule);
 
-                    break;
-                }
+            if scan.first_names.len() < 20 {
+                scan.first_names.push(name.clone());
+            }
+            if name.to_ascii_lowercase().contains("schema") {
+                scan.schema_names.push(name.clone());
+            }
+            if name.eq_ignore_ascii_case(module_name) {
+                scan.found = Some((entry.modBaseAddr as usize, entry.modBaseSize as usize));
+                break;
+            }
 
-                if Module32NextW(snapshot, &mut entry) == 0 {
-                    break;
-                }
+            if Module32NextW(snapshot, &mut entry) == 0 {
+                break;
             }
         }
 
         let _ = CloseHandle(snapshot);
-
-        result.ok_or_else(|| format!("{module_name} was not found in Deadlock"))
+        Ok(scan)
     }
+}
+
+pub(crate) fn find_module(pid: u32, module_name: &str) -> Result<(usize, usize), String> {
+    scan_modules(pid, module_name)?
+        .found
+        .ok_or_else(|| format!("{module_name} was not found in Deadlock PID {pid}"))
+}
+
+pub(crate) fn find_module_with_retry(
+    pid: u32,
+    module_name: &str,
+    attempts: usize,
+    retry_delay: Duration,
+) -> Result<(usize, usize), String> {
+    if attempts == 0 {
+        return Err("Module discovery attempt count is zero".to_string());
+    }
+
+    let mut last_scan = None;
+    for attempt in 0..attempts {
+        let scan = scan_modules(pid, module_name)?;
+        if let Some((base, size)) = scan.found {
+            println!("[SPLIT][Modules] pid={pid} found {module_name} base=0x{base:016X}");
+            return Ok((base, size));
+        }
+
+        last_scan = Some(scan);
+        if attempt + 1 < attempts {
+            thread::sleep(retry_delay);
+        }
+    }
+
+    if let Some(scan) = last_scan {
+        if scan.schema_names.is_empty() {
+            eprintln!(
+                "[SPLIT][Modules] pid={pid} no module containing 'schema'; first modules: {}",
+                scan.first_names.join(", ")
+            );
+        } else {
+            eprintln!(
+                "[SPLIT][Modules] pid={pid} schema candidates: {}",
+                scan.schema_names.join(", ")
+            );
+        }
+    }
+
+    Err(format!(
+        "{module_name} was not found in Deadlock PID {pid} after {attempts} attempts"
+    ))
 }
 
 fn open_deadlock(pid: u32) -> Result<HANDLE, String> {
@@ -367,7 +439,7 @@ fn open_deadlock(pid: u32) -> Result<HANDLE, String> {
     Ok(process)
 }
 
-fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, String> {
+pub(crate) fn read_bytes(process: HANDLE, address: usize, size: usize) -> Result<Vec<u8>, String> {
     let mut buffer = vec![0_u8; size];
 
     let mut read = 0_usize;

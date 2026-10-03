@@ -44,6 +44,8 @@ import {
   type StartupSoundSettings,
 } from "./startupSound";
 
+import DiscordPresenceSettings from "./DiscordPresenceSettings";
+
 type DeadlockStatus = {
   deadlockRunning: boolean;
   deadlockPath: string | null;
@@ -555,6 +557,7 @@ type SlotColorDisplayMode =
 
 type SettingsSection =
   | "general"
+  | "discord"
   | "hotkeys"
   | "notifications"
   | "diagnostics";
@@ -670,6 +673,12 @@ function App() {
   const startupSoundSaveTimerRef = useRef<number | undefined>(undefined);
   const startupSoundSaveSequenceRef = useRef(0);
   const startupSoundSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const [focusDeadlockOnStartup, setFocusDeadlockOnStartup] = useState(false);
+  const [focusDeadlockOnStartupLoading, setFocusDeadlockOnStartupLoading] =
+    useState(true);
+  const [focusDeadlockOnStartupSaving, setFocusDeadlockOnStartupSaving] =
+    useState(false);
 
   const [
     slotColorDisplayMode,
@@ -1207,6 +1216,44 @@ function App() {
       disposed = true;
     };
   }, []);  
+
+  useEffect(() => {
+    let disposed = false;
+
+    void invoke<boolean>("get_focus_deadlock_on_startup")
+      .then((enabled) => {
+        if (!disposed) setFocusDeadlockOnStartup(enabled);
+      })
+      .catch((reason) => {
+        if (!disposed) {
+          setError(`Could not read Deadlock startup focus setting: ${String(reason)}`);
+        }
+      })
+      .finally(() => {
+        if (!disposed) setFocusDeadlockOnStartupLoading(false);
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const toggleFocusDeadlockOnStartup = useCallback(async () => {
+    const next = !focusDeadlockOnStartup;
+    setFocusDeadlockOnStartupSaving(true);
+    setError(null);
+
+    try {
+      const saved = await invoke<boolean>("update_focus_deadlock_on_startup", {
+        enabled: next,
+      });
+      setFocusDeadlockOnStartup(saved);
+    } catch (reason) {
+      setError(`Could not update Deadlock startup focus setting: ${String(reason)}`);
+    } finally {
+      setFocusDeadlockOnStartupSaving(false);
+    }
+  }, [focusDeadlockOnStartup]);
 
   const persistStartupSoundSettings = useCallback(
     (next: StartupSoundSettings) => {
@@ -5177,6 +5224,22 @@ function App() {
           <button
             type="button"
             className={
+              activeSettingsSection === "discord"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveSettingsSection(
+                "discord",
+              )
+            }
+          >
+            Discord Presence
+          </button>
+
+          <button
+            type="button"
+            className={
               activeSettingsSection === "hotkeys"
                 ? "active"
                 : ""
@@ -6362,10 +6425,57 @@ function App() {
                     {startupSoundFeedback ?? "Saving startup sound settings…"}
                   </p>
                 )}
+
+                <div className="general-setting-row">
+                  <div>
+                    <strong>Focus Deadlock when SPLIT starts</strong>
+                    <span>
+                      Brings the Deadlock window to the foreground when SPLIT starts.
+                    </span>
+                  </div>
+
+                  <button
+                    className={`general-toggle ${
+                      focusDeadlockOnStartup ? "active" : ""
+                    }`}
+                    type="button"
+                    role="switch"
+                    aria-checked={focusDeadlockOnStartup}
+                    disabled={
+                      focusDeadlockOnStartupLoading || focusDeadlockOnStartupSaving
+                    }
+                    onClick={() => void toggleFocusDeadlockOnStartup()}
+                  >
+                    {focusDeadlockOnStartupSaving
+                      ? "Saving…"
+                      : focusDeadlockOnStartupLoading
+                        ? "Checking…"
+                        : focusDeadlockOnStartup
+                          ? "On"
+                          : "Off"}
+                  </button>
+                </div>
               </div>
 
               <div className="general-settings-group">
                 <h3>DESKTOP</h3>
+
+              <div className="general-setting-row">
+                <div>
+                  <strong>Discord Rich Presence</strong>
+                  <span>
+                    Share your current Deadlock activity on Discord.
+                  </span>
+                </div>
+
+                <button
+                  className="general-restore-button"
+                  type="button"
+                  onClick={() => setActiveSettingsSection("discord")}
+                >
+                  Configure
+                </button>
+              </div>
 
               <div className="general-setting-row">
                 <div>
@@ -6743,6 +6853,10 @@ function App() {
             </div>
           </section>
         )}
+
+    {activeSettingsSection === "discord" && (
+      <DiscordPresenceSettings />
+    )}
 
     {activeSettingsSection === "hotkeys" && (    
       <section className="hotkey-settings-section">

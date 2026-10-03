@@ -13,7 +13,9 @@ use std::{
 use windows_sys::{
     core::BOOL,
     Win32::{
-        Foundation::{CloseHandle, GetLastError, SetLastError, ERROR_SUCCESS, HWND, LPARAM, RECT},
+        Foundation::{
+            CloseHandle, GetLastError, SetLastError, ERROR_SUCCESS, HWND, LPARAM, RECT, WPARAM,
+        },
         System::Threading::{
             AttachThreadInput, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW,
             PROCESS_QUERY_LIMITED_INFORMATION,
@@ -21,19 +23,20 @@ use windows_sys::{
         UI::{
             Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK},
             Input::KeyboardAndMouse::{
-                GetAsyncKeyState, GetKeyState, RegisterHotKey, SendInput, SetActiveWindow,
-                SetFocus, UnregisterHotKey, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-                KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_CAPITAL,
-                VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F10, VK_F11, VK_F12,
-                VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19, VK_F2, VK_F20, VK_F21,
-                VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_HOME,
-                VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_MENU, VK_NEXT, VK_PRIOR,
-                VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT, VK_SPACE, VK_UP,
+                GetAsyncKeyState, GetKeyState, MapVirtualKeyW, RegisterHotKey, SendInput,
+                SetActiveWindow, SetFocus, UnregisterHotKey, INPUT, INPUT_0, INPUT_KEYBOARD,
+                KEYBDINPUT, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
+                MOD_SHIFT, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1,
+                VK_F10, VK_F11, VK_F12, VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19,
+                VK_F2, VK_F20, VK_F21, VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6,
+                VK_F7, VK_F8, VK_F9, VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU,
+                VK_LSHIFT, VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT,
+                VK_SHIFT, VK_SPACE, VK_UP,
             },
             WindowsAndMessaging::{
                 BringWindowToTop, CallNextHookEx, DispatchMessageW, EnumWindows,
                 GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowThreadProcessId,
-                IsIconic, IsWindowVisible, PostThreadMessageW, SetForegroundWindow,
+                IsIconic, IsWindowVisible, PostMessageW, PostThreadMessageW, SetForegroundWindow,
                 SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx,
                 EVENT_SYSTEM_FOREGROUND, KBDLLHOOKSTRUCT, MSG, SW_RESTORE, WH_KEYBOARD_LL,
                 WINEVENT_OUTOFCONTEXT, WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_QUIT,
@@ -2207,6 +2210,23 @@ fn send_virtual_key(vk: u16) -> Result<(), String> {
     Ok(())
 }
 
+fn post_virtual_key(hwnd: HWND, vk: u16) -> Result<(), String> {
+    let scan_code = unsafe { MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC) };
+    let key_down = 1isize | ((scan_code as isize & 0xff) << 16);
+    let key_up = key_down | (1isize << 30) | (1isize << 31);
+
+    for (message, lparam) in [(WM_KEYDOWN, key_down), (WM_KEYUP, key_up)] {
+        if unsafe { PostMessageW(hwnd, message, vk as WPARAM, lparam as LPARAM) } == 0 {
+            return Err(format!(
+                "Could not post shutdown key to Deadlock: {}",
+                std::io::Error::last_os_error(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn send_capture_key() -> Result<(), String> {
     send_virtual_key(VK_F23)
 }
@@ -2774,10 +2794,16 @@ fn cycle_preset(app: &AppHandle) {
     }
 }
 
-pub(crate) fn execute_shutdown_prepare() -> Result<(), String> {
-    focus_deadlock_window()?;
-    thread::sleep(Duration::from_millis(75));
-    send_prepare_key()
+fn execute_shutdown_prepare_with(
+    find_window: impl FnOnce() -> Option<HWND>,
+    post_key: impl FnOnce(HWND, u16) -> Result<(), String>,
+) -> Result<(), String> {
+    let hwnd = find_window().ok_or_else(|| "Could not find the Deadlock window".to_string())?;
+    post_key(hwnd, VK_F13)
+}
+
+pub(crate) fn execute_shutdown_prepare_without_focus() -> Result<(), String> {
+    execute_shutdown_prepare_with(find_deadlock_window, post_virtual_key)
 }
 
 fn start_inner(app: AppHandle) -> Result<(), String> {
@@ -3349,6 +3375,40 @@ mod tests {
             engine.classify(VK_F9, true, false, true, true, false, &settings),
             HookDecision::Pass
         );
+    }
+
+    #[test]
+    fn shutdown_prepare_targets_deadlock_without_a_focus_step() {
+        let fake_hwnd = 1usize as HWND;
+        let posted = std::cell::Cell::new(false);
+
+        execute_shutdown_prepare_with(
+            || Some(fake_hwnd),
+            |hwnd, vk| {
+                assert_eq!(hwnd, fake_hwnd);
+                assert_eq!(vk, VK_F13);
+                posted.set(true);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(posted.get());
+    }
+
+    #[test]
+    fn shutdown_prepare_requires_a_target_before_posting_cleanup() {
+        let posted = std::cell::Cell::new(false);
+        let result = execute_shutdown_prepare_with(
+            || None,
+            |_hwnd, _vk| {
+                posted.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(!posted.get());
     }
 
     #[test]

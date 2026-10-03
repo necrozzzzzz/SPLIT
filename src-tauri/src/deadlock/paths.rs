@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::hotkeys::HotkeySettings;
 use super::process::running_deadlock_root;
+use crate::discord::{DiscordPresenceConfig, DiscordPresenceSection};
 use crate::notifications::NotificationSettings;
 use crate::quick_access::QuickAccessSettings;
 use crate::storage::atomic_write;
@@ -144,6 +145,7 @@ pub struct DeadlockPaths {
 struct SplitConfig {
     deadlock_path: String,
     last_launch_at: Option<u64>,
+    focus_deadlock_on_startup: bool,
     #[serde(deserialize_with = "deserialize_notification_settings")]
     notifications: NotificationSettings,
     #[serde(deserialize_with = "deserialize_hotkey_settings")]
@@ -153,6 +155,8 @@ struct SplitConfig {
     #[serde(deserialize_with = "deserialize_startup_sound_settings")]
     startup_sound: StartupSoundSettings,
     discord_presence_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    discord_presence: Option<DiscordPresenceConfig>,
 }
 
 impl Default for SplitConfig {
@@ -160,11 +164,13 @@ impl Default for SplitConfig {
         Self {
             deadlock_path: String::new(),
             last_launch_at: None,
+            focus_deadlock_on_startup: false,
             notifications: NotificationSettings::default(),
             hotkeys: HotkeySettings::default(),
             quick_access: QuickAccessSettings::default(),
             startup_sound: StartupSoundSettings::default(),
             discord_presence_enabled: true,
+            discord_presence: None,
         }
     }
 }
@@ -539,6 +545,35 @@ pub fn load_startup_sound_settings() -> StartupSoundSettings {
         .unwrap_or_default()
 }
 
+pub fn load_focus_deadlock_on_startup() -> bool {
+    let Ok(_guard) = CONFIG_LOCK.lock() else {
+        return false;
+    };
+    let Ok(path) = config_path() else {
+        return false;
+    };
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
+        .map(|config| config.focus_deadlock_on_startup)
+        .unwrap_or(false)
+}
+
+pub fn save_focus_deadlock_on_startup(enabled: bool) -> Result<bool, String> {
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let path = config_path()?;
+    save_focus_deadlock_on_startup_at_path(&path, enabled)
+}
+
+fn save_focus_deadlock_on_startup_at_path(path: &Path, enabled: bool) -> Result<bool, String> {
+    let mut config = load_config_for_write(path, "save_focus_deadlock_on_startup")?;
+    config.focus_deadlock_on_startup = enabled;
+    write_config(path, &config, "save_focus_deadlock_on_startup")?;
+    Ok(enabled)
+}
+
 pub fn save_startup_sound_settings(
     settings: StartupSoundSettings,
 ) -> Result<StartupSoundSettings, String> {
@@ -560,34 +595,78 @@ fn save_startup_sound_settings_at_path(
     Ok(settings)
 }
 
-pub fn load_discord_presence_enabled() -> bool {
+fn effective_discord_presence_config(config: &SplitConfig) -> DiscordPresenceConfig {
+    config.discord_presence.clone().unwrap_or_else(|| {
+        let mut presence = DiscordPresenceConfig::default();
+        presence.global.enabled = config.discord_presence_enabled;
+        presence
+    })
+}
+
+pub fn load_discord_presence_config() -> DiscordPresenceConfig {
     let Ok(_guard) = CONFIG_LOCK.lock() else {
-        return true;
+        return DiscordPresenceConfig::default();
     };
 
     let Ok(path) = config_path() else {
-        return true;
+        return DiscordPresenceConfig::default();
     };
 
     fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<SplitConfig>(&raw).ok())
-        .map(|config| config.discord_presence_enabled)
-        .unwrap_or(true)
+        .map(|config| effective_discord_presence_config(&config))
+        .unwrap_or_default()
 }
 
-pub fn save_discord_presence_enabled(enabled: bool) -> Result<bool, String> {
+pub fn save_discord_presence_config(
+    presence: DiscordPresenceConfig,
+) -> Result<DiscordPresenceConfig, String> {
+    presence.validate()?;
     let _guard = CONFIG_LOCK
         .lock()
         .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
-
     let path = config_path()?;
 
-    let mut config = load_config_for_write(&path, "save_discord_presence_enabled")?;
-    config.discord_presence_enabled = enabled;
-    write_config(&path, &config, "save_discord_presence_enabled")?;
+    save_discord_presence_config_at_path(&path, presence)
+}
 
-    Ok(enabled)
+fn save_discord_presence_config_at_path(
+    path: &Path,
+    presence: DiscordPresenceConfig,
+) -> Result<DiscordPresenceConfig, String> {
+    presence.validate()?;
+    let mut config = load_config_for_write(path, "save_discord_presence_config")?;
+    config.discord_presence_enabled = presence.global.enabled;
+    config.discord_presence = Some(presence.clone());
+    write_config(path, &config, "save_discord_presence_config")?;
+    Ok(presence)
+}
+
+pub fn reset_discord_presence_config(
+    section: Option<DiscordPresenceSection>,
+) -> Result<DiscordPresenceConfig, String> {
+    let _guard = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "SPLIT configuration lock poisoned".to_string())?;
+    let path = config_path()?;
+    reset_discord_presence_config_at_path(&path, section)
+}
+
+fn reset_discord_presence_config_at_path(
+    path: &Path,
+    section: Option<DiscordPresenceSection>,
+) -> Result<DiscordPresenceConfig, String> {
+    let persisted = load_config_for_write(&path, "reset_discord_presence_config")?;
+    let mut presence = effective_discord_presence_config(&persisted);
+
+    if let Some(section) = section {
+        presence.reset_section(section);
+    } else {
+        presence = DiscordPresenceConfig::default();
+    }
+
+    save_discord_presence_config_at_path(path, presence)
 }
 
 fn push_unique(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
@@ -922,6 +1001,161 @@ mod tests {
         assert_eq!(config.quick_access, QuickAccessSettings::default());
         assert_eq!(config.startup_sound, StartupSoundSettings::default());
         assert_eq!(config.last_launch_at, None);
+        assert!(!config.focus_deadlock_on_startup);
+    }
+
+    #[test]
+    fn startup_focus_defaults_to_disabled() {
+        assert!(!SplitConfig::default().focus_deadlock_on_startup);
+
+        let legacy: SplitConfig = serde_json::from_str(r#"{"deadlockPath":""}"#).unwrap();
+        assert!(!legacy.focus_deadlock_on_startup);
+    }
+
+    #[test]
+    fn explicit_startup_focus_values_round_trip() {
+        for enabled in [true, false] {
+            let config: SplitConfig = serde_json::from_value(serde_json::json!({
+                "focusDeadlockOnStartup": enabled
+            }))
+            .unwrap();
+            assert_eq!(config.focus_deadlock_on_startup, enabled);
+
+            let serialized = serde_json::to_value(config).unwrap();
+            assert_eq!(serialized["focusDeadlockOnStartup"], enabled);
+        }
+    }
+
+    #[test]
+    fn startup_focus_writer_preserves_other_settings() {
+        let directory = temporary_test_directory("startup-focus-preserves-config");
+        let path = directory.join("split2-config.json");
+        let original = SplitConfig {
+            deadlock_path: r"C:\Deadlock".to_string(),
+            last_launch_at: Some(12_345),
+            discord_presence_enabled: false,
+            ..SplitConfig::default()
+        };
+        write_config(&path, &original, "test setup").unwrap();
+
+        assert!(save_focus_deadlock_on_startup_at_path(&path, true).unwrap());
+        let saved = load_config_for_write(&path, "test read").unwrap();
+        assert!(saved.focus_deadlock_on_startup);
+        assert_eq!(saved.deadlock_path, original.deadlock_path);
+        assert_eq!(saved.last_launch_at, original.last_launch_at);
+        assert_eq!(
+            saved.discord_presence_enabled,
+            original.discord_presence_enabled
+        );
+
+        assert!(!save_focus_deadlock_on_startup_at_path(&path, false).unwrap());
+        assert!(
+            !load_config_for_write(&path, "test read")
+                .unwrap()
+                .focus_deadlock_on_startup
+        );
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_discord_enabled_flag_migrates_when_nested_config_is_absent() {
+        let config: SplitConfig =
+            serde_json::from_str(r#"{"discordPresenceEnabled":false}"#).unwrap();
+        let presence = effective_discord_presence_config(&config);
+
+        assert!(!presence.global.enabled);
+        assert_eq!(
+            presence.explore_nyc,
+            DiscordPresenceConfig::default().explore_nyc
+        );
+    }
+
+    #[test]
+    fn partial_nested_discord_config_uses_section_defaults() {
+        let config: SplitConfig = serde_json::from_str(
+            r#"{
+                "discordPresence": {
+                    "exploreNyc": { "showDistrict": false }
+                }
+            }"#,
+        )
+        .unwrap();
+        let presence = effective_discord_presence_config(&config);
+
+        assert!(!presence.explore_nyc.show_district);
+        assert!(presence.explore_nyc.show_hero_in_details);
+        assert_eq!(presence.explore_nyc.district_prefix, "› ");
+        assert!(presence.hideout.use_official_hero_phrase);
+    }
+
+    #[test]
+    fn legacy_match_party_boolean_migrates_in_persisted_config() {
+        for (legacy, expected) in [
+            (true, crate::discord::PartyDisplay::Compact),
+            (false, crate::discord::PartyDisplay::Hidden),
+        ] {
+            let config: SplitConfig = serde_json::from_value(serde_json::json!({
+                "discordPresence": {
+                    "match": {
+                        "showHeroImage": true,
+                        "showParty": legacy
+                    }
+                }
+            }))
+            .unwrap();
+            let presence = effective_discord_presence_config(&config);
+
+            assert_eq!(presence.r#match.party_display, expected);
+        }
+    }
+
+    #[test]
+    fn discord_config_persists_and_reset_restores_section_or_all_defaults() {
+        let directory = temporary_test_directory("discord-config");
+        let path = directory.join("split2-config.json");
+        let mut presence = DiscordPresenceConfig::default();
+        presence.explore_nyc.district_prefix = "• ".to_string();
+        presence.hideout.party_display = crate::discord::PartyDisplay::Hidden;
+        save_discord_presence_config_at_path(&path, presence).unwrap();
+
+        let saved_json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        for section in [
+            "hideout",
+            "exploreNyc",
+            "mainMenu",
+            "matchmaking",
+            "match",
+            "spectating",
+            "postMatch",
+        ] {
+            assert!(saved_json["discordPresence"][section]
+                .get("partyDisplay")
+                .is_some());
+            assert!(saved_json["discordPresence"][section]
+                .get("showParty")
+                .is_none());
+        }
+
+        let section_reset =
+            reset_discord_presence_config_at_path(&path, Some(DiscordPresenceSection::ExploreNyc))
+                .unwrap();
+        assert_eq!(section_reset.explore_nyc.district_prefix, "› ");
+        assert_eq!(
+            section_reset.hideout.party_display,
+            crate::discord::PartyDisplay::Hidden
+        );
+
+        let full_reset = reset_discord_presence_config_at_path(&path, None).unwrap();
+        assert_eq!(full_reset, DiscordPresenceConfig::default());
+        let persisted = load_config_for_write(&path, "test read").unwrap();
+        assert_eq!(
+            effective_discord_presence_config(&persisted),
+            DiscordPresenceConfig::default()
+        );
+
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -960,6 +1194,7 @@ mod tests {
         let path = directory.join("split2-config.json");
         let config = SplitConfig {
             deadlock_path: r"C:\Deadlock".to_string(),
+            focus_deadlock_on_startup: true,
             ..SplitConfig::default()
         };
         write_config(&path, &config, "test setup").unwrap();
@@ -973,6 +1208,7 @@ mod tests {
         let saved = load_config_for_write(&path, "test read").unwrap();
         assert_eq!(saved.deadlock_path, r"C:\Deadlock");
         assert_eq!(saved.last_launch_at, Some(10_000_000));
+        assert!(saved.focus_deadlock_on_startup);
 
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1029,11 +1265,13 @@ mod tests {
         let original = SplitConfig {
             deadlock_path: r"C:\Deadlock".to_string(),
             last_launch_at: Some(12_345),
+            focus_deadlock_on_startup: true,
             notifications: notifications.clone(),
             hotkeys: hotkeys.clone(),
             quick_access,
             startup_sound: StartupSoundSettings::default(),
             discord_presence_enabled: true,
+            discord_presence: None,
         };
         write_config(&path, &original, "test setup").unwrap();
 
@@ -1051,6 +1289,7 @@ mod tests {
         assert!(!saved_settings.enabled);
         assert_eq!(saved.deadlock_path, r"C:\Deadlock");
         assert_eq!(saved.last_launch_at, Some(12_345));
+        assert!(saved.focus_deadlock_on_startup);
         assert_eq!(saved.notifications, notifications);
         assert_eq!(saved.hotkeys, hotkeys);
         assert_eq!(saved.quick_access, quick_access);
@@ -1066,11 +1305,24 @@ mod tests {
         fs::write(&path, b"{\"deadlockPath\":\"C:\\\\Deadlock\",\"hotkeys\":").unwrap();
         let before = fs::read(&path).unwrap();
 
-        let error = save_startup_sound_settings_at_path(
-            &path,
-            StartupSoundSettings::default(),
-        )
-        .unwrap_err();
+        let error = save_startup_sound_settings_at_path(&path, StartupSoundSettings::default())
+            .unwrap_err();
+
+        assert!(error.contains("refusing to overwrite"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn startup_focus_writer_refuses_malformed_config() {
+        let directory = temporary_test_directory("malformed-startup-focus-config");
+        let path = directory.join("split2-config.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, b"{\"deadlockPath\":\"C:\\\\Deadlock\",\"hotkeys\":").unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let error = save_focus_deadlock_on_startup_at_path(&path, true).unwrap_err();
 
         assert!(error.contains("refusing to overwrite"));
         assert_eq!(fs::read(&path).unwrap(), before);

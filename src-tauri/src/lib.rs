@@ -177,14 +177,50 @@ fn update_startup_sound_settings(
 }
 
 #[tauri::command]
+fn get_focus_deadlock_on_startup() -> bool {
+    deadlock::get_focus_deadlock_on_startup()
+}
+
+#[tauri::command]
+fn update_focus_deadlock_on_startup(enabled: bool) -> Result<bool, String> {
+    deadlock::update_focus_deadlock_on_startup(enabled)
+}
+
+#[tauri::command]
 fn get_discord_presence_enabled() -> bool {
-    deadlock::get_discord_presence_enabled()
+    discord::config().global.enabled
 }
 
 #[tauri::command]
 fn update_discord_presence_enabled(enabled: bool) -> Result<bool, String> {
-    let saved = deadlock::update_discord_presence_enabled(enabled)?;
-    discord::set_enabled(saved)?;
+    let mut config = discord::config();
+    config.global.enabled = enabled;
+    update_discord_presence_config(config)?;
+    Ok(enabled)
+}
+
+#[tauri::command]
+fn get_discord_presence_config() -> discord::DiscordPresenceConfig {
+    discord::config()
+}
+
+#[tauri::command]
+fn update_discord_presence_config(
+    config: discord::DiscordPresenceConfig,
+) -> Result<discord::DiscordPresenceConfig, String> {
+    let saved = deadlock::update_discord_presence_config(config)?;
+    discord::apply_config(saved.clone())?;
+    discord::set_enabled(saved.global.enabled)?;
+    Ok(saved)
+}
+
+#[tauri::command]
+fn reset_discord_presence_config(
+    section: Option<discord::DiscordPresenceSection>,
+) -> Result<discord::DiscordPresenceConfig, String> {
+    let saved = deadlock::reset_discord_presence_config(section)?;
+    discord::apply_config(saved.clone())?;
+    discord::set_enabled(saved.global.enabled)?;
     Ok(saved)
 }
 
@@ -450,6 +486,10 @@ pub fn run() {
         .setup(|app| {
             tray::setup(app)?;
 
+            let discord_config = deadlock::get_discord_presence_config();
+            discord::apply_config(discord_config)
+                .map_err(|error| format!("Could not load Discord Presence settings: {error}"))?;
+
             if app_window::should_start_minimized_to_tray(app.handle()) {
                 if let Err(error) =
                     app_window::close_main_window_to_background(app.handle().clone())
@@ -525,7 +565,7 @@ pub fn run() {
                         eprintln!("[SPLIT] Deadlock process monitor unavailable: {error}");
                     }
 
-                    if let Err(error) = discord::start(deadlock::get_discord_presence_enabled()) {
+                    if let Err(error) = discord::start(discord::config().global.enabled) {
                         eprintln!("[SPLIT] Discord Presence unavailable: {error}");
                     }
 
@@ -604,8 +644,13 @@ pub fn run() {
             update_notification_settings,
             claim_startup_sound,
             update_startup_sound_settings,
+            get_focus_deadlock_on_startup,
+            update_focus_deadlock_on_startup,
             get_discord_presence_enabled,
             update_discord_presence_enabled,
+            get_discord_presence_config,
+            update_discord_presence_config,
+            reset_discord_presence_config,
             test_notification,
             get_hotkey_settings,
             update_hotkey_settings,

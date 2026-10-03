@@ -1,40 +1,25 @@
 use tauri::{
-    AppHandle,
-    Emitter,
-    Manager,
-    PhysicalPosition,
-    PhysicalSize,
-    WebviewUrl,
-    WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 
 use serde::{Deserialize, Serialize};
 
-use std::sync::atomic::{
-    AtomicBool,
-    Ordering,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
-use std::{
-    thread,
-    time::Duration,
-};
+use std::{thread, time::Duration};
 
 use windows_sys::Win32::Foundation::{HWND, RECT};
 
-const QUICK_ACCESS_LABEL: &str =
-    "quick-access";
+const QUICK_ACCESS_LABEL: &str = "quick-access";
 
 const QUICK_ACCESS_WIDTH: u32 = 390;
 const QUICK_ACCESS_VIEWER_MIN_WIDTH: u32 = 760;
 const QUICK_ACCESS_VIEWER_MAX_WIDTH: u32 = 1100;
 const QUICK_ACCESS_MARGIN: i32 = 14;
 
-static QUICK_ACCESS_VISIBLE: AtomicBool =
-    AtomicBool::new(false);
-static QUICK_ACCESS_INTERACTIVE: AtomicBool =
-    AtomicBool::new(false);
+static QUICK_ACCESS_VISIBLE: AtomicBool = AtomicBool::new(false);
+static QUICK_ACCESS_INTERACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,15 +44,10 @@ impl Default for QuickAccessSettings {
     }
 }
 
-static QUICK_ACCESS_SETTINGS: OnceLock<RwLock<QuickAccessSettings>> =
-    OnceLock::new();
+static QUICK_ACCESS_SETTINGS: OnceLock<RwLock<QuickAccessSettings>> = OnceLock::new();
 
 fn runtime_settings() -> &'static RwLock<QuickAccessSettings> {
-    QUICK_ACCESS_SETTINGS.get_or_init(|| {
-        RwLock::new(
-            crate::deadlock::load_quick_access_settings(),
-        )
-    })
+    QUICK_ACCESS_SETTINGS.get_or_init(|| RwLock::new(crate::deadlock::load_quick_access_settings()))
 }
 
 pub fn settings() -> QuickAccessSettings {
@@ -93,16 +73,13 @@ pub struct QuickAccessState {
     interactive: bool,
 }
 
-
 pub fn is_visible() -> bool {
     QUICK_ACCESS_VISIBLE.load(Ordering::SeqCst)
 }
 
-
 pub fn is_interactive() -> bool {
     QUICK_ACCESS_INTERACTIVE.load(Ordering::SeqCst)
 }
-
 
 pub fn state() -> QuickAccessState {
     QuickAccessState {
@@ -111,24 +88,13 @@ pub fn state() -> QuickAccessState {
     }
 }
 
-
-fn emit_interaction_mode(
-    window: &WebviewWindow,
-    active: bool,
-) {
-    if let Err(error) = window.emit(
-        "quick-access-interaction",
-        active,
-    ) {
-        eprintln!(
-            "[SPLIT][QA] Could not emit interaction={active}: {error}"
-        );
+fn emit_interaction_mode(window: &WebviewWindow, active: bool) {
+    if let Err(error) = window.emit("quick-access-interaction", active) {
+        eprintln!("[SPLIT][QA] Could not emit interaction={active}: {error}");
     }
 }
 
-pub(crate) fn suppress_external_window_for_panorama(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub(crate) fn suppress_external_window_for_panorama(app: &AppHandle) -> Result<(), String> {
     let Some(window) = app.get_webview_window(QUICK_ACCESS_LABEL) else {
         return Ok(());
     };
@@ -136,16 +102,12 @@ pub(crate) fn suppress_external_window_for_panorama(
 
     window
         .set_focusable(false)
-        .map_err(|error| {
-            format!("Could not disable external Quick Access focus: {error}")
-        })?;
+        .map_err(|error| format!("Could not disable external Quick Access focus: {error}"))?;
     emit_interaction_mode(&window, false);
     if window.is_visible().unwrap_or(false) {
         window
             .hide()
-            .map_err(|error| {
-                format!("Could not suppress external Quick Access: {error}")
-            })?;
+            .map_err(|error| format!("Could not suppress external Quick Access: {error}"))?;
     }
 
     if was_focused {
@@ -158,116 +120,60 @@ pub(crate) fn suppress_external_window_for_panorama(
     Ok(())
 }
 
-
 fn deadlock_rect() -> Result<RECT, String> {
     crate::deadlock::deadlock_window_rect()
 }
 
-
-pub fn owns_window_handle(
-    app: &AppHandle,
-    hwnd: HWND,
-) -> bool {
+pub fn owns_window_handle(app: &AppHandle, hwnd: HWND) -> bool {
     if !crate::editions::windows_quick_access_enabled() {
         return false;
     }
 
     app.get_webview_window(QUICK_ACCESS_LABEL)
         .and_then(|window| window.hwnd().ok())
-        .is_some_and(|quick_access_hwnd| {
-            quick_access_hwnd.0 == hwnd
-        })
+        .is_some_and(|quick_access_hwnd| quick_access_hwnd.0 == hwnd)
 }
 
-
-fn window_x(
-    rect: &RECT,
-    width: u32,
-    position: QuickAccessPosition,
-) -> i32 {
+fn window_x(rect: &RECT, width: u32, position: QuickAccessPosition) -> i32 {
     match position {
-        QuickAccessPosition::Left =>
-            rect.left + QUICK_ACCESS_MARGIN,
-        QuickAccessPosition::Right =>
-            rect.right - width as i32 - QUICK_ACCESS_MARGIN,
+        QuickAccessPosition::Left => rect.left + QUICK_ACCESS_MARGIN,
+        QuickAccessPosition::Right => rect.right - width as i32 - QUICK_ACCESS_MARGIN,
     }
 }
 
+fn position_window(window: &WebviewWindow, width: u32) -> Result<(), String> {
+    let rect = deadlock_rect()?;
 
-fn position_window(
-    window: &WebviewWindow,
-    width: u32,
-) -> Result<(), String> {
-    let rect =
-        deadlock_rect()?;
+    let game_height = rect.bottom - rect.top;
 
-    let game_height =
-        rect.bottom - rect.top;
-
-    let height =
-        (game_height -
-            QUICK_ACCESS_MARGIN * 2)
-            .max(500) as u32;
+    let height = (game_height - QUICK_ACCESS_MARGIN * 2).max(500) as u32;
 
     window
-        .set_size(
-            PhysicalSize::new(
-                width,
-                height,
-            ),
-        )
-        .map_err(|error| {
-            format!(
-                "Could not size Quick Access: {error}"
-            )
-        })?;
+        .set_size(PhysicalSize::new(width, height))
+        .map_err(|error| format!("Could not size Quick Access: {error}"))?;
 
     window
-        .set_position(
-            PhysicalPosition::new(
-                window_x(
-                    &rect,
-                    width,
-                    settings().position,
-                ),
-                rect.top +
-                    QUICK_ACCESS_MARGIN,
-            ),
-        )
-        .map_err(|error| {
-            format!(
-                "Could not position Quick Access: {error}"
-            )
-        })?;
+        .set_position(PhysicalPosition::new(
+            window_x(&rect, width, settings().position),
+            rect.top + QUICK_ACCESS_MARGIN,
+        ))
+        .map_err(|error| format!("Could not position Quick Access: {error}"))?;
 
     Ok(())
 }
 
-
-fn get_or_create(
-    app: &AppHandle,
-) -> Result<WebviewWindow, String> {
-    if let Some(window) =
-        app.get_webview_window(
-            QUICK_ACCESS_LABEL,
-        )
-    {
+fn get_or_create(app: &AppHandle) -> Result<WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window(QUICK_ACCESS_LABEL) {
         return Ok(window);
     }
 
     WebviewWindowBuilder::new(
         app,
         QUICK_ACCESS_LABEL,
-        WebviewUrl::App(
-            "index.html?quick-access=1"
-                .into(),
-        ),
+        WebviewUrl::App("index.html?quick-access=1".into()),
     )
     .title("SPLIT Quick Access")
-    .inner_size(
-        QUICK_ACCESS_WIDTH as f64,
-        720.0,
-    )
+    .inner_size(QUICK_ACCESS_WIDTH as f64, 720.0)
     .decorations(false)
     .resizable(false)
     .maximizable(false)
@@ -277,17 +183,10 @@ fn get_or_create(
     .skip_taskbar(true)
     .visible(false)
     .build()
-    .map_err(|error| {
-        format!(
-            "Could not create Quick Access window: {error}"
-        )
-    })
+    .map_err(|error| format!("Could not create Quick Access window: {error}"))
 }
 
-
-pub fn show(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub fn show(app: &AppHandle) -> Result<(), String> {
     if !is_enabled() {
         return Ok(());
     }
@@ -300,44 +199,23 @@ pub fn show(
         return Ok(());
     }
 
-    let window =
-        get_or_create(app)?;
+    let window = get_or_create(app)?;
 
     window
         .set_focusable(false)
-        .map_err(|error| {
-            format!(
-                "Could not make Quick Access passive: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not make Quick Access passive: {error}"))?;
 
-    QUICK_ACCESS_INTERACTIVE.store(
-        false,
-        Ordering::SeqCst,
-    );
+    QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
 
-    emit_interaction_mode(
-        &window,
-        false,
-    );
+    emit_interaction_mode(&window, false);
 
-    position_window(
-        &window,
-        QUICK_ACCESS_WIDTH,
-    )?;
+    position_window(&window, QUICK_ACCESS_WIDTH)?;
 
     window
         .show()
-        .map_err(|error| {
-            format!(
-                "Could not show Quick Access: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not show Quick Access: {error}"))?;
 
-    QUICK_ACCESS_VISIBLE.store(
-        true,
-        Ordering::SeqCst,
-    );
+    QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
 
     /*
      * Au premier affichage React charge
@@ -346,74 +224,39 @@ pub fn show(
      * Aux affichages suivants, cet event
      * force un refresh des slots.
      */
-    let _ =
-        window.emit(
-            "quick-access-refresh",
-            (),
-        );
+    let _ = window.emit("quick-access-refresh", ());
 
     println!("[QuickAccess] state=PASSIVE renderer=windows");
 
     Ok(())
 }
 
-
-fn hide_internal(
-    app: &AppHandle,
-    restore_deadlock_focus: bool,
-) -> Result<(), String> {
+fn hide_internal(app: &AppHandle, restore_deadlock_focus: bool) -> Result<(), String> {
     let renderer = if crate::editions::legacy_panorama_renderer_active() {
         "panorama"
     } else {
         "windows"
     };
-    if let Some(window) =
-        app.get_webview_window(
-            QUICK_ACCESS_LABEL,
-        )
-    {
+    if let Some(window) = app.get_webview_window(QUICK_ACCESS_LABEL) {
         window
             .set_focusable(false)
-            .map_err(|error| {
-                format!(
-                    "Could not make Quick Access passive: {error}"
-                )
-            })?;
+            .map_err(|error| format!("Could not make Quick Access passive: {error}"))?;
 
-        QUICK_ACCESS_INTERACTIVE.store(
-            false,
-            Ordering::SeqCst,
-        );
+        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
 
-        emit_interaction_mode(
-            &window,
-            false,
-        );
+        emit_interaction_mode(&window, false);
 
         window
             .hide()
-            .map_err(|error| {
-                format!(
-                    "Could not hide Quick Access: {error}"
-                )
-            })?;
-
+            .map_err(|error| format!("Could not hide Quick Access: {error}"))?;
     }
 
-    QUICK_ACCESS_INTERACTIVE.store(
-        false,
-        Ordering::SeqCst,
-    );
-    QUICK_ACCESS_VISIBLE.store(
-        false,
-        Ordering::SeqCst,
-    );
+    QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
+    QUICK_ACCESS_VISIBLE.store(false, Ordering::SeqCst);
 
     if restore_deadlock_focus {
         if let Err(error) = crate::deadlock::focus_deadlock_window() {
-            eprintln!(
-                "[SPLIT][QA] Could not return focus to Deadlock: {error}"
-            );
+            eprintln!("[SPLIT][QA] Could not return focus to Deadlock: {error}");
         }
     }
 
@@ -422,25 +265,15 @@ fn hide_internal(
     Ok(())
 }
 
-
-pub fn hide(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub fn hide(app: &AppHandle) -> Result<(), String> {
     hide_internal(app, true)
 }
 
-
-pub(crate) fn hide_without_focus(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub(crate) fn hide_without_focus(app: &AppHandle) -> Result<(), String> {
     hide_internal(app, false)
 }
 
-
-pub fn set_viewer_open(
-    app: &AppHandle,
-    open: bool,
-) -> Result<(), String> {
+pub fn set_viewer_open(app: &AppHandle, open: bool) -> Result<(), String> {
     if !crate::editions::windows_quick_access_enabled() {
         return Ok(());
     }
@@ -448,56 +281,34 @@ pub fn set_viewer_open(
     let window = get_or_create(app)?;
     let rect = deadlock_rect()?;
     let width = if open {
-        let game_width =
-            (rect.right - rect.left).max(0) as f64;
+        let game_width = (rect.right - rect.left).max(0) as f64;
 
-        (game_width * 0.58)
-            .round()
-            .clamp(
-                QUICK_ACCESS_VIEWER_MIN_WIDTH as f64,
-                QUICK_ACCESS_VIEWER_MAX_WIDTH as f64,
-            ) as u32
+        (game_width * 0.58).round().clamp(
+            QUICK_ACCESS_VIEWER_MIN_WIDTH as f64,
+            QUICK_ACCESS_VIEWER_MAX_WIDTH as f64,
+        ) as u32
     } else {
         QUICK_ACCESS_WIDTH
     };
 
     let height = window
         .inner_size()
-        .map_err(|error| {
-            format!(
-                "Could not read Quick Access size: {error}"
-            )
-        })?
+        .map_err(|error| format!("Could not read Quick Access size: {error}"))?
         .height;
 
     window
         .set_size(PhysicalSize::new(width, height))
-        .map_err(|error| {
-            format!(
-                "Could not resize Quick Access viewer: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not resize Quick Access viewer: {error}"))?;
 
     window
         .set_position(PhysicalPosition::new(
-            window_x(
-                &rect,
-                width,
-                settings().position,
-            ),
+            window_x(&rect, width, settings().position),
             rect.top + QUICK_ACCESS_MARGIN,
         ))
-        .map_err(|error| {
-            format!(
-                "Could not position Quick Access viewer: {error}"
-            )
-        })
+        .map_err(|error| format!("Could not position Quick Access viewer: {error}"))
 }
 
-
-pub fn reposition_if_visible(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub fn reposition_if_visible(app: &AppHandle) -> Result<(), String> {
     if !is_visible() {
         return Ok(());
     }
@@ -507,39 +318,21 @@ pub fn reposition_if_visible(
 
     let window = app
         .get_webview_window(QUICK_ACCESS_LABEL)
-        .ok_or_else(|| {
-            "Quick Access window does not exist"
-                .to_string()
-        })?;
+        .ok_or_else(|| "Quick Access window does not exist".to_string())?;
     let size = window
         .inner_size()
-        .map_err(|error| {
-            format!(
-                "Could not read Quick Access size: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not read Quick Access size: {error}"))?;
     let rect = deadlock_rect()?;
 
     window
         .set_position(PhysicalPosition::new(
-            window_x(
-                &rect,
-                size.width,
-                settings().position,
-            ),
+            window_x(&rect, size.width, settings().position),
             rect.top + QUICK_ACCESS_MARGIN,
         ))
-        .map_err(|error| {
-            format!(
-                "Could not reposition Quick Access: {error}"
-            )
-        })
+        .map_err(|error| format!("Could not reposition Quick Access: {error}"))
 }
 
-
-pub fn enter_interaction_mode(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub fn enter_interaction_mode(app: &AppHandle) -> Result<(), String> {
     if !crate::editions::windows_quick_access_enabled() {
         return Ok(());
     }
@@ -560,110 +353,60 @@ pub fn enter_interaction_mode(
     }
 
     let window = app
-        .get_webview_window(
-            QUICK_ACCESS_LABEL,
-        )
-        .ok_or_else(|| {
-            "Quick Access window does not exist"
-                .to_string()
-        })?;
+        .get_webview_window(QUICK_ACCESS_LABEL)
+        .ok_or_else(|| "Quick Access window does not exist".to_string())?;
 
-    if !window
-        .is_visible()
-        .unwrap_or(false)
-    {
+    if !window.is_visible().unwrap_or(false) {
         let _ = window.set_focusable(false);
 
-        QUICK_ACCESS_INTERACTIVE.store(
-            false,
-            Ordering::SeqCst,
-        );
+        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
 
-        emit_interaction_mode(
-            &window,
-            false,
-        );
+        emit_interaction_mode(&window, false);
 
-        QUICK_ACCESS_VISIBLE.store(
-            false,
-            Ordering::SeqCst,
-        );
+        QUICK_ACCESS_VISIBLE.store(false, Ordering::SeqCst);
 
-        return Err(
-            "Quick Access is not visible"
-                .to_string(),
-        );
+        return Err("Quick Access is not visible".to_string());
     }
 
     window
         .set_focusable(true)
-        .map_err(|error| {
-            format!(
-                "Could not make Quick Access interactive: {error}"
-            )
-        })?;
+        .map_err(|error| format!("Could not make Quick Access interactive: {error}"))?;
 
     if let Err(error) = window.set_focus() {
         let _ = window.set_focusable(false);
 
-        QUICK_ACCESS_INTERACTIVE.store(
-            false,
-            Ordering::SeqCst,
-        );
+        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
 
-        emit_interaction_mode(
-            &window,
-            false,
-        );
+        emit_interaction_mode(&window, false);
 
-        return Err(format!(
-            "Could not focus Quick Access: {error}"
-        ));
+        return Err(format!("Could not focus Quick Access: {error}"));
     }
 
     let mut focused = false;
 
     for _ in 0..15 {
-        if window
-            .is_focused()
-            .unwrap_or(false)
-        {
+        if window.is_focused().unwrap_or(false) {
             focused = true;
             break;
         }
 
-        thread::sleep(
-            Duration::from_millis(10),
-        );
+        thread::sleep(Duration::from_millis(10));
     }
 
     if focused {
-        println!(
-            "[SPLIT][QA] Quick Access focus acquired"
-        );
+        println!("[SPLIT][QA] Quick Access focus acquired");
     } else {
-        eprintln!(
-            "[SPLIT][QA] Quick Access focus request did not become foreground"
-        );
+        eprintln!("[SPLIT][QA] Quick Access focus request did not become foreground");
     }
 
-    QUICK_ACCESS_INTERACTIVE.store(
-        true,
-        Ordering::SeqCst,
-    );
+    QUICK_ACCESS_INTERACTIVE.store(true, Ordering::SeqCst);
 
-    emit_interaction_mode(
-        &window,
-        true,
-    );
+    emit_interaction_mode(&window, true);
     println!("[QuickAccess] state=INTERACTIVE renderer=windows");
     Ok(())
 }
 
-
-pub fn exit_interaction_mode(
-    app: &AppHandle,
-) -> Result<(), String> {
+pub fn exit_interaction_mode(app: &AppHandle) -> Result<(), String> {
     if !crate::editions::windows_quick_access_enabled() {
         return Ok(());
     }
@@ -684,20 +427,11 @@ pub fn exit_interaction_mode(
     }
 
     let window = app
-        .get_webview_window(
-            QUICK_ACCESS_LABEL,
-        )
-        .ok_or_else(|| {
-            "Quick Access window does not exist"
-                .to_string()
-        })?;
+        .get_webview_window(QUICK_ACCESS_LABEL)
+        .ok_or_else(|| "Quick Access window does not exist".to_string())?;
 
-    if let Err(error) =
-        crate::deadlock::focus_deadlock_window()
-    {
-        eprintln!(
-            "[SPLIT][QA] Could not transfer focus to Deadlock: {error}"
-        );
+    if let Err(error) = crate::deadlock::focus_deadlock_window() {
+        eprintln!("[SPLIT][QA] Could not transfer focus to Deadlock: {error}");
 
         if let Err(restore_error) = window.set_focus() {
             eprintln!(
@@ -705,38 +439,25 @@ pub fn exit_interaction_mode(
             );
         }
 
-        return Err(format!(
-            "Could not transfer focus to Deadlock: {error}"
-        ));
+        return Err(format!("Could not transfer focus to Deadlock: {error}"));
     }
 
     if let Err(error) = window.set_focusable(false) {
         if let Err(restore_error) = window.set_focusable(true) {
-            eprintln!(
-                "[SPLIT][QA] Could not restore Quick Access focusability: {restore_error}"
-            );
+            eprintln!("[SPLIT][QA] Could not restore Quick Access focusability: {restore_error}");
         }
 
-        return Err(format!(
-            "Could not make Quick Access passive: {error}"
-        ));
+        return Err(format!("Could not make Quick Access passive: {error}"));
     }
 
-    QUICK_ACCESS_INTERACTIVE.store(
-        false,
-        Ordering::SeqCst,
-    );
+    QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
 
-    emit_interaction_mode(
-        &window,
-        false,
-    );
+    emit_interaction_mode(&window, false);
 
     println!("[QuickAccess] state=PASSIVE renderer=windows");
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -754,11 +475,7 @@ mod tests {
     #[test]
     fn left_position_uses_left_margin() {
         assert_eq!(
-            window_x(
-                &rect(),
-                QUICK_ACCESS_WIDTH,
-                QuickAccessPosition::Left,
-            ),
+            window_x(&rect(), QUICK_ACCESS_WIDTH, QuickAccessPosition::Left,),
             114,
         );
     }
@@ -777,25 +494,13 @@ mod tests {
     #[test]
     fn right_position_uses_width_and_right_margin() {
         assert_eq!(
-            window_x(
-                &rect(),
-                QUICK_ACCESS_WIDTH,
-                QuickAccessPosition::Right,
-            ),
+            window_x(&rect(), QUICK_ACCESS_WIDTH, QuickAccessPosition::Right,),
             1616,
         );
     }
 
     #[test]
     fn right_viewer_expands_toward_deadlock_interior() {
-        assert_eq!(
-            window_x(
-                &rect(),
-                1100,
-                QuickAccessPosition::Right,
-            ),
-            906,
-        );
+        assert_eq!(window_x(&rect(), 1100, QuickAccessPosition::Right,), 906,);
     }
-
 }

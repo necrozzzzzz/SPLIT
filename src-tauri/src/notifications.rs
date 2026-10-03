@@ -963,11 +963,19 @@ mod tests {
             (1_944, 144)
         );
         assert_eq!(
-            overlay_position(work_area, NotificationPosition::BottomLeft, MIN_OVERLAY_WIDTH),
+            overlay_position(
+                work_area,
+                NotificationPosition::BottomLeft,
+                MIN_OVERLAY_WIDTH
+            ),
             (1_944, 1_480)
         );
         assert_eq!(
-            overlay_position(work_area, NotificationPosition::BottomRight, MIN_OVERLAY_WIDTH),
+            overlay_position(
+                work_area,
+                NotificationPosition::BottomRight,
+                MIN_OVERLAY_WIDTH
+            ),
             (4_192, 1_480)
         );
     }

@@ -3,12 +3,16 @@ mod cfg;
 pub(crate) mod console_phase;
 #[allow(dead_code)]
 pub(crate) mod deadlock_state;
+pub(crate) mod district;
 mod history;
 mod hotkeys;
+mod interfaces;
 mod parser;
 mod paths;
+mod pawn;
 mod process;
 mod process_monitor;
+mod schema;
 mod screenshot;
 mod slots;
 mod watcher;
@@ -299,12 +303,28 @@ pub fn get_startup_sound_settings() -> StartupSoundSettings {
     paths::load_startup_sound_settings()
 }
 
-pub fn get_discord_presence_enabled() -> bool {
-    paths::load_discord_presence_enabled()
+pub fn get_focus_deadlock_on_startup() -> bool {
+    paths::load_focus_deadlock_on_startup()
 }
 
-pub fn update_discord_presence_enabled(enabled: bool) -> Result<bool, String> {
-    paths::save_discord_presence_enabled(enabled)
+pub fn update_focus_deadlock_on_startup(enabled: bool) -> Result<bool, String> {
+    paths::save_focus_deadlock_on_startup(enabled)
+}
+
+pub fn get_discord_presence_config() -> crate::discord::DiscordPresenceConfig {
+    paths::load_discord_presence_config()
+}
+
+pub fn update_discord_presence_config(
+    config: crate::discord::DiscordPresenceConfig,
+) -> Result<crate::discord::DiscordPresenceConfig, String> {
+    paths::save_discord_presence_config(config)
+}
+
+pub fn reset_discord_presence_config(
+    section: Option<crate::discord::DiscordPresenceSection>,
+) -> Result<crate::discord::DiscordPresenceConfig, String> {
+    paths::reset_discord_presence_config(section)
 }
 
 pub fn update_startup_sound_settings(
@@ -1655,7 +1675,7 @@ pub fn cleanup_transport_on_true_quit() {
     if let Err(error) = cfg::write_shutdown_prepare(&paths.cfg_file) {
         eprintln!("[SPLIT] Could not stage Deadlock transport cleanup: {error}");
     } else if process::is_deadlock_running() {
-        if let Err(error) = hotkeys::execute_shutdown_prepare() {
+        if let Err(error) = hotkeys::execute_shutdown_prepare_without_focus() {
             eprintln!("[SPLIT] Could not execute live Deadlock transport cleanup: {error}");
         }
     }
