@@ -48,15 +48,11 @@ fn validate_prefix(label: &str, prefix: &str) -> Result<(), String> {
     Ok(())
 }
 
-
 impl DiscordPresenceConfig {
     pub(crate) fn validate(&self) -> Result<(), String> {
         validate_prefix("Discord global preview prefix", &self.global.preview_prefix)?;
         validate_prefix("Discord Hideout state prefix", &self.hideout.state_prefix)?;
-        validate_prefix(
-            "Discord district prefix",
-            &self.explore_nyc.district_prefix,
-        )?;
+        validate_prefix("Discord district prefix", &self.explore_nyc.district_prefix)?;
         validate_prefix(
             "Discord Main Menu state prefix",
             &self.main_menu.state_prefix,
@@ -108,7 +104,7 @@ pub enum DiscordPresenceSection {
     PostMatch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GlobalPresenceConfig {
     pub enabled: bool,
@@ -140,7 +136,7 @@ impl Default for HideoutPresenceConfig {
         Self {
             use_official_hero_phrase: true,
             show_hero_image: true,
-            party_display: PartyDisplay::Discord,
+            party_display: PartyDisplay::Compact,
             state_prefix: String::new(),
         }
     }
@@ -163,7 +159,7 @@ impl Default for ExploreNycPresenceConfig {
             show_district: true,
             district_prefix: "› ".to_string(),
             show_district_image: true,
-            party_display: PartyDisplay::Hidden,
+            party_display: PartyDisplay::Compact,
         }
     }
 }
@@ -196,7 +192,7 @@ impl Default for MainMenuPresenceConfig {
     fn default() -> Self {
         Self {
             use_deadlock_logo: true,
-            party_display: PartyDisplay::Discord,
+            party_display: PartyDisplay::Compact,
             state_prefix: String::new(),
         }
     }
@@ -212,7 +208,7 @@ pub struct PartyPresenceConfig {
 impl Default for PartyPresenceConfig {
     fn default() -> Self {
         Self {
-            party_display: PartyDisplay::Discord,
+            party_display: PartyDisplay::Compact,
             state_prefix: String::new(),
         }
     }
@@ -306,7 +302,7 @@ fn migrated_party_display(
         .or_else(|| {
             show_party.map(|show| {
                 if show {
-                    PartyDisplay::Discord
+                    PartyDisplay::Compact
                 } else {
                     PartyDisplay::Hidden
                 }
@@ -559,7 +555,7 @@ mod tests {
             HideoutPresenceConfig {
                 use_official_hero_phrase: true,
                 show_hero_image: true,
-                party_display: PartyDisplay::Discord,
+                party_display: PartyDisplay::Compact,
                 state_prefix: String::new(),
             }
         );
@@ -570,7 +566,7 @@ mod tests {
                 show_district: true,
                 district_prefix: "› ".to_string(),
                 show_district_image: true,
-                party_display: PartyDisplay::Hidden,
+                party_display: PartyDisplay::Compact,
             }
         );
         assert_eq!(
@@ -584,11 +580,12 @@ mod tests {
             config.main_menu,
             MainMenuPresenceConfig {
                 use_deadlock_logo: true,
-                party_display: PartyDisplay::Discord,
+                party_display: PartyDisplay::Compact,
                 state_prefix: String::new(),
             }
         );
-        assert_eq!(config.matchmaking.party_display, PartyDisplay::Discord);
+        assert_eq!(config.matchmaking.party_display, PartyDisplay::Compact);
+        assert!(config.matchmaking.state_prefix.is_empty());
         assert_eq!(
             config.r#match,
             MatchPresenceConfig {
@@ -605,7 +602,8 @@ mod tests {
             }
         );
         assert!(config.spectating.show_match_id);
-        assert_eq!(config.post_match.party_display, PartyDisplay::Discord);
+        assert_eq!(config.post_match.party_display, PartyDisplay::Compact);
+        assert!(config.post_match.state_prefix.is_empty());
 
         let serialized = serde_json::to_value(config).unwrap();
         assert!(serialized.get("match").is_some());
@@ -615,18 +613,15 @@ mod tests {
             "exploreNyc",
             "mainMenu",
             "matchmaking",
+            "match",
             "postMatch",
         ] {
+            assert!(serialized[section].get("partyDisplay").is_some());
             assert!(serialized[section].get("showParty").is_none());
-            assert_eq!(
-                serialized[section]["partyDisplay"],
-                serde_json::json!(if legacy { "discord" } else { "hidden" })
-            );
         }
 
         assert!(serialized["spectating"].get("partyDisplay").is_none());
         assert!(serialized["spectating"].get("showParty").is_none());
-        }
     }
 
     #[test]
@@ -648,6 +643,17 @@ mod tests {
         assert_eq!(config.loading, LoadingPresenceConfig::default());
         assert!(!config.r#match.show_hero_image);
         assert_eq!(config.r#match.party_display, PartyDisplay::Compact);
+        assert_eq!(config.explore_nyc.party_display, PartyDisplay::Compact);
+        assert_eq!(config.main_menu.party_display, PartyDisplay::Compact);
+        assert_eq!(config.matchmaking.party_display, PartyDisplay::Compact);
+        assert_eq!(config.post_match.party_display, PartyDisplay::Compact);
+        assert!(config.global.preview_prefix.is_empty());
+        assert!(config.hideout.state_prefix.is_empty());
+        assert!(config.main_menu.state_prefix.is_empty());
+        assert!(config.matchmaking.state_prefix.is_empty());
+        assert!(config.r#match.state_prefix.is_empty());
+        assert!(config.spectating.match_id_prefix.is_empty());
+        assert!(config.post_match.state_prefix.is_empty());
     }
 
     #[test]
@@ -698,7 +704,7 @@ mod tests {
             }))
             .unwrap();
             let expected = if legacy {
-                PartyDisplay::Discord
+                PartyDisplay::Compact
             } else {
                 PartyDisplay::Hidden
             };
@@ -722,7 +728,7 @@ mod tests {
                 assert!(serialized[section].get("showParty").is_none());
                 assert_eq!(
                     serialized[section]["partyDisplay"],
-                    serde_json::json!(if legacy { "discord" } else { "hidden" })
+                    serde_json::json!(if legacy { "compact" } else { "hidden" })
                 );
             }
         }
@@ -772,25 +778,44 @@ mod tests {
     #[test]
     fn resetting_one_section_or_everything_restores_defaults() {
         let mut config = DiscordPresenceConfig::default();
+        config.global.preview_prefix = "G ".to_string();
         config.explore_nyc.district_prefix = "• ".to_string();
         config.hideout.party_display = PartyDisplay::Hidden;
+        config.hideout.state_prefix = "H ".to_string();
+        config.main_menu.state_prefix = "N ".to_string();
+        config.matchmaking.state_prefix = "Q ".to_string();
         config.spectating.show_match_id = false;
+        config.spectating.match_id_prefix = "S ".to_string();
         config.r#match.party_display = PartyDisplay::Hidden;
+        config.r#match.state_prefix = "M ".to_string();
+        config.post_match.state_prefix = "P ".to_string();
+
+        config.reset_section(DiscordPresenceSection::Global);
+        assert_eq!(config.global, GlobalPresenceConfig::default());
+
+        config.reset_section(DiscordPresenceSection::Hideout);
+        assert_eq!(config.hideout, HideoutPresenceConfig::default());
 
         config.reset_section(DiscordPresenceSection::ExploreNyc);
         assert_eq!(
             config.explore_nyc,
             DiscordPresenceConfig::default().explore_nyc
         );
-        assert_eq!(config.hideout.party_display, PartyDisplay::Hidden);
+        config.reset_section(DiscordPresenceSection::MainMenu);
+        assert_eq!(config.main_menu, MainMenuPresenceConfig::default());
+
+        config.reset_section(DiscordPresenceSection::Matchmaking);
+        assert_eq!(config.matchmaking, PartyPresenceConfig::default());
 
         config.reset_section(DiscordPresenceSection::Spectating);
         assert_eq!(config.spectating, SpectatingPresenceConfig::default());
 
         config.reset_section(DiscordPresenceSection::Match);
-        assert_eq!(config.r#match.party_display, PartyDisplay::Compact);
+        assert_eq!(config.r#match, MatchPresenceConfig::default());
 
-        config = DiscordPresenceConfig::default();
+        config.reset_section(DiscordPresenceSection::PostMatch);
+        assert_eq!(config.post_match, PartyPresenceConfig::default());
+
         assert_eq!(config, DiscordPresenceConfig::default());
     }
 
@@ -806,13 +831,13 @@ mod tests {
         ] {
             let mut config = DiscordPresenceConfig::default();
             config.hideout.party_display = PartyDisplay::Hidden;
-            config.explore_nyc.party_display = PartyDisplay::Compact;
+            config.explore_nyc.party_display = PartyDisplay::Hidden;
             config.main_menu.party_display = PartyDisplay::Hidden;
             config.matchmaking.party_display = PartyDisplay::Hidden;
             config.r#match.party_display = PartyDisplay::Hidden;
             config.post_match.party_display = PartyDisplay::Hidden;
 
-            config.reset_section(section);
+            config.reset_section(section.clone());
             let defaults = DiscordPresenceConfig::default();
             match section {
                 DiscordPresenceSection::Hideout => assert_eq!(config.hideout, defaults.hideout),
@@ -826,7 +851,6 @@ mod tests {
                     assert_eq!(config.matchmaking, defaults.matchmaking)
                 }
                 DiscordPresenceSection::Match => assert_eq!(config.r#match, defaults.r#match),
-                
                 DiscordPresenceSection::PostMatch => {
                     assert_eq!(config.post_match, defaults.post_match)
                 }
@@ -836,38 +860,40 @@ mod tests {
             }
         }
     }
-}
 
-#[test]
-fn all_presence_prefixes_accept_valid_values() {
-    let mut config = DiscordPresenceConfig::default();
-
-    config.global.preview_prefix = "★ ".to_string();
-    config.hideout.state_prefix = "› ".to_string();
-    config.explore_nyc.district_prefix = "• ".to_string();
-    config.main_menu.state_prefix = "· ".to_string();
-    config.matchmaking.state_prefix = "— ".to_string();
-    config.r#match.state_prefix = ">> ".to_string();
-    config.spectating.match_id_prefix = "# ".to_string();
-    config.post_match.state_prefix = "✓ ".to_string();
-
-    assert!(config.validate().is_ok());
-}
-
-#[test]
-fn presence_prefixes_reject_more_than_sixty_four_characters() {
-    let mut config = DiscordPresenceConfig::default();
-    config.r#match.state_prefix = "x".repeat(65);
-
-    assert!(config.validate().is_err());
-}
-
-#[test]
-fn presence_prefixes_reject_line_breaks_and_nul() {
-    for invalid in ["hello\n", "hello\r", "hello\0"] {
+    #[test]
+    fn all_presence_prefixes_validate_and_round_trip() {
         let mut config = DiscordPresenceConfig::default();
-        config.spectating.match_id_prefix = invalid.to_string();
+        config.global.preview_prefix = "★ ".to_string();
+        config.hideout.state_prefix = "› ".to_string();
+        config.explore_nyc.district_prefix = "• ".to_string();
+        config.main_menu.state_prefix = "· ".to_string();
+        config.matchmaking.state_prefix = "— ".to_string();
+        config.r#match.state_prefix = ">> ".to_string();
+        config.spectating.match_id_prefix = "# ".to_string();
+        config.post_match.state_prefix = "✓ ".to_string();
+
+        assert!(config.validate().is_ok());
+        let serialized = serde_json::to_string(&config).unwrap();
+        let restored: DiscordPresenceConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored, config);
+    }
+
+    #[test]
+    fn presence_prefixes_reject_more_than_sixty_four_characters() {
+        let mut config = DiscordPresenceConfig::default();
+        config.r#match.state_prefix = "x".repeat(65);
 
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn presence_prefixes_reject_line_breaks_and_nul() {
+        for invalid in ["hello\n", "hello\r", "hello\0"] {
+            let mut config = DiscordPresenceConfig::default();
+            config.spectating.match_id_prefix = invalid.to_string();
+
+            assert!(config.validate().is_err());
+        }
     }
 }

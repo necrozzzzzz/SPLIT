@@ -25,11 +25,12 @@ import yamatoUrl from "../assets/discord-preview/yamato.png?url";
 type PartyDisplay = "compact" | "discord" | "hidden";
 
 type DiscordPresenceConfig = {
-  global: { enabled: boolean; showElapsedTime: boolean };
+  global: { enabled: boolean; showElapsedTime: boolean; previewPrefix: string };
   hideout: {
     useOfficialHeroPhrase: boolean;
     showHeroImage: boolean;
     partyDisplay: PartyDisplay;
+    statePrefix: string;
   };
   exploreNyc: {
     showHeroInDetails: boolean;
@@ -39,11 +40,11 @@ type DiscordPresenceConfig = {
     partyDisplay: PartyDisplay;
   };
   loading: { showLoadingState: boolean; useDeadlockLogo: boolean };
-  mainMenu: { useDeadlockLogo: boolean; partyDisplay: PartyDisplay };
-  matchmaking: { partyDisplay: PartyDisplay };
-  match: { showHeroImage: boolean; partyDisplay: PartyDisplay };
-  spectating: { showMatchId: boolean; partyDisplay: PartyDisplay };
-  postMatch: { partyDisplay: PartyDisplay };
+  mainMenu: { useDeadlockLogo: boolean; partyDisplay: PartyDisplay; statePrefix: string };
+  matchmaking: { partyDisplay: PartyDisplay; statePrefix: string };
+  match: { showHeroImage: boolean; partyDisplay: PartyDisplay; statePrefix: string };
+  spectating: { showMatchId: boolean; matchIdPrefix: string };
+  postMatch: { partyDisplay: PartyDisplay; statePrefix: string };
 };
 
 type PresenceSection = keyof DiscordPresenceConfig;
@@ -257,14 +258,102 @@ function compactState(state: string, display: PartyDisplay): string {
   return display === "compact" ? `${state} \u00b7 1/6` : state;
 }
 
-function previewFor(section: PresenceSection, config: DiscordPresenceConfig) {
+function PrefixSelector({
+  disabled = false,
+  label,
+  onChange,
+  onPreviewChange,
+  value,
+}: {
+  disabled?: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  onPreviewChange: (value: string | null) => void;
+  value: string;
+}) {
+  const [customSelected, setCustomSelected] = useState(
+    !PREFIX_PRESETS.some((preset) => preset.value === value),
+  );
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+    setCustomSelected(!PREFIX_PRESETS.some((preset) => preset.value === value));
+  }, [value]);
+
+  return (
+    <fieldset className="drp-prefix-fieldset" disabled={disabled}>
+      <legend>{label}</legend>
+      <div className="drp-prefix-presets">
+        {PREFIX_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            className={!customSelected && value === preset.value ? "active" : ""}
+            onClick={() => {
+              setCustomSelected(false);
+              setDraft(preset.value);
+              onPreviewChange(null);
+              onChange(preset.value);
+            }}
+          >
+            {preset.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={customSelected ? "active" : ""}
+          onClick={() => {
+            setCustomSelected(true);
+            setDraft(value);
+            onPreviewChange(value);
+          }}
+        >
+          Custom
+        </button>
+      </div>
+      {customSelected ? (
+        <label className="drp-custom-prefix">
+          <span>Custom prefix</span>
+          <input
+            type="text"
+            maxLength={64}
+            value={draft}
+            placeholder="Enter a short prefix"
+            onChange={(event) => {
+              const next = event.currentTarget.value;
+              setDraft(next);
+              onPreviewChange(next);
+            }}
+            onBlur={() => {
+              if (draft !== value) onChange(draft);
+              onPreviewChange(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+        </label>
+      ) : null}
+    </fieldset>
+  );
+}
+
+function previewFor(
+  section: PresenceSection,
+  config: DiscordPresenceConfig,
+  prefixPreview: string | null,
+) {
   switch (section) {
     case "hideout":
       return {
         details: config.hideout.useOfficialHeroPhrase
           ? SESSION_PREVIEW_HERO.hideoutPhrase
           : "Deadlock",
-        state: compactState("Hideout", config.hideout.partyDisplay),
+        state: compactState(
+          `${prefixPreview ?? config.hideout.statePrefix}Hideout`,
+          config.hideout.partyDisplay,
+        ),
         imageUrl: config.hideout.showHeroImage
           ? SESSION_PREVIEW_HERO.imageUrl
           : deadlockLogoUrl,
@@ -277,7 +366,7 @@ function previewFor(section: PresenceSection, config: DiscordPresenceConfig) {
           : "Exploring NYC",
         state: compactState(
           config.exploreNyc.showDistrict
-            ? `${config.exploreNyc.districtPrefix}Haunted Lot`
+            ? `${prefixPreview ?? config.exploreNyc.districtPrefix}Haunted Lot`
             : "Explore NYC",
           config.exploreNyc.partyDisplay,
         ),
@@ -294,24 +383,30 @@ function previewFor(section: PresenceSection, config: DiscordPresenceConfig) {
     case "mainMenu":
       return {
         details: "Deadlock",
-        state: compactState("In Menu", config.mainMenu.partyDisplay),
+        state: compactState(
+          `${prefixPreview ?? config.mainMenu.statePrefix}In Menu`,
+          config.mainMenu.partyDisplay,
+        ),
         imageUrl: config.mainMenu.useDeadlockLogo ? deadlockLogoUrl : null,
         party: config.mainMenu.partyDisplay === "discord",
       };
     case "matchmaking":
       return {
         details: "Searching for Match",
-        state: compactState("Matchmaking", config.matchmaking.partyDisplay),
+        state: compactState(
+          `${prefixPreview ?? config.matchmaking.statePrefix}Matchmaking`,
+          config.matchmaking.partyDisplay,
+        ),
         imageUrl: deadlockLogoUrl,
         party: config.matchmaking.partyDisplay === "discord",
       };
     case "match":
       return {
         details: "In Match",
-        state:
-          config.match.partyDisplay === "compact"
-            ? `Playing as ${SESSION_PREVIEW_HERO.name} · 1/6`
-            : `Playing as ${SESSION_PREVIEW_HERO.name}`,
+        state: compactState(
+          `${prefixPreview ?? config.match.statePrefix}Playing as ${SESSION_PREVIEW_HERO.name}`,
+          config.match.partyDisplay,
+        ),
         imageUrl: config.match.showHeroImage
           ? SESSION_PREVIEW_HERO.imageUrl
           : deadlockLogoUrl,
@@ -320,21 +415,26 @@ function previewFor(section: PresenceSection, config: DiscordPresenceConfig) {
     case "spectating":
       return {
         details: "Spectating a game",
-        state: config.spectating.showMatchId ? "Match 110501755" : "",
+        state: config.spectating.showMatchId
+          ? `${prefixPreview ?? config.spectating.matchIdPrefix}Match 110501755`
+          : "",
         imageUrl: deadlockLogoUrl,
         party: false,
       };
     case "postMatch":
       return {
         details: "Post Match",
-        state: compactState("Deadlock", config.postMatch.partyDisplay),
+        state: compactState(
+          `${prefixPreview ?? config.postMatch.statePrefix}Deadlock`,
+          config.postMatch.partyDisplay,
+        ),
         imageUrl: deadlockLogoUrl,
         party: config.postMatch.partyDisplay === "discord",
       };
     default:
       return {
         details: "Deadlock",
-        state: "In Menu",
+        state: `${prefixPreview ?? config.global.previewPrefix}In Menu`,
         imageUrl: deadlockLogoUrl,
         party: false,
       };
@@ -347,8 +447,7 @@ export default function DiscordPresenceSettings() {
   const [error, setError] = useState<string | null>(null);
   const [pendingSaves, setPendingSaves] = useState(0);
   const [resetting, setResetting] = useState(false);
-  const [customPrefix, setCustomPrefix] = useState("");
-  const [customPrefixSelected, setCustomPrefixSelected] = useState(false);
+  const [prefixPreview, setPrefixPreview] = useState<string | null>(null);
   const configRef = useRef<DiscordPresenceConfig | null>(null);
   const confirmedConfigRef = useRef<DiscordPresenceConfig | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -373,15 +472,6 @@ export default function DiscordPresenceSettings() {
       disposed = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!config) return;
-    const isPreset = PREFIX_PRESETS.some(
-      (preset) => preset.value === config.exploreNyc.districtPrefix,
-    );
-    setCustomPrefix(config.exploreNyc.districtPrefix);
-    setCustomPrefixSelected(!isPreset);
-  }, [config?.exploreNyc.districtPrefix]);
 
   const saveConfig = useCallback((next: DiscordPresenceConfig) => {
     const revision = ++latestRevisionRef.current;
@@ -459,12 +549,6 @@ export default function DiscordPresenceSettings() {
     }
   }, []);
 
-  const commitCustomPrefix = useCallback(() => {
-    if (!configRef.current || !customPrefixSelected) return;
-    if (configRef.current.exploreNyc.districtPrefix === customPrefix) return;
-    updateSection("exploreNyc", { districtPrefix: customPrefix });
-  }, [customPrefix, customPrefixSelected, updateSection]);
-
   if (!config) {
     return (
       <section className="drp-settings-shell" aria-busy="true">
@@ -477,16 +561,7 @@ export default function DiscordPresenceSettings() {
     );
   }
 
-  const previewConfig = customPrefixSelected
-    ? {
-        ...config,
-        exploreNyc: {
-          ...config.exploreNyc,
-          districtPrefix: customPrefix,
-        },
-      }
-    : config;
-  const preview = previewFor(activeSection, previewConfig);
+  const preview = previewFor(activeSection, config, prefixPreview);
   const activeLabel =
     SECTIONS.find((section) => section.key === activeSection)?.label ?? "Global";
   const districtControlsDisabled = !config.exploreNyc.showDistrict;
@@ -533,7 +608,10 @@ export default function DiscordPresenceSettings() {
               type="button"
               className={activeSection === section.key ? "active" : ""}
               aria-current={activeSection === section.key ? "page" : undefined}
-              onClick={() => setActiveSection(section.key)}
+              onClick={() => {
+                setPrefixPreview(null);
+                setActiveSection(section.key);
+              }}
             >
               {section.label}
             </button>
@@ -574,6 +652,12 @@ export default function DiscordPresenceSettings() {
                       updateSection("global", { showElapsedTime })
                     }
                   />
+                  <PrefixSelector
+                    label="State prefix"
+                    value={config.global.previewPrefix}
+                    onChange={(previewPrefix) => updateSection("global", { previewPrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
                 </>
               ) : null}
 
@@ -589,6 +673,12 @@ export default function DiscordPresenceSettings() {
                   />
                   <ToggleRow label="Show hero image" checked={config.hideout.showHeroImage} onChange={(showHeroImage) => updateSection("hideout", { showHeroImage })} />
                   <PartyDisplayRow value={config.hideout.partyDisplay} onChange={(partyDisplay) => updateSection("hideout", { partyDisplay })} />
+                  <PrefixSelector
+                    label="State prefix"
+                    value={config.hideout.statePrefix}
+                    onChange={(statePrefix) => updateSection("hideout", { statePrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
                 </>
               ) : null}
 
@@ -598,50 +688,13 @@ export default function DiscordPresenceSettings() {
                   <ToggleRow label="Show district" checked={config.exploreNyc.showDistrict} onChange={(showDistrict) => updateSection("exploreNyc", { showDistrict })} />
                   <ToggleRow label="Show district image" checked={config.exploreNyc.showDistrictImage} disabled={districtControlsDisabled} onChange={(showDistrictImage) => updateSection("exploreNyc", { showDistrictImage })} />
                   <PartyDisplayRow value={config.exploreNyc.partyDisplay} onChange={(partyDisplay) => updateSection("exploreNyc", { partyDisplay })} />
-                  <fieldset className="drp-prefix-fieldset" disabled={districtControlsDisabled}>
-                    <legend>District prefix</legend>
-                    <div className="drp-prefix-presets">
-                      {PREFIX_PRESETS.map((preset) => (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          className={!customPrefixSelected && config.exploreNyc.districtPrefix === preset.value ? "active" : ""}
-                          onClick={() => {
-                            setCustomPrefixSelected(false);
-                            updateSection("exploreNyc", { districtPrefix: preset.value });
-                          }}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className={customPrefixSelected ? "active" : ""}
-                        onClick={() => {
-                          setCustomPrefix(config.exploreNyc.districtPrefix);
-                          setCustomPrefixSelected(true);
-                        }}
-                      >
-                        Custom
-                      </button>
-                    </div>
-                    {customPrefixSelected ? (
-                      <label className="drp-custom-prefix">
-                        <span>Custom prefix</span>
-                        <input
-                          type="text"
-                          maxLength={64}
-                          value={customPrefix}
-                          placeholder="Enter a short prefix"
-                          onChange={(event) => setCustomPrefix(event.currentTarget.value)}
-                          onBlur={commitCustomPrefix}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") event.currentTarget.blur();
-                          }}
-                        />
-                      </label>
-                    ) : null}
-                  </fieldset>
+                  <PrefixSelector
+                    label="District prefix"
+                    value={config.exploreNyc.districtPrefix}
+                    disabled={districtControlsDisabled}
+                    onChange={(districtPrefix) => updateSection("exploreNyc", { districtPrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
                 </>
               ) : null}
 
@@ -656,27 +709,60 @@ export default function DiscordPresenceSettings() {
                 <>
                   <ToggleRow label="Use Deadlock logo" checked={config.mainMenu.useDeadlockLogo} onChange={(useDeadlockLogo) => updateSection("mainMenu", { useDeadlockLogo })} />
                   <PartyDisplayRow value={config.mainMenu.partyDisplay} onChange={(partyDisplay) => updateSection("mainMenu", { partyDisplay })} />
+                  <PrefixSelector
+                    label="State prefix"
+                    value={config.mainMenu.statePrefix}
+                    onChange={(statePrefix) => updateSection("mainMenu", { statePrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
                 </>
               ) : null}
 
-              {activeSection === "matchmaking" ? <PartyDisplayRow value={config.matchmaking.partyDisplay} onChange={(partyDisplay) => updateSection("matchmaking", { partyDisplay })} /> : null}
+              {activeSection === "matchmaking" ? (
+                <>
+                  <PartyDisplayRow value={config.matchmaking.partyDisplay} onChange={(partyDisplay) => updateSection("matchmaking", { partyDisplay })} />
+                  <PrefixSelector
+                    label="State prefix"
+                    value={config.matchmaking.statePrefix}
+                    onChange={(statePrefix) => updateSection("matchmaking", { statePrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
+                </>
+              ) : null}
               {activeSection === "match" ? (
                 <>
                   <ToggleRow label="Show hero image" checked={config.match.showHeroImage} onChange={(showHeroImage) => updateSection("match", { showHeroImage })} />
                   <PartyDisplayRow value={config.match.partyDisplay} onChange={(partyDisplay) => updateSection("match", { partyDisplay })} />
+                  <PrefixSelector
+                    label="Hero text prefix"
+                    value={config.match.statePrefix}
+                    onChange={(statePrefix) => updateSection("match", { statePrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
                 </>
               ) : null}
               {activeSection === "spectating" ? (
                 <>
                   <ToggleRow label="Show match ID" checked={config.spectating.showMatchId} onChange={(showMatchId) => updateSection("spectating", { showMatchId })} />
-                  <PartyDisplayRow
-                    value={config.spectating.partyDisplay}
-                    onChange={(partyDisplay) => updateSection("spectating", { partyDisplay })}
-                    helper="Applies to normal spectating. Public broadcast spectating does not expose party size."
+                  <PrefixSelector
+                    label="Match ID prefix"
+                    value={config.spectating.matchIdPrefix}
+                    onChange={(matchIdPrefix) => updateSection("spectating", { matchIdPrefix })}
+                    onPreviewChange={setPrefixPreview}
                   />
                 </>
               ) : null}
-              {activeSection === "postMatch" ? <PartyDisplayRow value={config.postMatch.partyDisplay} onChange={(partyDisplay) => updateSection("postMatch", { partyDisplay })} /> : null}
+              {activeSection === "postMatch" ? (
+                <>
+                  <PartyDisplayRow value={config.postMatch.partyDisplay} onChange={(partyDisplay) => updateSection("postMatch", { partyDisplay })} />
+                  <PrefixSelector
+                    label="State prefix"
+                    value={config.postMatch.statePrefix}
+                    onChange={(statePrefix) => updateSection("postMatch", { statePrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
+                </>
+              ) : null}
             </div>
           </div>
 

@@ -1117,6 +1117,8 @@ mod tests {
         let mut presence = DiscordPresenceConfig::default();
         presence.explore_nyc.district_prefix = "• ".to_string();
         presence.hideout.party_display = crate::discord::PartyDisplay::Hidden;
+        presence.hideout.state_prefix = "› ".to_string();
+        presence.spectating.match_id_prefix = "# ".to_string();
         save_discord_presence_config_at_path(&path, presence).unwrap();
 
         let saved_json: serde_json::Value =
@@ -1127,7 +1129,6 @@ mod tests {
             "mainMenu",
             "matchmaking",
             "match",
-            "spectating",
             "postMatch",
         ] {
             assert!(saved_json["discordPresence"][section]
@@ -1137,6 +1138,20 @@ mod tests {
                 .get("showParty")
                 .is_none());
         }
+        assert_eq!(
+            saved_json["discordPresence"]["hideout"]["statePrefix"],
+            "› "
+        );
+        assert_eq!(
+            saved_json["discordPresence"]["spectating"]["matchIdPrefix"],
+            "# "
+        );
+        assert!(saved_json["discordPresence"]["spectating"]
+            .get("partyDisplay")
+            .is_none());
+        assert!(saved_json["discordPresence"]["spectating"]
+            .get("showParty")
+            .is_none());
 
         let section_reset =
             reset_discord_presence_config_at_path(&path, Some(DiscordPresenceSection::ExploreNyc))
@@ -1146,6 +1161,8 @@ mod tests {
             section_reset.hideout.party_display,
             crate::discord::PartyDisplay::Hidden
         );
+        assert_eq!(section_reset.hideout.state_prefix, "› ");
+        assert_eq!(section_reset.spectating.match_id_prefix, "# ");
 
         let full_reset = reset_discord_presence_config_at_path(&path, None).unwrap();
         assert_eq!(full_reset, DiscordPresenceConfig::default());

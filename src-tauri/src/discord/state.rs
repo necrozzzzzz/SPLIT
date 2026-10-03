@@ -142,10 +142,14 @@ impl PresenceModel {
         let party_size = normalize_party_size(state.party_size, state.party_max);
         let party_max = state.party_max.max(1);
         let (mut details, mut presence_state) = match resolved_phase {
-            ResolvedPhase::MainMenu => ("Deadlock".to_string(), "In Menu".to_string()),
-            ResolvedPhase::Matchmaking => {
-                ("Searching for Match".to_string(), "Matchmaking".to_string())
-            }
+            ResolvedPhase::MainMenu => (
+                "Deadlock".to_string(),
+                format!("{}In Menu", config.main_menu.state_prefix),
+            ),
+            ResolvedPhase::Matchmaking => (
+                "Searching for Match".to_string(),
+                format!("{}Matchmaking", config.matchmaking.state_prefix),
+            ),
             ResolvedPhase::Hideout => (
                 config
                     .hideout
@@ -154,7 +158,7 @@ impl PresenceModel {
                     .flatten()
                     .unwrap_or("Deadlock")
                     .to_string(),
-                "Hideout".to_string(),
+                format!("{}Hideout", config.hideout.state_prefix),
             ),
             ResolvedPhase::ExploreNyc => (
                 config
@@ -182,10 +186,11 @@ impl PresenceModel {
             ResolvedPhase::Loading => ("Deadlock".to_string(), "Loading...".to_string()),
             ResolvedPhase::TransitionLoading => ("Deadlock".to_string(), "Loading...".to_string()),
             ResolvedPhase::InMatch => {
-                let base = match hero {
+                let hero_text = match hero {
                     Some(metadata) => format!("Playing as {}", metadata.artwork.text),
                     None => "Playing".to_string(),
                 };
+                let base = format!("{}{hero_text}", config.r#match.state_prefix);
                 let presence_state = if config.r#match.party_display == PartyDisplay::Compact {
                     format!("{base} · {party_size}/{party_max}")
                 } else {
@@ -193,7 +198,10 @@ impl PresenceModel {
                 };
                 ("In Match".to_string(), presence_state)
             }
-            ResolvedPhase::PostMatch => ("Post Match".to_string(), "Deadlock".to_string()),
+            ResolvedPhase::PostMatch => (
+                "Post Match".to_string(),
+                format!("{}Deadlock", config.post_match.state_prefix),
+            ),
             ResolvedPhase::Spectating => (
                 "Spectating a game".to_string(),
                 (console.broadcast_active && config.spectating.show_match_id)
@@ -201,7 +209,9 @@ impl PresenceModel {
                         console
                             .spectating_match_id
                             .filter(|match_id| *match_id != 0)
-                            .map(|match_id| format!("Match {match_id}"))
+                            .map(|match_id| {
+                                format!("{}Match {match_id}", config.spectating.match_id_prefix)
+                            })
                     })
                     .flatten()
                     .unwrap_or_default(),
@@ -745,7 +755,7 @@ fn party_display_for_phase(
         ResolvedPhase::ExploreNyc => Some(config.explore_nyc.party_display),
         ResolvedPhase::InMatch => Some(config.r#match.party_display),
         ResolvedPhase::PostMatch => Some(config.post_match.party_display),
-        ResolvedPhase::Spectating => Some(config.spectating.party_display),
+        ResolvedPhase::Spectating => None,
         ResolvedPhase::Sandbox | ResolvedPhase::Loading | ResolvedPhase::TransitionLoading => None,
     }
 }
@@ -1131,23 +1141,23 @@ mod tests {
         );
 
         let plaza = snapshot_with_district(memory, &explore, Some(8));
-        assert_eq!(plaza.state, "› Plaza");
+        assert_eq!(plaza.state, "› Plaza · 2/6");
         assert_eq!(plaza.large_image, "plaza");
 
         let docks = snapshot_with_district(memory, &explore, Some(3));
-        assert_eq!(docks.state, "› York : Docks");
+        assert_eq!(docks.state, "› York : Docks · 2/6");
         assert_eq!(docks.large_image, "york_docks");
 
         let known = snapshot_with_district(memory, &explore, Some(13));
         assert_eq!(known.resolved_phase, ResolvedPhase::ExploreNyc);
         assert_eq!(
             (known.details.as_str(), known.state.as_str()),
-            ("Exploring NYC", "› York : Factory")
+            ("Exploring NYC", "› York : Factory · 2/6")
         );
         assert_eq!(known.large_image, "york_factory");
 
         let uptown = snapshot_with_district(memory, &explore, Some(15));
-        assert_eq!(uptown.state, "› Broadway : Uptown");
+        assert_eq!(uptown.state, "› Broadway : Uptown · 2/6");
         assert_eq!(uptown.large_image, "broadway_uptown");
         assert!(presence_changed(Some(&docks), Some(&uptown)));
 
@@ -1155,7 +1165,7 @@ mod tests {
             let fallback = snapshot_with_district(memory, &explore, unknown);
             assert_eq!(
                 (fallback.details.as_str(), fallback.state.as_str()),
-                ("Exploring NYC", "Explore NYC")
+                ("Exploring NYC", "Explore NYC · 2/6")
             );
             assert_eq!(fallback.large_image, "explore_nyc_default");
             assert!(presence_changed(Some(&known), Some(&fallback)));
@@ -1179,12 +1189,12 @@ mod tests {
 
         let docks = snapshot_with_district(memory, &explore, Some(3));
         assert_eq!(docks.details, "Exploring NYC with Rat King");
-        assert_eq!(docks.state, "› York : Docks");
+        assert_eq!(docks.state, "› York : Docks · 2/6");
         assert_eq!(docks.large_image, "york_docks");
 
         let factory = snapshot_with_district(memory, &explore, Some(13));
         assert_eq!(factory.details, "Exploring NYC with Rat King");
-        assert_eq!(factory.state, "› York : Factory");
+        assert_eq!(factory.state, "› York : Factory · 2/6");
         assert_eq!(factory.large_image, "york_factory");
         assert!(presence_changed(Some(&docks), Some(&factory)));
 
@@ -1243,7 +1253,7 @@ mod tests {
                     "Map(dl_hideout)",
                 ),
                 ResolvedPhase::Hideout,
-                ("Deadlock", "Hideout"),
+                ("Deadlock", "Hideout · 2/6"),
             ),
             (
                 console_with_server(
@@ -1282,7 +1292,7 @@ mod tests {
             assert_eq!(result.evidence, "GCStartMatchmaking");
             assert_eq!(
                 (result.details.as_str(), result.state.as_str()),
-                ("Searching for Match", "Matchmaking")
+                ("Searching for Match", "Matchmaking · 2/6")
             );
         }
     }
@@ -1382,7 +1392,7 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_spectating_shows_optional_match_id_and_suppresses_all_party_modes() {
+    fn broadcast_spectating_shows_optional_prefixed_match_id_without_party() {
         let mut console = console_with_server(
             ConsolePhase::Spectating,
             Some("dl_midtown"),
@@ -1398,33 +1408,16 @@ mod tests {
             MatchMode::Ranked,
             GameMode::Normal,
         );
-        for display in [
-            PartyDisplay::Compact,
-            PartyDisplay::Discord,
-            PartyDisplay::Hidden,
-        ] {
-            let mut config = DiscordPresenceConfig::default();
-            config.spectating.party_display = display;
-            let result = PresenceModel::default()
-                .observe_with_console_and_district_at_config(
-                    true,
-                    Some(memory),
-                    &console,
-                    Some(8),
-                    100,
-                    Instant::now(),
-                    &config,
-                )
-                .unwrap();
-
-            assert_eq!(result.resolved_phase, ResolvedPhase::Spectating);
-            assert_eq!(result.details, "Spectating a game");
-            assert_eq!(result.state, "Match 110501755");
-            assert!(result.show_state);
-            assert_eq!(result.current_hero, None);
-            assert_eq!(result.large_image, "deadlock_logo");
-            assert!(!result.show_party);
-        }
+        let mut config = DiscordPresenceConfig::default();
+        config.spectating.match_id_prefix = "› ".to_string();
+        let result = snapshot_with_config(memory, &console, &config);
+        assert_eq!(result.resolved_phase, ResolvedPhase::Spectating);
+        assert_eq!(result.details, "Spectating a game");
+        assert_eq!(result.state, "› Match 110501755");
+        assert!(result.show_state);
+        assert_eq!(result.current_hero, None);
+        assert_eq!(result.large_image, "deadlock_logo");
+        assert!(!result.show_party);
 
         let mut hidden_id = DiscordPresenceConfig::default();
         hidden_id.spectating.show_match_id = false;
@@ -1444,33 +1437,96 @@ mod tests {
     }
 
     #[test]
-    fn normal_spectating_respects_all_party_display_modes() {
-        let console = console(
-            ConsolePhase::Spectating,
+    fn configured_prefixes_preserve_details_and_native_or_hidden_party_modes() {
+        let idle = deadlock_state(
+            DeadlockActivity::Idle,
+            MatchMode::Invalid,
+            GameMode::Invalid,
+        );
+        let mut config = DiscordPresenceConfig::default();
+        config.hideout.state_prefix = "H: ".to_string();
+        config.hideout.party_display = PartyDisplay::Discord;
+        config.main_menu.state_prefix = "M: ".to_string();
+        config.main_menu.party_display = PartyDisplay::Discord;
+        config.matchmaking.state_prefix = "Q: ".to_string();
+        config.matchmaking.party_display = PartyDisplay::Discord;
+        config.r#match.state_prefix = "G: ".to_string();
+        config.r#match.party_display = PartyDisplay::Discord;
+        config.post_match.state_prefix = "P: ".to_string();
+        config.post_match.party_display = PartyDisplay::Discord;
+
+        let mut hideout = console_with_server(
+            ConsolePhase::Hideout,
+            Some("dl_hideout"),
+            ServerKind::Local,
+            "Map(dl_hideout)",
+        );
+        hideout.current_hero = Some("priest".to_string());
+        let hideout = snapshot_with_config(idle, &hideout, &config);
+        assert_eq!(hideout.details, "Blessing Ammunition in the Hideout");
+        assert_eq!(hideout.state, "H: Hideout");
+        assert!(hideout.show_party);
+
+        let menu = snapshot_with_config(
+            idle,
+            &console(ConsolePhase::MainMenu, None, "LoopMode(menu)"),
+            &config,
+        );
+        assert_eq!(
+            (menu.details.as_str(), menu.state.as_str()),
+            ("Deadlock", "M: In Menu")
+        );
+        assert!(menu.show_party);
+
+        let matchmaking = snapshot_with_config(
+            idle,
+            &active_matchmaking_console("dl_hideout", ServerKind::Local),
+            &config,
+        );
+        assert_eq!(matchmaking.details, "Searching for Match");
+        assert_eq!(matchmaking.state, "Q: Matchmaking");
+        assert!(matchmaking.show_party);
+
+        let mut match_console = console_with_server(
+            ConsolePhase::InMatch,
             Some("dl_midtown"),
-            "PlayingBroadcast",
+            ServerKind::Remote,
+            "ChangeGameState(7)",
         );
-        let memory = deadlock_state(
-            DeadlockActivity::InMatch,
-            MatchMode::Unranked,
-            GameMode::Normal,
+        match_console.current_hero = Some("priest".to_string());
+        let in_match = snapshot_with_config(
+            deadlock_state(
+                DeadlockActivity::InMatch,
+                MatchMode::Unranked,
+                GameMode::Normal,
+            ),
+            &match_console,
+            &config,
         );
+        assert_eq!(in_match.details, "In Match");
+        assert_eq!(in_match.state, "G: Playing as Venator");
+        assert!(in_match.show_party);
 
-        let mut compact_config = DiscordPresenceConfig::default();
-        compact_config.spectating.party_display = PartyDisplay::Compact;
-        let compact = snapshot_with_config(memory, &console, &compact_config);
-        assert_eq!(compact.details, "Spectating a game \u{00B7} 2/6");
-        assert_eq!(compact.state, "");
-        assert!(!compact.show_party);
+        let post_match = snapshot_with_config(
+            idle,
+            &console(ConsolePhase::PostMatch, None, "ChangeGameState(6)"),
+            &config,
+        );
+        assert_eq!(post_match.details, "Post Match");
+        assert_eq!(post_match.state, "P: Deadlock");
+        assert!(post_match.show_party);
 
-        let discord = snapshot_with_config(memory, &console, &DiscordPresenceConfig::default());
-        assert_eq!(discord.details, "Spectating a game");
-        assert!(discord.show_party);
-
-        let mut hidden_config = DiscordPresenceConfig::default();
-        hidden_config.spectating.party_display = PartyDisplay::Hidden;
-        let hidden = snapshot_with_config(memory, &console, &hidden_config);
-        assert_eq!(hidden.details, "Spectating a game");
+        config.r#match.party_display = PartyDisplay::Hidden;
+        let hidden = snapshot_with_config(
+            deadlock_state(
+                DeadlockActivity::InMatch,
+                MatchMode::Unranked,
+                GameMode::Normal,
+            ),
+            &match_console,
+            &config,
+        );
+        assert_eq!(hidden.state, "G: Playing as Venator");
         assert!(!hidden.show_party);
     }
 
@@ -1487,12 +1543,16 @@ mod tests {
         config.main_menu.party_display = PartyDisplay::Compact;
         config.matchmaking.party_display = PartyDisplay::Compact;
         config.post_match.party_display = PartyDisplay::Compact;
+        config.hideout.state_prefix = "H: ".to_string();
+        config.main_menu.state_prefix = "M: ".to_string();
+        config.matchmaking.state_prefix = "Q: ".to_string();
+        config.post_match.state_prefix = "P: ".to_string();
 
         let cases = [
             (
                 console(ConsolePhase::MainMenu, None, "LoopMode(menu)"),
                 None,
-                "In Menu \u{00B7} 2/6",
+                "M: In Menu \u{00B7} 2/6",
             ),
             (
                 console_with_server(
@@ -1502,7 +1562,7 @@ mod tests {
                     "Map(dl_hideout)",
                 ),
                 None,
-                "Hideout \u{00B7} 2/6",
+                "H: Hideout \u{00B7} 2/6",
             ),
             (
                 console_with_server(
@@ -1517,12 +1577,12 @@ mod tests {
             (
                 active_matchmaking_console("dl_hideout", ServerKind::Local),
                 None,
-                "Matchmaking \u{00B7} 2/6",
+                "Q: Matchmaking \u{00B7} 2/6",
             ),
             (
                 console(ConsolePhase::PostMatch, None, "ChangeGameState(6)"),
                 None,
-                "Deadlock \u{00B7} 2/6",
+                "P: Deadlock \u{00B7} 2/6",
             ),
         ];
 
@@ -1541,6 +1601,54 @@ mod tests {
             assert_eq!(result.state, expected_state);
             assert!(!result.show_party);
         }
+
+        config.r#match.state_prefix = "G: ".to_string();
+        let in_match = snapshot_with_config(
+            deadlock_state(
+                DeadlockActivity::InMatch,
+                MatchMode::Unranked,
+                GameMode::Normal,
+            ),
+            &console_with_server(
+                ConsolePhase::InMatch,
+                Some("dl_midtown"),
+                ServerKind::Remote,
+                "ChangeGameState(7)",
+            ),
+            &config,
+        );
+        assert_eq!(in_match.details, "In Match");
+        assert_eq!(in_match.state, "G: Playing \u{00B7} 2/6");
+        assert!(!in_match.show_party);
+    }
+
+    #[test]
+    fn global_preview_prefix_is_not_applied_at_runtime_and_loading_stays_clean() {
+        let memory = deadlock_state(
+            DeadlockActivity::Idle,
+            MatchMode::Invalid,
+            GameMode::Invalid,
+        );
+        let mut config = DiscordPresenceConfig::default();
+        config.global.preview_prefix = "Preview: ".to_string();
+        config.hideout.state_prefix = "H: ".to_string();
+        config.main_menu.party_display = PartyDisplay::Hidden;
+
+        let menu = snapshot_with_config(
+            memory,
+            &console(ConsolePhase::MainMenu, None, "LoopMode(menu)"),
+            &config,
+        );
+        assert_eq!(menu.state, "In Menu");
+
+        let loading = snapshot_with_config(
+            memory,
+            &console(ConsolePhase::Loading, None, "GCMatchFound"),
+            &config,
+        );
+        assert_eq!(loading.details, "Deadlock");
+        assert_eq!(loading.state, "Loading...");
+        assert_eq!(loading.large_image, "deadlock_logo");
     }
 
     #[test]
@@ -1688,7 +1796,7 @@ mod tests {
         );
         assert_eq!(resolved.resolved_phase, ResolvedPhase::Hideout);
         assert_eq!(resolved.details, "Mixing Drinks in the Hideout");
-        assert_eq!(resolved.state, "Hideout");
+        assert_eq!(resolved.state, "Hideout · 2/6");
         assert_eq!(resolved.large_image, "infernus");
         assert_eq!(resolved.started_at, Some(100));
     }
@@ -1743,7 +1851,7 @@ mod tests {
 
         assert_eq!(resolved.resolved_phase, ResolvedPhase::Hideout);
         assert_eq!(resolved.details, "Wishing the Hideout was on Long Island");
-        assert_eq!(resolved.state, "Hideout");
+        assert_eq!(resolved.state, "Hideout · 2/6");
         assert_eq!(resolved.large_image, "rat_king");
         assert!(!model.transition_active());
     }
@@ -1793,7 +1901,7 @@ mod tests {
         assert_eq!(expired.resolved_phase, ResolvedPhase::MainMenu);
         assert_eq!(
             (expired.details.as_str(), expired.state.as_str()),
-            ("Deadlock", "In Menu")
+            ("Deadlock", "In Menu · 2/6")
         );
     }
 
@@ -1835,7 +1943,7 @@ mod tests {
             start + Duration::from_secs(2),
         );
         assert_eq!(stable_menu.resolved_phase, ResolvedPhase::MainMenu);
-        assert_eq!(stable_menu.state, "In Menu");
+        assert_eq!(stable_menu.state, "In Menu · 2/6");
     }
 
     #[test]
@@ -2153,12 +2261,12 @@ mod tests {
 
         let infernus = snapshot(memory, &infernus_console);
         assert_eq!(infernus.details, "Mixing Drinks in the Hideout");
-        assert_eq!(infernus.state, "Hideout");
+        assert_eq!(infernus.state, "Hideout · 2/6");
         assert_eq!(infernus.large_image, "infernus");
 
         let ivy = snapshot(memory, &ivy_console);
         assert_eq!(ivy.details, "Wishing the Arroyos were in the Hideout");
-        assert_eq!(ivy.state, "Hideout");
+        assert_eq!(ivy.state, "Hideout · 2/6");
         assert_eq!(ivy.large_image, "ivy");
         assert!(presence_changed(Some(&infernus), Some(&ivy)));
     }
@@ -2175,7 +2283,7 @@ mod tests {
             hideout.current_hero = hero.map(str::to_string);
             let result = snapshot(memory, &hideout);
             assert_eq!(result.details, "Deadlock");
-            assert_eq!(result.state, "Hideout");
+            assert_eq!(result.state, "Hideout · 2/6");
             if hero == Some("baba") {
                 assert_eq!(result.large_image, "baba");
             }

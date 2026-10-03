@@ -435,12 +435,12 @@ mod tests {
 
         let docks = tick(&mut model, &explore, Some(3), 100, start);
         assert_eq!(docks.details, "Exploring NYC with Rat King");
-        assert_eq!(docks.state, "› York : Docks");
+        assert_eq!(docks.state, "› York : Docks · 1/6");
         assert_eq!(docks.large_image, "york_docks");
 
         let activity = serde_json::to_value(activity_for(&docks)).unwrap();
         assert_eq!(activity["details"], "Exploring NYC with Rat King");
-        assert_eq!(activity["state"], "› York : Docks");
+        assert_eq!(activity["state"], "› York : Docks · 1/6");
         assert_eq!(activity["assets"]["large_image"], "york_docks");
         assert!(activity.get("party").is_none());
 
@@ -452,7 +452,7 @@ mod tests {
             start + Duration::from_secs(1),
         );
         assert_eq!(uptown.details, "Exploring NYC with Rat King");
-        assert_eq!(uptown.state, "› Broadway : Uptown");
+        assert_eq!(uptown.state, "› Broadway : Uptown · 1/6");
         assert_eq!(uptown.large_image, "broadway_uptown");
 
         let explore_without_hero = console(&[
@@ -468,7 +468,7 @@ mod tests {
             start + Duration::from_secs(2),
         );
         assert_eq!(no_hero.details, "Exploring NYC");
-        assert_eq!(no_hero.state, "› York : Docks");
+        assert_eq!(no_hero.state, "› York : Docks · 1/6");
         assert_eq!(no_hero.large_image, "york_docks");
 
         let activity = serde_json::to_value(activity_for(&no_hero)).unwrap();
@@ -535,11 +535,12 @@ mod tests {
         );
         assert_eq!(resolved.resolved_phase, ResolvedPhase::Hideout);
         assert_eq!(resolved.details, "Wishing the Hideout was on Long Island");
+        assert_eq!(resolved.state, "Hideout · 1/6");
         assert_eq!(resolved.large_image, "rat_king");
         assert!(!model.transition_active());
 
         let activity = serde_json::to_value(activity_for(&resolved)).unwrap();
-        assert_eq!(activity["party"]["size"], serde_json::json!([1, 6]));
+        assert!(activity.get("party").is_none());
     }
 
     #[test]
@@ -553,7 +554,7 @@ mod tests {
             "VMDL Camera Pose Success! models/heroes/bookworm/hero.vmdl",
         ]);
         let mut config = DiscordPresenceConfig::default();
-        config.spectating.party_display = PartyDisplay::Discord;
+        config.spectating.match_id_prefix = "› ".to_string();
 
         let result = tick_with_config(
             &mut PresenceModel::default(),
@@ -565,7 +566,7 @@ mod tests {
         );
         assert_eq!(result.resolved_phase, ResolvedPhase::Spectating);
         assert_eq!(result.details, "Spectating a game");
-        assert_eq!(result.state, "Match 110501755");
+        assert_eq!(result.state, "› Match 110501755");
         assert!(result.show_state);
         assert_eq!(result.current_hero, None);
         assert_eq!(result.large_image, "deadlock_logo");
@@ -574,12 +575,11 @@ mod tests {
 
         let activity = serde_json::to_value(activity_for(&result)).unwrap();
         assert_eq!(activity["details"], "Spectating a game");
-        assert_eq!(activity["state"], "Match 110501755");
+        assert_eq!(activity["state"], "› Match 110501755");
         assert_eq!(activity["assets"]["large_image"], "deadlock_logo");
         assert!(activity.get("party").is_none());
 
         config.spectating.show_match_id = false;
-        config.spectating.party_display = PartyDisplay::Compact;
         let hidden_id = tick_with_config(
             &mut PresenceModel::default(),
             &spectating,
@@ -684,7 +684,7 @@ mod tests {
 
         assert_eq!(hideout.resolved_phase, ResolvedPhase::Hideout);
         assert_eq!(hideout.details, "Wishing the Hideout was on Long Island");
-        assert_eq!(hideout.state, "Hideout");
+        assert_eq!(hideout.state, "Hideout · 1/6");
         assert_eq!(hideout.large_image, "rat_king");
         assert!(!model.transition_active());
 
@@ -711,7 +711,7 @@ mod tests {
             after_late_disconnect.details,
             "Wishing the Hideout was on Long Island"
         );
-        assert_eq!(after_late_disconnect.state, "Hideout");
+        assert_eq!(after_late_disconnect.state, "Hideout · 1/6");
         assert_eq!(
             after_late_disconnect.current_hero.as_deref(),
             Some("ratking")
@@ -726,7 +726,7 @@ mod tests {
             activity["details"],
             "Wishing the Hideout was on Long Island"
         );
-        assert_eq!(activity["state"], "Hideout");
+        assert_eq!(activity["state"], "Hideout · 1/6");
         assert_eq!(activity["assets"]["large_image"], "rat_king");
     }
 
@@ -761,13 +761,13 @@ mod tests {
         assert_eq!(expired.resolved_phase, ResolvedPhase::MainMenu);
         assert_eq!(
             (expired.details.as_str(), expired.state.as_str()),
-            ("Deadlock", "In Menu")
+            ("Deadlock", "In Menu · 1/6")
         );
 
         let mut fresh_model = PresenceModel::default();
         let menu = tick(&mut fresh_model, &stable_menu, None, 200, start);
         assert_eq!(menu.resolved_phase, ResolvedPhase::MainMenu);
-        assert_eq!(menu.state, "In Menu");
+        assert_eq!(menu.state, "In Menu · 1/6");
         assert!(!fresh_model.transition_active());
     }
 
@@ -789,7 +789,7 @@ mod tests {
         let defaults = DiscordPresenceConfig::default();
         let current = render(&defaults, Some(6));
         assert_eq!(current.details, "Exploring NYC with Rat King");
-        assert_eq!(current.state, "› Haunted Lot");
+        assert_eq!(current.state, "› Haunted Lot · 1/6");
         assert_eq!(current.large_image, "haunted_lot");
         assert_eq!(current.started_at, Some(100));
         assert!(serde_json::to_value(activity_for(&current))
@@ -799,11 +799,11 @@ mod tests {
 
         let mut no_prefix = defaults.clone();
         no_prefix.explore_nyc.district_prefix.clear();
-        assert_eq!(render(&no_prefix, Some(6)).state, "Haunted Lot");
+        assert_eq!(render(&no_prefix, Some(6)).state, "Haunted Lot · 1/6");
 
         let mut bullet_prefix = defaults.clone();
         bullet_prefix.explore_nyc.district_prefix = "• ".to_string();
-        assert_eq!(render(&bullet_prefix, Some(6)).state, "• Haunted Lot");
+        assert_eq!(render(&bullet_prefix, Some(6)).state, "• Haunted Lot · 1/6");
 
         let mut no_hero = defaults.clone();
         no_hero.explore_nyc.show_hero_in_details = false;
@@ -811,7 +811,7 @@ mod tests {
 
         let mut no_district = defaults.clone();
         no_district.explore_nyc.show_district = false;
-        assert_eq!(render(&no_district, Some(6)).state, "Explore NYC");
+        assert_eq!(render(&no_district, Some(6)).state, "Explore NYC · 1/6");
 
         let mut no_district_image = defaults;
         no_district_image.explore_nyc.show_district_image = false;
