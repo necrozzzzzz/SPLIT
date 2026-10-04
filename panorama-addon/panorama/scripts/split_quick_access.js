@@ -16,8 +16,6 @@
         var footer = $.CreatePanel('Panel', overlay, 'SplitFooter');
         var status = $.CreatePanel('Label', overlay, 'SplitStatus');
         var interactive = false;
-        var forceVisible = true;
-        var forceVisibleHandle = null;
 
         overlay.AddClass('SplitQuickAccess');
         slots.AddClass('SplitSlots');
@@ -51,7 +49,7 @@
             visual('qa_update', 'QUICK ACCESS UPDATE RECEIVED');
             var wasInteractive = interactive;
             interactive = nextState.visibility === 'interactive';
-            overlay.style.visibility = forceVisible || nextState.visibility !== 'hidden' ? 'visible' : 'collapse';
+            overlay.style.visibility = nextState.visibility !== 'hidden' ? 'visible' : 'collapse';
             overlay.hittest = interactive;
             overlay.hittestchildren = interactive;
             parent.hittestchildren = interactive;
@@ -90,18 +88,8 @@
         }
 
         state.subscribe(render);
-        // TEMPORARY DEBUG: prove that the real Quick Access panel can render independently of bridge state.
-        visual('qa_forced', 'QA FORCED VISIBLE: true (2.5s)');
-        $.Msg('[SPLIT QUICK ACCESS] temporary forced visibility enabled for 2.5s');
-        forceVisibleHandle = $.Schedule(2.5, function () {
-            forceVisible = false;
-            visual('qa_forced', 'QA FORCED VISIBLE: false');
-            $.Msg('[SPLIT QUICK ACCESS] temporary forced visibility ended');
-            render(state.get());
-        });
         return {
             retire: function () {
-                utils.cancel(forceVisibleHandle);
                 if (interactive) utils.command('hud_free_cursor -1');
                 overlay.hittest = false;
                 overlay.hittestchildren = false;

@@ -196,25 +196,12 @@ function injectSplitIncludes(stock, includes) {
   if (/split_(?:poc|quick_access)/i.test(stock)) {
     fail("The pristine stock HUD layout already contains a SPLIT/POC include.");
   }
-  const rootPanelAnchor =
-    '\t<Panel hittest="false">\n' +
-    '\t\t<GlobalClassListener classes="gDetailView gScoreboardOpen gShopOpen gEditingBuilds gQuickbuyShopShowQueue gInCombat" />';
-
-  if (stock.split(rootPanelAnchor).length !== 2) {
-    fail("Could not find the unique active-player-stats root panel.");
-  }
-
-  const bridgeHtml =
-    '\t\t<HTML id="SplitPanoramaBridge" hittest="false" hittestchildren="false" acceptsfocus="false" ' +
-    'style="width:2px;height:2px;horizontal-align:left;vertical-align:top;position:2px 2px 0px;opacity:0.01;visibility:visible;" />';
-
   return stock
     .replace(
       styleAnchor,
       `${styleAnchor.slice(0, -"\t</styles>".length)}${includes.style}\n\t</styles>`
     )
-    .replace(scriptAnchor, `${includes.scripts}\n${scriptAnchor}`)
-    .replace(rootPanelAnchor, `${rootPanelAnchor}\n${bridgeHtml}`);
+    .replace(scriptAnchor, `${includes.scripts}\n${scriptAnchor}`);
 }
 
 async function listFiles(root) {

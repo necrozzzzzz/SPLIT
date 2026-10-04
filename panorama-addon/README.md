@@ -26,5 +26,7 @@ To install manually, copy the artifact to Deadlock's
 required. A compatible mod manager can perform these installation steps too.
 
 The desktop Panorama edition serves the bridge at
-`http://127.0.0.1:32146/bridge.html`. The legacy PNG bridge on port 32145 is not
+`http://127.0.0.1:32146/ipc/state-bit`. State is transferred in CRC-protected
+16-byte frames through a reusable pool of Panorama `Image` panels; actions use
+the same image-request mechanism. The legacy PNG bridge on port 32145 is not
 used by these files.
