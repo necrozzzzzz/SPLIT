@@ -12,7 +12,7 @@
     var FRAME_MAGIC = 0xA0;
     var FRAME_VERSION = 1;
     var FRAME_END_FLAG = 0x08;
-    var ROUND_TIMEOUT = 0.20;
+    var ROUND_TIMEOUT = 0.60;
     var ROUND_RETRY_DELAY = 0.06;
     var MAX_ROUND_RETRIES = 2;
 
@@ -91,6 +91,13 @@
         var actionImage = null;
         var loadedBits = [];
         var roundOpen = false;
+        var loadedCount = 0;
+        for (var loadedIndex = 0; loadedIndex < FRAME_BITS; loadedIndex += 1) {
+            if (loadedBits[loadedIndex]) loadedCount += 1;
+        }
+
+        visual('ipc_loaded', 'LOADED BITS ' + loadedCount);
+        $.Msg('[SPLIT IPC] round=' + round + ' loadedBits=' + loadedCount);
         var messageId = 0;
         var round = 0;
         var retry = 0;
@@ -167,6 +174,25 @@
                 }
                 bytes.push(value);
             }
+
+            var hex = '';
+            for (var hexIndex = 0; hexIndex < bytes.length; hexIndex += 1) {
+                var part = bytes[hexIndex].toString(16).toUpperCase();
+                if (part.length < 2) part = '0' + part;
+                hex += part + (hexIndex + 1 < bytes.length ? ' ' : '');
+            }
+
+            visual('ipc_bytes', 'BYTES ' + hex);
+            $.Msg('[SPLIT IPC] bytes=' + hex);
+
+            var receivedCrc = bytes[14] | (bytes[15] << 8);
+            var calculatedCrc = crc16(bytes, 14);
+
+            visual(
+                'ipc_crc_detail',
+                'CRC RX ' + receivedCrc.toString(16).toUpperCase() +
+                ' / CALC ' + calculatedCrc.toString(16).toUpperCase()
+            );
 
             var frame;
             try {
