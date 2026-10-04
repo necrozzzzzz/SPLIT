@@ -45,6 +45,7 @@
         var htmlTitleCount = 0;
         var remoteTitleReceived = false;
         var healthChecksScheduled = false;
+        var transportHost = null;
 
         function active() { return runtime.active() && utils.valid(host); }
         function now() { return new Date().getTime(); }
@@ -222,23 +223,56 @@
         }
 
         function createPanel() {
-            if (!active()) return;
-            if (utils.valid(panel)) panel.DeleteAsync(0);
-            panel = $.CreatePanel('CitadelHTMLPanel', host, 'SplitPanoramaBridge', {
-                hittest: 'false', hittestchildren: 'false', acceptsfocus: 'false'
+    if (!active()) return;
+
+    if (utils.valid(panel)) panel.DeleteAsync(0);
+    if (utils.valid(transportHost)) transportHost.DeleteAsync(0);
+
+    var gameplayHud = host.GetParent ? host.GetParent() : null;
+    if (!utils.valid(gameplayHud)) {
+        $.Warning('[SPLIT BRIDGE] gameplay HUD parent missing');
+        visual('bridge_panel', 'BRIDGE GAMEPLAY HUD MISSING');
+        return;
+    }
+
+    transportHost = $.CreatePanel('Panel', gameplayHud, 'SplitPanoramaTransportHost', {
+        hittest: 'false',
+        hittestchildren: 'false'
+    });
+
+    transportHost.hittest = false;
+    transportHost.hittestchildren = false;
+    transportHost.style.width = '2px';
+    transportHost.style.height = '2px';
+    transportHost.style.horizontalAlign = 'left';
+    transportHost.style.verticalAlign = 'top';
+    transportHost.style.position = '2px 2px 0px';
+    transportHost.style.opacity = '0.01';
+    transportHost.style.visibility = 'visible';
+    transportHost.style.overflow = 'clip';
+
+    panel = $.CreatePanel('CitadelHTMLPanel', transportHost, 'SplitPanoramaBridge', {
+                hittest: 'false',
+                hittestchildren: 'false',
+                acceptsfocus: 'false'
             });
+
             panel.hittest = false;
             panel.hittestchildren = false;
             panel.acceptsfocus = false;
-            panel.style.width = '32px';
-            panel.style.height = '32px';
+            panel.style.width = '2px';
+            panel.style.height = '2px';
             panel.style.opacity = '0.01';
             panel.style.visibility = 'visible';
+
             $.Msg('[SPLIT BRIDGE] CitadelHTMLPanel created');
             visual('bridge_panel', 'BRIDGE PANEL CREATED');
+
             $.RegisterEventHandler('HTMLTitle', panel, onTitle);
+
             $.Msg('[SPLIT BRIDGE] HTMLTitle handler registered');
             visual('bridge_handler', 'BRIDGE HANDLER REGISTERED');
+
             startBridgeAfterHostLayout(0);
         }
 
@@ -260,7 +294,7 @@
             if (!active() || state.get().visibility !== 'interactive') return;
             var query = '?action=' + action + '&nonce=' + (++nonce);
             if (slot !== undefined) query += '&slot=' + slot;
-            var request = $.CreatePanel('CitadelHTMLPanel', host, 'SplitAction' + nonce, {
+            var request = $.CreatePanel('CitadelHTMLPanel', transportHost, 'SplitAction' + nonce, {
                 hittest: 'false', hittestchildren: 'false', acceptsfocus: 'false'
             });
             request.style.width = '1px';
@@ -293,6 +327,7 @@
                 }
                 actions = [];
                 if (utils.valid(panel)) panel.DeleteAsync(0);
+                if (utils.valid(transportHost)) transportHost.DeleteAsync(0);
                 state.disconnect();
             }
         };
