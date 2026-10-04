@@ -211,13 +211,23 @@
         }
 
         function startBridgeAfterHostLayout(attempt) {
-            if (!active() || !utils.valid(panel)) return;
+            if (!active() || !utils.valid(transportHost) || !utils.valid(panel)) return;
 
-            var panelWidth = Math.round(Number(panel.actuallayoutwidth) || 0);
-            var panelHeight = Math.round(Number(panel.actuallayoutheight) || 0);
+            var width = Math.round(Number(transportHost.actuallayoutwidth) || 0);
+            var height = Math.round(Number(transportHost.actuallayoutheight) || 0);
 
-            $.Msg('[SPLIT BRIDGE] panel layout=' + panelWidth + 'x' + panelHeight);
-            visual('bridge_layout', 'BRIDGE PANEL LAYOUT: ' + panelWidth + 'x' + panelHeight);
+            if ((width <= 0 || height <= 0) && attempt < 40) {
+                layoutHandle = $.Schedule(0.05, function () {
+                    startBridgeAfterHostLayout(attempt + 1);
+                });
+                return;
+            }
+
+            $.Msg('[SPLIT BRIDGE] transport host layout=' + width + 'x' + height + ' attempt=' + attempt);
+            visual(
+                'bridge_layout',
+                'BRIDGE HOST LAYOUT: ' + width + 'x' + height + ' / TRY ' + attempt
+            );
 
             requestBridgeUrl(false);
         }
