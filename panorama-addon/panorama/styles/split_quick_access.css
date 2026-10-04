@@ -1,0 +1,28 @@
+.SplitQuickAccess {
+    width: 510px;
+    height: fit-children;
+    horizontal-align: left;
+    vertical-align: center;
+    margin-left: 24px;
+    padding: 16px;
+    flow-children: down;
+    background-color: #061615ed;
+    border: 2px solid #24b7a6;
+    border-radius: 5px;
+    visibility: collapse;
+    z-index: 9000;
+}
+
+.SplitQuickAccess.SplitInteractive { border: 2px solid #60ead7; }
+#SplitPresetName { font-size: 24px; font-weight: bold; color: white; margin-bottom: 10px; }
+.SplitSlots { width: 100%; flow-children: down; }
+.SplitSlot { width: 100%; height: 42px; flow-children: right; margin: 2px 0px; background-color: #0d2a28; }
+.SplitSlotEmpty { opacity: 0.65; }
+.SplitSlotName { width: 310px; vertical-align: center; padding-left: 10px; color: white; font-size: 17px; }
+.SplitButton { width: 82px; height: 34px; vertical-align: center; margin-right: 5px; background-color: #173f3a; border: 1px solid #3fae9f; }
+.SplitButton Label { horizontal-align: center; vertical-align: center; color: white; font-size: 13px; font-weight: bold; }
+.SplitInteractive .SplitButton:hover { background-color: #24665f; }
+.SplitDisabled { opacity: 0.35; }
+.SplitFooter { width: 100%; flow-children: right; margin-top: 10px; }
+.SplitFooter .SplitButton { width: fill-parent-flow(1); }
+.SplitStatus { color: #78d9cd; font-size: 12px; margin-top: 8px; }

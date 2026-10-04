@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:panorama-addon": "node scripts/build-panorama-addon.mjs",
     "build:borderless": "node scripts/run-edition.mjs borderless npm run build",
     "build:panorama": "node scripts/run-edition.mjs panorama npm run build",
     "tauri:build:borderless": "node scripts/build-tauri-edition.mjs borderless app",

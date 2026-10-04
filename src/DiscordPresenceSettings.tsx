@@ -32,6 +32,11 @@ type DiscordPresenceConfig = {
     partyDisplay: PartyDisplay;
     statePrefix: string;
   };
+  sandbox: {
+    showHeroImage: boolean;
+    partyDisplay: PartyDisplay;
+    statePrefix: string;
+  };
   exploreNyc: {
     showHeroInDetails: boolean;
     showDistrict: boolean;
@@ -52,6 +57,7 @@ type PresenceSection = keyof DiscordPresenceConfig;
 const SECTIONS: Array<{ key: PresenceSection; label: string }> = [
   { key: "global", label: "Global" },
   { key: "hideout", label: "Hideout" },
+  { key: "sandbox", label: "Sandbox" },
   { key: "exploreNyc", label: "Explore NYC" },
   { key: "loading", label: "Loading" },
   { key: "mainMenu", label: "Main Menu" },
@@ -358,6 +364,18 @@ function previewFor(
           ? SESSION_PREVIEW_HERO.imageUrl
           : deadlockLogoUrl,
         party: config.hideout.partyDisplay === "discord",
+      };
+    case "sandbox":
+      return {
+        details: "Sandbox",
+        state: compactState(
+          `${prefixPreview ?? config.sandbox.statePrefix}Practicing with ${SESSION_PREVIEW_HERO.name}`,
+          config.sandbox.partyDisplay,
+        ),
+        imageUrl: config.sandbox.showHeroImage
+          ? SESSION_PREVIEW_HERO.imageUrl
+          : deadlockLogoUrl,
+        party: config.sandbox.partyDisplay === "discord",
       };
     case "exploreNyc":
       return {
@@ -677,6 +695,30 @@ export default function DiscordPresenceSettings() {
                     label="State prefix"
                     value={config.hideout.statePrefix}
                     onChange={(statePrefix) => updateSection("hideout", { statePrefix })}
+                    onPreviewChange={setPrefixPreview}
+                  />
+                </>
+              ) : null}
+
+              {activeSection === "sandbox" ? (
+                <>
+                  <ToggleRow
+                    label="Show hero image"
+                    checked={config.sandbox.showHeroImage}
+                    onChange={(showHeroImage) =>
+                      updateSection("sandbox", { showHeroImage })
+                    }
+                  />
+                  <PartyDisplayRow
+                    value={config.sandbox.partyDisplay}
+                    onChange={(partyDisplay) =>
+                      updateSection("sandbox", { partyDisplay })
+                    }
+                  />
+                  <PrefixSelector
+                    label="Hero text prefix"
+                    value={config.sandbox.statePrefix}
+                    onChange={(statePrefix) => updateSection("sandbox", { statePrefix })}
                     onPreviewChange={setPrefixPreview}
                   />
                 </>

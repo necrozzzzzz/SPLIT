@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct DiscordPresenceConfig {
     pub global: GlobalPresenceConfig,
     pub hideout: HideoutPresenceConfig,
+    pub sandbox: SandboxPresenceConfig,
     pub explore_nyc: ExploreNycPresenceConfig,
     pub loading: LoadingPresenceConfig,
     pub main_menu: MainMenuPresenceConfig,
@@ -22,6 +23,7 @@ impl Default for DiscordPresenceConfig {
         Self {
             global: GlobalPresenceConfig::default(),
             hideout: HideoutPresenceConfig::default(),
+            sandbox: SandboxPresenceConfig::default(),
             explore_nyc: ExploreNycPresenceConfig::default(),
             loading: LoadingPresenceConfig::default(),
             main_menu: MainMenuPresenceConfig::default(),
@@ -52,6 +54,7 @@ impl DiscordPresenceConfig {
     pub(crate) fn validate(&self) -> Result<(), String> {
         validate_prefix("Discord global preview prefix", &self.global.preview_prefix)?;
         validate_prefix("Discord Hideout state prefix", &self.hideout.state_prefix)?;
+        validate_prefix("Discord Sandbox state prefix", &self.sandbox.state_prefix)?;
         validate_prefix("Discord district prefix", &self.explore_nyc.district_prefix)?;
         validate_prefix(
             "Discord Main Menu state prefix",
@@ -79,6 +82,7 @@ impl DiscordPresenceConfig {
         match section {
             DiscordPresenceSection::Global => self.global = defaults.global,
             DiscordPresenceSection::Hideout => self.hideout = defaults.hideout,
+            DiscordPresenceSection::Sandbox => self.sandbox = defaults.sandbox,
             DiscordPresenceSection::ExploreNyc => self.explore_nyc = defaults.explore_nyc,
             DiscordPresenceSection::Loading => self.loading = defaults.loading,
             DiscordPresenceSection::MainMenu => self.main_menu = defaults.main_menu,
@@ -95,6 +99,7 @@ impl DiscordPresenceConfig {
 pub enum DiscordPresenceSection {
     Global,
     Hideout,
+    Sandbox,
     ExploreNyc,
     Loading,
     MainMenu,
@@ -135,6 +140,24 @@ impl Default for HideoutPresenceConfig {
     fn default() -> Self {
         Self {
             use_official_hero_phrase: true,
+            show_hero_image: true,
+            party_display: PartyDisplay::Compact,
+            state_prefix: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SandboxPresenceConfig {
+    pub show_hero_image: bool,
+    pub party_display: PartyDisplay,
+    pub state_prefix: String,
+}
+
+impl Default for SandboxPresenceConfig {
+    fn default() -> Self {
+        Self {
             show_hero_image: true,
             party_display: PartyDisplay::Compact,
             state_prefix: String::new(),
@@ -560,6 +583,14 @@ mod tests {
             }
         );
         assert_eq!(
+            config.sandbox,
+            SandboxPresenceConfig {
+                show_hero_image: true,
+                party_display: PartyDisplay::Compact,
+                state_prefix: String::new(),
+            }
+        );
+        assert_eq!(
             config.explore_nyc,
             ExploreNycPresenceConfig {
                 show_hero_in_details: true,
@@ -610,6 +641,7 @@ mod tests {
         assert!(serialized.get("r#match").is_none());
         for section in [
             "hideout",
+            "sandbox",
             "exploreNyc",
             "mainMenu",
             "matchmaking",
@@ -643,12 +675,14 @@ mod tests {
         assert_eq!(config.loading, LoadingPresenceConfig::default());
         assert!(!config.r#match.show_hero_image);
         assert_eq!(config.r#match.party_display, PartyDisplay::Compact);
+        assert_eq!(config.sandbox, SandboxPresenceConfig::default());
         assert_eq!(config.explore_nyc.party_display, PartyDisplay::Compact);
         assert_eq!(config.main_menu.party_display, PartyDisplay::Compact);
         assert_eq!(config.matchmaking.party_display, PartyDisplay::Compact);
         assert_eq!(config.post_match.party_display, PartyDisplay::Compact);
         assert!(config.global.preview_prefix.is_empty());
         assert!(config.hideout.state_prefix.is_empty());
+        assert!(config.sandbox.state_prefix.is_empty());
         assert!(config.main_menu.state_prefix.is_empty());
         assert!(config.matchmaking.state_prefix.is_empty());
         assert!(config.r#match.state_prefix.is_empty());
@@ -782,6 +816,9 @@ mod tests {
         config.explore_nyc.district_prefix = "• ".to_string();
         config.hideout.party_display = PartyDisplay::Hidden;
         config.hideout.state_prefix = "H ".to_string();
+        config.sandbox.party_display = PartyDisplay::Hidden;
+        config.sandbox.show_hero_image = false;
+        config.sandbox.state_prefix = "S ".to_string();
         config.main_menu.state_prefix = "N ".to_string();
         config.matchmaking.state_prefix = "Q ".to_string();
         config.spectating.show_match_id = false;
@@ -795,6 +832,9 @@ mod tests {
 
         config.reset_section(DiscordPresenceSection::Hideout);
         assert_eq!(config.hideout, HideoutPresenceConfig::default());
+
+        config.reset_section(DiscordPresenceSection::Sandbox);
+        assert_eq!(config.sandbox, SandboxPresenceConfig::default());
 
         config.reset_section(DiscordPresenceSection::ExploreNyc);
         assert_eq!(
@@ -823,6 +863,7 @@ mod tests {
     fn every_party_section_reset_restores_its_default_mode() {
         for section in [
             DiscordPresenceSection::Hideout,
+            DiscordPresenceSection::Sandbox,
             DiscordPresenceSection::ExploreNyc,
             DiscordPresenceSection::MainMenu,
             DiscordPresenceSection::Matchmaking,
@@ -831,6 +872,7 @@ mod tests {
         ] {
             let mut config = DiscordPresenceConfig::default();
             config.hideout.party_display = PartyDisplay::Hidden;
+            config.sandbox.party_display = PartyDisplay::Hidden;
             config.explore_nyc.party_display = PartyDisplay::Hidden;
             config.main_menu.party_display = PartyDisplay::Hidden;
             config.matchmaking.party_display = PartyDisplay::Hidden;
@@ -841,6 +883,7 @@ mod tests {
             let defaults = DiscordPresenceConfig::default();
             match section {
                 DiscordPresenceSection::Hideout => assert_eq!(config.hideout, defaults.hideout),
+                DiscordPresenceSection::Sandbox => assert_eq!(config.sandbox, defaults.sandbox),
                 DiscordPresenceSection::ExploreNyc => {
                     assert_eq!(config.explore_nyc, defaults.explore_nyc)
                 }
@@ -866,6 +909,7 @@ mod tests {
         let mut config = DiscordPresenceConfig::default();
         config.global.preview_prefix = "★ ".to_string();
         config.hideout.state_prefix = "› ".to_string();
+        config.sandbox.state_prefix = "Sandbox: ".to_string();
         config.explore_nyc.district_prefix = "• ".to_string();
         config.main_menu.state_prefix = "· ".to_string();
         config.matchmaking.state_prefix = "— ".to_string();
@@ -882,7 +926,7 @@ mod tests {
     #[test]
     fn presence_prefixes_reject_more_than_sixty_four_characters() {
         let mut config = DiscordPresenceConfig::default();
-        config.r#match.state_prefix = "x".repeat(65);
+        config.sandbox.state_prefix = "x".repeat(65);
 
         assert!(config.validate().is_err());
     }

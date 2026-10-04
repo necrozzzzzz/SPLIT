@@ -3,7 +3,10 @@ mod deadlock;
 mod discord;
 mod editions;
 mod notifications;
+#[cfg(split_edition = "borderless")]
 mod panorama_bridge;
+#[cfg(split_edition = "panorama")]
+mod panorama_runtime;
 mod quick_access;
 mod storage;
 mod tray;

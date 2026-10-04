@@ -803,6 +803,16 @@ pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
     persist_slot_position(slot, position, None).map(|result| result.slots)
 }
 
+#[cfg(split_edition = "panorama")]
+pub(crate) fn load_slot_from_quick_access(slot: u8) -> Result<(), String> {
+    hotkeys::load_slot_from_ui(slot)
+}
+
+#[cfg(split_edition = "panorama")]
+pub(crate) fn save_slot_from_quick_access(app: AppHandle, slot: u8) -> Result<(), String> {
+    hotkeys::save_slot_from_ui(app, slot)
+}
+
 pub fn rename_slot(slot: u8, name: String) -> Result<SlotEditResult, String> {
     let _operation = SLOT_OPERATION_LOCK
         .lock()

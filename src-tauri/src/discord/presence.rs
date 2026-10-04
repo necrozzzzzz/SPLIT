@@ -477,6 +477,66 @@ mod tests {
     }
 
     #[test]
+    fn sandbox_party_modes_serialize_compact_discord_and_hidden_correctly() {
+        let sandbox = console(&[
+            "[Client] CL: Connected to 'loopback:1'",
+            "[Client] Map: \"new_player_basics\"",
+            "[Client] Created physics for new_player_basics",
+            "[Server] Loaded hero 4/hero_haze",
+        ]);
+        let start = Instant::now();
+
+        let compact = tick_with_config(
+            &mut PresenceModel::default(),
+            &sandbox,
+            None,
+            100,
+            start,
+            &DiscordPresenceConfig::default(),
+        );
+        assert_eq!(compact.resolved_phase, ResolvedPhase::Sandbox);
+        assert_eq!(compact.details, "Practice");
+        assert_eq!(compact.state, "Practicing with Haze · 1/6");
+        assert_eq!(compact.large_image, "haze");
+        assert!(serde_json::to_value(activity_for(&compact))
+            .unwrap()
+            .get("party")
+            .is_none());
+
+        let mut discord_config = DiscordPresenceConfig::default();
+        discord_config.sandbox.party_display = PartyDisplay::Discord;
+        let discord = tick_with_config(
+            &mut PresenceModel::default(),
+            &sandbox,
+            None,
+            100,
+            start,
+            &discord_config,
+        );
+        assert_eq!(discord.state, "Practicing with Haze");
+        assert_eq!(
+            serde_json::to_value(activity_for(&discord)).unwrap()["party"]["size"],
+            serde_json::json!([1, 6])
+        );
+
+        let mut hidden_config = DiscordPresenceConfig::default();
+        hidden_config.sandbox.party_display = PartyDisplay::Hidden;
+        let hidden = tick_with_config(
+            &mut PresenceModel::default(),
+            &sandbox,
+            None,
+            100,
+            start,
+            &hidden_config,
+        );
+        assert_eq!(hidden.state, "Practicing with Haze");
+        assert!(serde_json::to_value(activity_for(&hidden))
+            .unwrap()
+            .get("party")
+            .is_none());
+    }
+
+    #[test]
     fn worker_model_persists_loading_across_real_runtime_transition_signals() {
         let explore = console(&[
             "[Client] CL: Connected to 'loopback:1'",

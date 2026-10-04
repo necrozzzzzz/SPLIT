@@ -1,4 +1,6 @@
+#[cfg(split_edition = "borderless")]
 mod borderless;
+#[cfg(split_edition = "panorama")]
 mod panorama;
 
 use tauri::AppHandle;
@@ -32,39 +34,58 @@ pub const fn native_notifications_enabled() -> bool {
     matches!(CURRENT, Edition::Borderless)
 }
 
-pub fn legacy_panorama_renderer_active() -> bool {
-    match CURRENT {
-        Edition::Borderless => borderless::legacy_panorama_renderer_active(),
-        Edition::Panorama => panorama::legacy_panorama_renderer_active(),
-    }
+pub const fn uses_production_panorama_runtime() -> bool {
+    matches!(CURRENT, Edition::Panorama)
 }
 
+#[cfg(split_edition = "borderless")]
+pub fn panorama_renderer_active() -> bool {
+    borderless::legacy_panorama_renderer_active()
+}
+
+#[cfg(split_edition = "panorama")]
+pub fn panorama_renderer_active() -> bool {
+    panorama::panorama_renderer_active()
+}
+
+#[cfg(split_edition = "borderless")]
 pub fn start_quick_access_runtime(app: AppHandle) -> Result<(), String> {
-    match CURRENT {
-        Edition::Borderless => borderless::start_quick_access_runtime(app),
-        Edition::Panorama => panorama::start_quick_access_runtime(app),
-    }
+    borderless::start_quick_access_runtime(app)
 }
 
+#[cfg(split_edition = "panorama")]
+pub fn start_quick_access_runtime(app: AppHandle) -> Result<(), String> {
+    panorama::start_quick_access_runtime(app)
+}
+
+#[cfg(split_edition = "borderless")]
 pub fn stop_quick_access_runtime() -> Result<(), String> {
-    match CURRENT {
-        Edition::Borderless => borderless::stop_quick_access_runtime(),
-        Edition::Panorama => panorama::stop_quick_access_runtime(),
-    }
+    borderless::stop_quick_access_runtime()
 }
 
+#[cfg(split_edition = "panorama")]
+pub fn stop_quick_access_runtime() -> Result<(), String> {
+    panorama::stop_quick_access_runtime()
+}
+
+#[cfg(split_edition = "borderless")]
 pub fn start_notification_runtime() -> Result<(), String> {
-    match CURRENT {
-        Edition::Borderless => borderless::start_notification_runtime(),
-        Edition::Panorama => panorama::start_notification_runtime(),
-    }
+    borderless::start_notification_runtime()
 }
 
+#[cfg(split_edition = "panorama")]
+pub fn start_notification_runtime() -> Result<(), String> {
+    panorama::start_notification_runtime()
+}
+
+#[cfg(split_edition = "borderless")]
 pub fn stop_notification_runtime() -> Result<(), String> {
-    match CURRENT {
-        Edition::Borderless => borderless::stop_notification_runtime(),
-        Edition::Panorama => panorama::stop_notification_runtime(),
-    }
+    borderless::stop_notification_runtime()
+}
+
+#[cfg(split_edition = "panorama")]
+pub fn stop_notification_runtime() -> Result<(), String> {
+    panorama::stop_notification_runtime()
 }
 
 #[cfg(test)]
@@ -74,5 +95,13 @@ mod tests {
     #[test]
     fn compiled_edition_matches_build_environment() {
         assert_eq!(CURRENT.label().to_ascii_lowercase(), env!("SPLIT_EDITION"));
+    }
+
+    #[test]
+    fn only_panorama_edition_selects_production_panorama_runtime() {
+        assert_eq!(
+            uses_production_panorama_runtime(),
+            matches!(CURRENT, Edition::Panorama)
+        );
     }
 }

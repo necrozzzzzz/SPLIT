@@ -1118,6 +1118,7 @@ mod tests {
         presence.explore_nyc.district_prefix = "• ".to_string();
         presence.hideout.party_display = crate::discord::PartyDisplay::Hidden;
         presence.hideout.state_prefix = "› ".to_string();
+        presence.sandbox.state_prefix = "Practice: ".to_string();
         presence.spectating.match_id_prefix = "# ".to_string();
         save_discord_presence_config_at_path(&path, presence).unwrap();
 
@@ -1125,6 +1126,7 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         for section in [
             "hideout",
+            "sandbox",
             "exploreNyc",
             "mainMenu",
             "matchmaking",
@@ -1162,6 +1164,7 @@ mod tests {
             crate::discord::PartyDisplay::Hidden
         );
         assert_eq!(section_reset.hideout.state_prefix, "› ");
+        assert_eq!(section_reset.sandbox.state_prefix, "Practice: ");
         assert_eq!(section_reset.spectating.match_id_prefix, "# ");
 
         let full_reset = reset_discord_presence_config_at_path(&path, None).unwrap();

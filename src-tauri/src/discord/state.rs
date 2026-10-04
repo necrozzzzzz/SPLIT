@@ -182,7 +182,16 @@ impl PresenceModel {
                     .flatten()
                     .unwrap_or_else(|| "Explore NYC".to_string()),
             ),
-            ResolvedPhase::Sandbox => ("Practice".to_string(), "Sandbox".to_string()),
+            ResolvedPhase::Sandbox => {
+                let hero_text = match hero {
+                    Some(metadata) => format!("Practicing with {}", metadata.artwork.text),
+                    None => "Practicing".to_string(),
+                };
+                (
+                    "Sandbox".to_string(),
+                    format!("{}{hero_text}", config.sandbox.state_prefix),
+                )
+            }
             ResolvedPhase::Loading => ("Deadlock".to_string(), "Loading...".to_string()),
             ResolvedPhase::TransitionLoading => ("Deadlock".to_string(), "Loading...".to_string()),
             ResolvedPhase::InMatch => {
@@ -724,6 +733,7 @@ fn artwork_for_presence(
 
     let show_hero_image = match phase {
         ResolvedPhase::Hideout => config.hideout.show_hero_image,
+        ResolvedPhase::Sandbox => config.sandbox.show_hero_image,
         ResolvedPhase::InMatch => config.r#match.show_hero_image,
         _ => false,
     };
@@ -738,7 +748,7 @@ fn show_party_for_phase(phase: ResolvedPhase, config: &DiscordPresenceConfig) ->
     party_display_for_phase(phase, config).map_or(
         matches!(
             phase,
-            ResolvedPhase::Sandbox | ResolvedPhase::Loading | ResolvedPhase::TransitionLoading
+            ResolvedPhase::Loading | ResolvedPhase::TransitionLoading
         ),
         |display| display == PartyDisplay::Discord,
     )
@@ -752,11 +762,12 @@ fn party_display_for_phase(
         ResolvedPhase::MainMenu => Some(config.main_menu.party_display),
         ResolvedPhase::Matchmaking => Some(config.matchmaking.party_display),
         ResolvedPhase::Hideout => Some(config.hideout.party_display),
+        ResolvedPhase::Sandbox => Some(config.sandbox.party_display),
         ResolvedPhase::ExploreNyc => Some(config.explore_nyc.party_display),
         ResolvedPhase::InMatch => Some(config.r#match.party_display),
         ResolvedPhase::PostMatch => Some(config.post_match.party_display),
         ResolvedPhase::Spectating => None,
-        ResolvedPhase::Sandbox | ResolvedPhase::Loading | ResolvedPhase::TransitionLoading => None,
+        ResolvedPhase::Loading | ResolvedPhase::TransitionLoading => None,
     }
 }
 
@@ -1365,8 +1376,58 @@ mod tests {
         assert_eq!(result.resolved_phase, ResolvedPhase::Sandbox);
         assert_eq!(
             (result.details.as_str(), result.state.as_str()),
-            ("Practice", "Sandbox")
+            ("Sandbox", "Practicing · 2/6")
         );
+        assert_eq!(result.large_image, "deadlock_logo");
+        assert!(!result.show_party);
+    }
+
+    #[test]
+    fn sandbox_uses_known_hero_prefix_party_mode_and_artwork_config() {
+        let memory = deadlock_state(
+            DeadlockActivity::InMatch,
+            MatchMode::Unranked,
+            GameMode::Sandbox,
+        );
+        let mut sandbox = console(
+            ConsolePhase::InMatch,
+            Some("new_player_basics"),
+            "Map(new_player_basics)",
+        );
+        sandbox.current_hero = Some("haze".to_string());
+
+        let compact = snapshot(memory, &sandbox);
+        assert_eq!(compact.details, "Sandbox");
+        assert_eq!(compact.state, "Practicing with Haze · 2/6");
+        assert_eq!(compact.large_image, "haze");
+        assert!(!compact.show_party);
+
+        let mut prefixed_config = DiscordPresenceConfig::default();
+        prefixed_config.sandbox.state_prefix = "› ".to_string();
+        let prefixed = snapshot_with_config(memory, &sandbox, &prefixed_config);
+        assert_eq!(prefixed.state, "› Practicing with Haze · 2/6");
+
+        let mut discord_config = DiscordPresenceConfig::default();
+        discord_config.sandbox.party_display = PartyDisplay::Discord;
+        let discord = snapshot_with_config(memory, &sandbox, &discord_config);
+        assert_eq!(discord.state, "Practicing with Haze");
+        assert!(discord.show_party);
+
+        let mut hidden_config = DiscordPresenceConfig::default();
+        hidden_config.sandbox.party_display = PartyDisplay::Hidden;
+        let hidden = snapshot_with_config(memory, &sandbox, &hidden_config);
+        assert_eq!(hidden.state, "Practicing with Haze");
+        assert!(!hidden.show_party);
+
+        let mut hidden_image_config = DiscordPresenceConfig::default();
+        hidden_image_config.sandbox.show_hero_image = false;
+        let hidden_image = snapshot_with_config(memory, &sandbox, &hidden_image_config);
+        assert_eq!(hidden_image.large_image, "deadlock_logo");
+
+        sandbox.current_hero = Some("unknown_hero".to_string());
+        let unknown = snapshot_with_config(memory, &sandbox, &prefixed_config);
+        assert_eq!(unknown.state, "› Practicing · 2/6");
+        assert_eq!(unknown.large_image, "deadlock_logo");
     }
 
     #[test]
@@ -2161,7 +2222,7 @@ mod tests {
     }
 
     #[test]
-    fn known_hero_artwork_applies_only_to_hideout_and_in_match() {
+    fn known_hero_artwork_remains_available_in_hideout_and_in_match() {
         for phase in [ConsolePhase::Hideout, ConsolePhase::InMatch] {
             let mut console = console(phase, None, "HeroTest");
             console.current_hero = Some("inferno".to_string());
