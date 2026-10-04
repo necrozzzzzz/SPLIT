@@ -233,57 +233,32 @@
         }
 
         function createPanel() {
-    if (!active()) return;
+            if (!active()) return;
 
-    if (utils.valid(panel)) panel.DeleteAsync(0);
-    if (utils.valid(transportHost)) transportHost.DeleteAsync(0);
+            var gameplayHud = host.GetParent ? host.GetParent() : null;
+            if (!utils.valid(gameplayHud)) {
+                $.Warning('[SPLIT BRIDGE] gameplay HUD parent missing');
+                visual('bridge_panel', 'BRIDGE GAMEPLAY HUD MISSING');
+                return;
+            }
 
-    var gameplayHud = host.GetParent ? host.GetParent() : null;
-    if (!utils.valid(gameplayHud)) {
-        $.Warning('[SPLIT BRIDGE] gameplay HUD parent missing');
-        visual('bridge_panel', 'BRIDGE GAMEPLAY HUD MISSING');
-        return;
-    }
+            panel = utils.find(gameplayHud, 'SplitPanoramaBridge');
 
-    transportHost = $.CreatePanel('Panel', gameplayHud, 'SplitPanoramaTransportHost', {
-        hittest: 'false',
-        hittestchildren: 'false'
-    });
+            if (!utils.valid(panel)) {
+                $.Warning('[SPLIT BRIDGE] static HTML panel missing');
+                visual('bridge_panel', 'STATIC HTML PANEL MISSING');
+                return;
+            }
 
-    transportHost.hittest = false;
-    transportHost.hittestchildren = false;
-    transportHost.style.width = '2px';
-    transportHost.style.height = '2px';
-    transportHost.style.horizontalAlign = 'left';
-    transportHost.style.verticalAlign = 'top';
-    transportHost.style.position = '2px 2px 0px';
-    transportHost.style.opacity = '0.01';
-    transportHost.style.visibility = 'visible';
-    transportHost.style.overflow = 'clip';
-
-    panel = $.CreatePanel('CitadelHTMLPanel', transportHost, 'SplitPanoramaBridge', {
-                hittest: 'false',
-                hittestchildren: 'false',
-                acceptsfocus: 'false'
-            });
-
-            panel.hittest = false;
-            panel.hittestchildren = false;
-            panel.acceptsfocus = false;
-            panel.style.width = '2px';
-            panel.style.height = '2px';
-            panel.style.opacity = '0.01';
-            panel.style.visibility = 'visible';
-
-            $.Msg('[SPLIT BRIDGE] CitadelHTMLPanel created');
-            visual('bridge_panel', 'BRIDGE PANEL CREATED');
+            $.Msg('[SPLIT BRIDGE] static HTML panel found');
+            visual('bridge_panel', 'STATIC HTML PANEL FOUND');
 
             $.RegisterEventHandler('HTMLTitle', panel, onTitle);
 
             $.Msg('[SPLIT BRIDGE] HTMLTitle handler registered');
             visual('bridge_handler', 'BRIDGE HANDLER REGISTERED');
 
-            startBridgeAfterHostLayout(0);
+            requestBridgeUrl(false);
         }
 
         function reloadBridge() {
