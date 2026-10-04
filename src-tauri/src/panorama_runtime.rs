@@ -22,6 +22,7 @@ const SLOT_COUNT: u8 = 8;
 const PROTOCOL: &str = "SPLIT_V1";
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static BRIDGE_HITS: AtomicU64 = AtomicU64::new(0);
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static SERVER: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
@@ -292,12 +293,28 @@ fn handle_connection(mut stream: TcpStream, app: &AppHandle) {
     }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     match path {
-        "/bridge.html" => write_response(
-            &mut stream,
-            "200 OK",
-            "text/html; charset=utf-8",
-            BRIDGE_HTML.as_bytes(),
-        ),
+        "/bridge.html" => {
+            BRIDGE_HITS.fetch_add(1, Ordering::SeqCst);
+            write_response(
+                &mut stream,
+                "200 OK",
+                "text/html; charset=utf-8",
+                BRIDGE_HTML.as_bytes(),
+            )
+        }
+        "/debug" => {
+            let body = format!(
+                "bridge_hits={}",
+                BRIDGE_HITS.load(Ordering::SeqCst)
+            );
+
+            write_response(
+                &mut stream,
+                "200 OK",
+                "text/plain; charset=utf-8",
+                body.as_bytes(),
+            )
+        }
         "/state" => match current_state().and_then(|state| encode_title(&state)) {
             Ok(body) => write_response(
                 &mut stream,
