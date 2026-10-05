@@ -94,32 +94,6 @@ fn emit_interaction_mode(window: &WebviewWindow, active: bool) {
     }
 }
 
-pub(crate) fn suppress_external_window_for_panorama(app: &AppHandle) -> Result<(), String> {
-    let Some(window) = app.get_webview_window(QUICK_ACCESS_LABEL) else {
-        return Ok(());
-    };
-    let was_focused = window.is_focused().unwrap_or(false);
-
-    window
-        .set_focusable(false)
-        .map_err(|error| format!("Could not disable external Quick Access focus: {error}"))?;
-    emit_interaction_mode(&window, false);
-    if window.is_visible().unwrap_or(false) {
-        window
-            .hide()
-            .map_err(|error| format!("Could not suppress external Quick Access: {error}"))?;
-    }
-
-    if was_focused {
-        if let Err(error) = crate::deadlock::focus_deadlock_window() {
-            eprintln!(
-                "[SPLIT][QA] Could not restore Deadlock focus while switching to Panorama: {error}"
-            );
-        }
-    }
-    Ok(())
-}
-
 fn deadlock_rect() -> Result<RECT, String> {
     crate::deadlock::deadlock_window_rect()
 }
@@ -187,15 +161,7 @@ fn get_or_create(app: &AppHandle) -> Result<WebviewWindow, String> {
 }
 
 pub fn show(app: &AppHandle) -> Result<(), String> {
-    if !is_enabled() {
-        return Ok(());
-    }
-
-    if crate::editions::panorama_renderer_active() {
-        suppress_external_window_for_panorama(app)?;
-        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
-        QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
-        println!("[QuickAccess] state=PASSIVE renderer=panorama");
+    if !crate::editions::windows_quick_access_enabled() || !is_enabled() {
         return Ok(());
     }
 
@@ -232,11 +198,12 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
 }
 
 fn hide_internal(app: &AppHandle, restore_deadlock_focus: bool) -> Result<(), String> {
-    let renderer = if crate::editions::panorama_renderer_active() {
-        "panorama"
-    } else {
-        "windows"
-    };
+    if !crate::editions::windows_quick_access_enabled() {
+        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
+        QUICK_ACCESS_VISIBLE.store(false, Ordering::SeqCst);
+        return Ok(());
+    }
+
     if let Some(window) = app.get_webview_window(QUICK_ACCESS_LABEL) {
         window
             .set_focusable(false)
@@ -260,7 +227,7 @@ fn hide_internal(app: &AppHandle, restore_deadlock_focus: bool) -> Result<(), St
         }
     }
 
-    println!("[QuickAccess] state=HIDDEN renderer={renderer}");
+    println!("[QuickAccess] state=HIDDEN renderer=windows");
 
     Ok(())
 }
@@ -309,11 +276,8 @@ pub fn set_viewer_open(app: &AppHandle, open: bool) -> Result<(), String> {
 }
 
 pub fn reposition_if_visible(app: &AppHandle) -> Result<(), String> {
-    if !is_visible() {
+    if !crate::editions::windows_quick_access_enabled() || !is_visible() {
         return Ok(());
-    }
-    if crate::editions::panorama_renderer_active() {
-        return suppress_external_window_for_panorama(app);
     }
 
     let window = app
@@ -333,15 +297,7 @@ pub fn reposition_if_visible(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn enter_interaction_mode(app: &AppHandle) -> Result<(), String> {
-    if !is_enabled() {
-        return Ok(());
-    }
-
-    if crate::editions::panorama_renderer_active() {
-        suppress_external_window_for_panorama(app)?;
-        QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
-        QUICK_ACCESS_INTERACTIVE.store(true, Ordering::SeqCst);
-        println!("[QuickAccess] state=INTERACTIVE renderer=panorama");
+    if !crate::editions::windows_quick_access_enabled() || !is_enabled() {
         return Ok(());
     }
 
@@ -407,14 +363,6 @@ pub fn enter_interaction_mode(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn exit_interaction_mode(app: &AppHandle) -> Result<(), String> {
-    if crate::editions::panorama_renderer_active() {
-        suppress_external_window_for_panorama(app)?;
-        QUICK_ACCESS_VISIBLE.store(true, Ordering::SeqCst);
-        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
-        println!("[QuickAccess] state=PASSIVE renderer=panorama");
-        return Ok(());
-    }
-
     if !crate::editions::windows_quick_access_enabled() {
         return Ok(());
     }
@@ -457,13 +405,6 @@ pub fn exit_interaction_mode(app: &AppHandle) -> Result<(), String> {
     println!("[QuickAccess] state=PASSIVE renderer=windows");
 
     Ok(())
-}
-
-pub(crate) fn reset_panorama_state() {
-    if crate::editions::uses_production_panorama_runtime() {
-        QUICK_ACCESS_INTERACTIVE.store(false, Ordering::SeqCst);
-        QUICK_ACCESS_VISIBLE.store(false, Ordering::SeqCst);
-    }
 }
 
 #[cfg(test)]

@@ -3,10 +3,6 @@ mod deadlock;
 mod discord;
 mod editions;
 mod notifications;
-#[cfg(split_edition = "borderless")]
-mod panorama_bridge;
-#[cfg(split_edition = "panorama")]
-mod panorama_runtime;
 mod quick_access;
 mod storage;
 mod tray;
@@ -553,11 +549,6 @@ pub fn run() {
                      */
                     if let Err(error) = deadlock::start_console_watcher(background_app.clone()) {
                         eprintln!("[SPLIT] Console watcher unavailable: {error}");
-                    }
-
-                    if let Err(error) = editions::start_quick_access_runtime(background_app.clone())
-                    {
-                        eprintln!("[SPLIT] Edition Quick Access runtime unavailable: {error}");
                     }
 
                     if let Err(error) = deadlock::start_hotkeys(background_app.clone()) {

@@ -1,7 +1,7 @@
 pub(super) fn start_notification_runtime() -> Result<(), String> {
-    crate::notifications::start()
+    Ok(())
 }
 
 pub(super) fn stop_notification_runtime() -> Result<(), String> {
-    crate::notifications::stop()
+    Ok(())
 }

@@ -28,10 +28,10 @@ use windows_sys::{
                 KEYBDINPUT, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
                 MOD_SHIFT, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1,
                 VK_F10, VK_F11, VK_F12, VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19,
-                VK_F2, VK_F20, VK_F21, VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6,
-                VK_F7, VK_F8, VK_F9, VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU,
-                VK_LSHIFT, VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT,
-                VK_SHIFT, VK_SPACE, VK_UP,
+                VK_F2, VK_F20, VK_F21, VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
+                VK_F8, VK_F9, VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT,
+                VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT,
+                VK_SPACE, VK_UP,
             },
             WindowsAndMessaging::{
                 BringWindowToTop, CallNextHookEx, DispatchMessageW, EnumWindows,
@@ -532,7 +532,7 @@ unsafe extern "system" fn quick_access_foreground_event(
 struct HotkeyRuntime {
     worker: JoinHandle<()>,
     hook: JoinHandle<()>,
-    quick_access: JoinHandle<()>,
+    quick_access: Option<JoinHandle<()>>,
 }
 
 static HOTKEY_RUNTIME: Mutex<Option<HotkeyRuntime>> = Mutex::new(None);
@@ -544,7 +544,9 @@ pub fn stop() -> Result<(), String> {
         .take();
 
     if let Some(runtime) = runtime {
-        QUICK_ACCESS_HOTKEY_SHUTDOWN.store(true, Ordering::SeqCst);
+        if runtime.quick_access.is_some() {
+            QUICK_ACCESS_HOTKEY_SHUTDOWN.store(true, Ordering::SeqCst);
+        }
 
         if let Some(sender) = HOTKEY_SENDER.get() {
             let _ = sender.send(HotkeyAction::Shutdown);
@@ -557,12 +559,11 @@ pub fn stop() -> Result<(), String> {
             true
         };
 
-        let quick_access_thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.swap(0, Ordering::SeqCst);
-        let quick_access_stop_posted = if quick_access_thread_id != 0 {
-            unsafe { PostThreadMessageW(quick_access_thread_id, WM_QUIT, 0, 0) != 0 }
-        } else {
-            true
-        };
+        let quick_access_stop_posted = runtime.quick_access.as_ref().is_none_or(|_| {
+            let quick_access_thread_id = QUICK_ACCESS_HOTKEY_THREAD_ID.swap(0, Ordering::SeqCst);
+            quick_access_thread_id == 0
+                || unsafe { PostThreadMessageW(quick_access_thread_id, WM_QUIT, 0, 0) != 0 }
+        });
 
         runtime
             .worker
@@ -578,10 +579,11 @@ pub fn stop() -> Result<(), String> {
         }
 
         if quick_access_stop_posted {
-            runtime
-                .quick_access
-                .join()
-                .map_err(|_| "Quick Access hotkey service panicked while stopping".to_string())?;
+            if let Some(quick_access) = runtime.quick_access {
+                quick_access.join().map_err(|_| {
+                    "Quick Access hotkey service panicked while stopping".to_string()
+                })?;
+            }
         } else {
             return Err("Could not post WM_QUIT to Quick Access hotkey thread".to_string());
         }
@@ -1678,6 +1680,10 @@ fn spawn_quick_access_hotkey_service(app: AppHandle) -> Result<JoinHandle<()>, S
 }
 
 pub fn set_quick_access_text_input_active(active: bool) -> Result<(), String> {
+    if !crate::editions::windows_quick_access_enabled() {
+        return Ok(());
+    }
+
     let sender = {
         QUICK_ACCESS_CONTROL_SENDER
             .lock()
@@ -3087,28 +3093,32 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
         })
         .map_err(|error| format!("Could not start keyboard hook: {error}"))?;
 
-    let quick_access = match spawn_quick_access_hotkey_service(quick_access_app) {
-        Ok(service) => service,
-        Err(error) => {
-            if let Some(sender) = HOTKEY_SENDER.get() {
-                let _ = sender.send(HotkeyAction::Shutdown);
-            }
-
-            while HOOK_THREAD_ID.load(Ordering::SeqCst) == 0 && !hook.is_finished() {
-                thread::sleep(Duration::from_millis(1));
-            }
-
-            let hook_thread_id = HOOK_THREAD_ID.load(Ordering::SeqCst);
-            if hook_thread_id != 0 {
-                unsafe {
-                    PostThreadMessageW(hook_thread_id, WM_QUIT, 0, 0);
+    let quick_access = if crate::editions::windows_quick_access_enabled() {
+        match spawn_quick_access_hotkey_service(quick_access_app) {
+            Ok(service) => Some(service),
+            Err(error) => {
+                if let Some(sender) = HOTKEY_SENDER.get() {
+                    let _ = sender.send(HotkeyAction::Shutdown);
                 }
-            }
 
-            let _ = worker.join();
-            let _ = hook.join();
-            return Err(error);
+                while HOOK_THREAD_ID.load(Ordering::SeqCst) == 0 && !hook.is_finished() {
+                    thread::sleep(Duration::from_millis(1));
+                }
+
+                let hook_thread_id = HOOK_THREAD_ID.load(Ordering::SeqCst);
+                if hook_thread_id != 0 {
+                    unsafe {
+                        PostThreadMessageW(hook_thread_id, WM_QUIT, 0, 0);
+                    }
+                }
+
+                let _ = worker.join();
+                let _ = hook.join();
+                return Err(error);
+            }
         }
+    } else {
+        None
     };
 
     *HOTKEY_RUNTIME

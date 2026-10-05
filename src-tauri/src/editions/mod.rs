@@ -1,27 +1,25 @@
 #[cfg(split_edition = "borderless")]
 mod borderless;
-#[cfg(split_edition = "panorama")]
-mod panorama;
-
-use tauri::AppHandle;
+#[cfg(split_edition = "fullscreen")]
+mod fullscreen;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edition {
     Borderless,
-    Panorama,
+    Fullscreen,
 }
 
 #[cfg(split_edition = "borderless")]
 pub const CURRENT: Edition = Edition::Borderless;
 
-#[cfg(split_edition = "panorama")]
-pub const CURRENT: Edition = Edition::Panorama;
+#[cfg(split_edition = "fullscreen")]
+pub const CURRENT: Edition = Edition::Fullscreen;
 
 impl Edition {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Borderless => "Borderless",
-            Self::Panorama => "Panorama",
+            Self::Fullscreen => "Fullscreen",
         }
     }
 }
@@ -34,48 +32,14 @@ pub const fn native_notifications_enabled() -> bool {
     matches!(CURRENT, Edition::Borderless)
 }
 
-pub const fn uses_production_panorama_runtime() -> bool {
-    matches!(CURRENT, Edition::Panorama)
-}
-
-#[cfg(split_edition = "borderless")]
-pub fn panorama_renderer_active() -> bool {
-    borderless::legacy_panorama_renderer_active()
-}
-
-#[cfg(split_edition = "panorama")]
-pub fn panorama_renderer_active() -> bool {
-    panorama::panorama_renderer_active()
-}
-
-#[cfg(split_edition = "borderless")]
-pub fn start_quick_access_runtime(app: AppHandle) -> Result<(), String> {
-    borderless::start_quick_access_runtime(app)
-}
-
-#[cfg(split_edition = "panorama")]
-pub fn start_quick_access_runtime(app: AppHandle) -> Result<(), String> {
-    panorama::start_quick_access_runtime(app)
-}
-
-#[cfg(split_edition = "borderless")]
-pub fn stop_quick_access_runtime() -> Result<(), String> {
-    borderless::stop_quick_access_runtime()
-}
-
-#[cfg(split_edition = "panorama")]
-pub fn stop_quick_access_runtime() -> Result<(), String> {
-    panorama::stop_quick_access_runtime()
-}
-
 #[cfg(split_edition = "borderless")]
 pub fn start_notification_runtime() -> Result<(), String> {
     borderless::start_notification_runtime()
 }
 
-#[cfg(split_edition = "panorama")]
+#[cfg(split_edition = "fullscreen")]
 pub fn start_notification_runtime() -> Result<(), String> {
-    panorama::start_notification_runtime()
+    fullscreen::start_notification_runtime()
 }
 
 #[cfg(split_edition = "borderless")]
@@ -83,9 +47,9 @@ pub fn stop_notification_runtime() -> Result<(), String> {
     borderless::stop_notification_runtime()
 }
 
-#[cfg(split_edition = "panorama")]
+#[cfg(split_edition = "fullscreen")]
 pub fn stop_notification_runtime() -> Result<(), String> {
-    panorama::stop_notification_runtime()
+    fullscreen::stop_notification_runtime()
 }
 
 #[cfg(test)]
@@ -98,10 +62,9 @@ mod tests {
     }
 
     #[test]
-    fn only_panorama_edition_selects_production_panorama_runtime() {
-        assert_eq!(
-            uses_production_panorama_runtime(),
-            matches!(CURRENT, Edition::Panorama)
-        );
+    fn renderer_capabilities_match_the_compiled_edition() {
+        let borderless = matches!(CURRENT, Edition::Borderless);
+        assert_eq!(windows_quick_access_enabled(), borderless);
+        assert_eq!(native_notifications_enabled(), borderless);
     }
 }

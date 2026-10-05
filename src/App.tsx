@@ -34,6 +34,7 @@ import {
 } from "./screenshot";
 
 import {
+  isBorderlessEdition,
   splitEditionLabel,
 } from "./edition";
 
@@ -5253,22 +5254,24 @@ function App() {
             Hotkeys
           </button>
 
-          <button
-            type="button"
-            className={
-              activeSettingsSection ===
-              "notifications"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setActiveSettingsSection(
-                "notifications",
-              )
-            }
-          >
-            In-Game Notifications
-          </button>
+          {isBorderlessEdition && (
+            <button
+              type="button"
+              className={
+                activeSettingsSection ===
+                "notifications"
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setActiveSettingsSection(
+                  "notifications",
+                )
+              }
+            >
+              In-Game Notifications
+            </button>
+          )}
 
           <button
             type="button"
@@ -6634,6 +6637,7 @@ function App() {
 
               </div>
 
+              {isBorderlessEdition && (
               <div
                 className={`general-settings-group quick-access-settings-group ${
                   quickAccessSettings.enabled
@@ -6767,6 +6771,7 @@ function App() {
                   </p>
                 )}
               </div>
+              )}
 
               
 
@@ -6958,7 +6963,7 @@ function App() {
     )}
     
 
-    {activeSettingsSection === "notifications" && (
+    {isBorderlessEdition && activeSettingsSection === "notifications" && (
       <section className="notification-settings-section">
         <div className="notification-settings-heading">
           <div>

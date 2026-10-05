@@ -4,12 +4,12 @@ const [edition, command, ...args] = process.argv.slice(2);
 
 if (!edition || !command) {
   console.error(
-    "Usage: node scripts/run-edition.mjs <borderless|panorama> <command> [...args]",
+    "Usage: node scripts/run-edition.mjs <borderless|fullscreen> <command> [...args]",
   );
   process.exit(2);
 }
 
-if (edition !== "borderless" && edition !== "panorama") {
+if (edition !== "borderless" && edition !== "fullscreen") {
   console.error(`Unsupported SPLIT edition: ${edition}`);
   process.exit(2);
 }

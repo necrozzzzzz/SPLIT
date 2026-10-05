@@ -35,33 +35,32 @@ values from the override win, while all common configuration remains inherited.
 
 ```bash
 npm run build:borderless
-npm run build:panorama
+npm run build:fullscreen
 npm run tauri:build:borderless
-npm run tauri:build:panorama
+npm run tauri:build:fullscreen
 npm run tauri:bundle:borderless
-npm run tauri:bundle:panorama
+npm run tauri:bundle:fullscreen
 npm run build:editions
 npm run bundle:editions
 ```
 
 - `borderless` keeps the current Windows/Tauri Quick Access and native Win32
   notifications.
-- `panorama` builds the shared application and backend without those Windows
-  renderer services. The future Panorama bridge is intentionally not present
-  yet.
+- `fullscreen` keeps the same keyboard-controlled save-state core and Discord
+  Presence, without Quick Access or native in-game notification overlays.
 
 The application builds are retained side by side:
 
 ```text
 artifacts/borderless/SPLIT-Borderless.exe
-artifacts/panorama/SPLIT-Panorama.exe
+artifacts/fullscreen/SPLIT-Fullscreen.exe
 ```
 
 The bundle commands additionally retain these NSIS installers:
 
 ```text
 artifacts/borderless/SPLIT-Borderless-Setup-2.0.0-1.exe
-artifacts/panorama/SPLIT-Panorama-Setup-2.0.0-1.exe
+artifacts/fullscreen/SPLIT-Fullscreen-Setup-2.0.0-1.exe
 ```
 
 The two Tauri identities are deliberately distinct, so Windows installation,

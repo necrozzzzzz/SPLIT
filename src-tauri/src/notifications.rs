@@ -302,7 +302,7 @@ pub fn show(notification: Notification) {
 
 pub fn show_test(split_hwnd: HWND) -> Result<(), String> {
     if !crate::editions::native_notifications_enabled() {
-        return Err("Native notifications are unavailable in the Panorama edition".to_string());
+        return Err("Native notifications are unavailable in the Fullscreen edition".to_string());
     }
 
     let settings = SETTINGS

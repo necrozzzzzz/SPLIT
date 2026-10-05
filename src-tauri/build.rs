@@ -1,16 +1,11 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=SPLIT_EDITION");
-    println!(
-        "cargo:rustc-check-cfg=cfg(split_edition, values(\"borderless\", \"panorama\"))"
-    );
+    println!("cargo:rustc-check-cfg=cfg(split_edition, values(\"borderless\", \"fullscreen\"))");
 
-    let edition = std::env::var("SPLIT_EDITION")
-        .unwrap_or_else(|_| "borderless".to_string());
+    let edition = std::env::var("SPLIT_EDITION").unwrap_or_else(|_| "borderless".to_string());
 
-    if !matches!(edition.as_str(), "borderless" | "panorama") {
-        panic!(
-            "Unsupported SPLIT_EDITION={edition:?}; expected \"borderless\" or \"panorama\""
-        );
+    if !matches!(edition.as_str(), "borderless" | "fullscreen") {
+        panic!("Unsupported SPLIT_EDITION={edition:?}; expected \"borderless\" or \"fullscreen\"");
     }
 
     println!("cargo:rustc-cfg=split_edition=\"{edition}\"");

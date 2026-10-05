@@ -4,9 +4,9 @@ import react from "@vitejs/plugin-react";
 const host = process.env.TAURI_DEV_HOST;
 const edition = process.env.SPLIT_EDITION ?? "borderless";
 
-if (edition !== "borderless" && edition !== "panorama") {
+if (edition !== "borderless" && edition !== "fullscreen") {
   throw new Error(
-    `Unsupported SPLIT_EDITION=${JSON.stringify(edition)}; expected "borderless" or "panorama"`,
+    `Unsupported SPLIT_EDITION=${JSON.stringify(edition)}; expected "borderless" or "fullscreen"`,
   );
 }
 

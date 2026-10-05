@@ -12,8 +12,8 @@ import { spawnSync } from "node:child_process";
 
 const [edition, output = "app"] = process.argv.slice(2);
 
-if (edition !== "borderless" && edition !== "panorama") {
-  console.error("Edition must be borderless or panorama.");
+if (edition !== "borderless" && edition !== "fullscreen") {
+  console.error("Edition must be borderless or fullscreen.");
   process.exit(2);
 }
 
@@ -42,10 +42,10 @@ const expectedIdentity = {
     mainBinaryName: "SPLIT-Borderless",
     identifier: "com.necrozzzzzz.split.borderless",
   },
-  panorama: {
-    productName: "SPLIT Panorama",
-    mainBinaryName: "SPLIT-Panorama",
-    identifier: "com.necrozzzzzz.split.panorama",
+  fullscreen: {
+    productName: "SPLIT Fullscreen",
+    mainBinaryName: "SPLIT-Fullscreen",
+    identifier: "com.necrozzzzzz.split.fullscreen",
   },
 }[edition];
 

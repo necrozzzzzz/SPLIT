@@ -234,9 +234,6 @@ pub fn request_true_quit(app: &AppHandle) {
         eprintln!("[SPLIT] Could not stop native notifications: {error}");
     }
     crate::deadlock::shutdown_background_services();
-    if let Err(error) = crate::editions::stop_quick_access_runtime() {
-        eprintln!("[SPLIT] Could not stop edition Quick Access runtime: {error}");
-    }
     crate::deadlock::cleanup_transport_on_true_quit();
     app.exit(0);
 }
