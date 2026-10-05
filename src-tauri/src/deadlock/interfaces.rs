@@ -19,6 +19,8 @@ const MAX_INTERFACE_REGISTRATIONS: usize = 1_024;
 const INTERFACE_REG_SIZE: usize = 24;
 const MODULE_DISCOVERY_ATTEMPTS: usize = 40;
 const MODULE_DISCOVERY_RETRY_DELAY: Duration = Duration::from_millis(250);
+const SCHEMA_INITIALIZATION_ATTEMPTS: usize = 21;
+const SCHEMA_INITIALIZATION_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 const PE_SIGNATURE: u32 = 0x0000_4550;
 const PE32_PLUS_MAGIC: u16 = 0x020B;
@@ -33,16 +35,31 @@ pub(crate) fn find_interface(
     module_name: &str,
     interface_name: &str,
 ) -> Result<Option<u64>, String> {
+    find_interface_with_module_retry(
+        pid,
+        module_name,
+        interface_name,
+        MODULE_DISCOVERY_ATTEMPTS,
+        MODULE_DISCOVERY_RETRY_DELAY,
+    )
+}
+
+fn find_interface_with_module_retry(
+    pid: u32,
+    module_name: &str,
+    interface_name: &str,
+    module_attempts: usize,
+    module_retry_delay: Duration,
+) -> Result<Option<u64>, String> {
     if interface_name.is_empty() || interface_name.len() > MAX_INTERFACE_NAME {
         return Err("Interface name length is invalid".to_string());
     }
 
-    let (module_base, module_size) = camera::find_module_with_retry(
-        pid,
-        module_name,
-        MODULE_DISCOVERY_ATTEMPTS,
-        MODULE_DISCOVERY_RETRY_DELAY,
-    )?;
+    let (module_base, module_size) = if module_attempts == 1 {
+        camera::find_module(pid, module_name)?
+    } else {
+        camera::find_module_with_retry(pid, module_name, module_attempts, module_retry_delay)?
+    };
     if !(0x1000..=MAX_MODULE_SIZE).contains(&module_size) {
         return Err(format!(
             "{module_name} has a suspicious image size: 0x{module_size:X}"
@@ -66,10 +83,60 @@ pub(crate) fn find_interface(
     resolve_interface_from_image(&image, module_base as u64, interface_name)
 }
 
-pub(crate) fn log_schema_system_interface(pid: u32) {
+#[derive(Debug, PartialEq, Eq)]
+enum InitializationRetryOutcome {
+    Initialized { attempts: usize },
+    Exhausted { attempts: usize, last_error: String },
+    SessionEnded { attempts: usize },
+}
+
+fn retry_initialization(
+    max_attempts: usize,
+    mut session_is_valid: impl FnMut() -> bool,
+    mut initialize: impl FnMut() -> Result<(), String>,
+    mut wait: impl FnMut(),
+) -> InitializationRetryOutcome {
+    let mut last_error = "initialization was not attempted".to_string();
+
+    for attempt in 1..=max_attempts {
+        if !session_is_valid() {
+            return InitializationRetryOutcome::SessionEnded {
+                attempts: attempt - 1,
+            };
+        }
+
+        match initialize() {
+            Ok(()) => {
+                return InitializationRetryOutcome::Initialized { attempts: attempt };
+            }
+            Err(error) => {
+                if attempt == 1 || attempt == max_attempts || attempt % 4 == 0 {
+                    eprintln!(
+                        "[SPLIT][Schema] district initialization attempt {attempt} failed: {error}"
+                    );
+                }
+                last_error = error;
+            }
+        }
+
+        if attempt < max_attempts {
+            if !session_is_valid() {
+                return InitializationRetryOutcome::SessionEnded { attempts: attempt };
+            }
+            wait();
+        }
+    }
+
+    InitializationRetryOutcome::Exhausted {
+        attempts: max_attempts,
+        last_error,
+    }
+}
+
+pub(crate) fn initialize_schema_runtime(pid: u32) {
     let spawn_result = thread::Builder::new()
         .name("split-schema-interface-probe".to_string())
-        .spawn(move || log_schema_system_interface_now(pid));
+        .spawn(move || initialize_schema_runtime_now(pid));
 
     if let Err(error) = spawn_result {
         eprintln!(
@@ -78,23 +145,48 @@ pub(crate) fn log_schema_system_interface(pid: u32) {
     }
 }
 
-fn log_schema_system_interface_now(pid: u32) {
-    match find_interface(pid, SCHEMA_SYSTEM_MODULE, SCHEMA_SYSTEM_INTERFACE) {
-        Ok(Some(address)) => {
-            println!("[SPLIT][Interface] {SCHEMA_SYSTEM_INTERFACE} = 0x{address:016X}");
-            #[cfg(debug_assertions)]
-            super::district::debug_schema_ready(address);
-            if let Err(error) = super::schema::log_client_scope(pid, address) {
-                eprintln!("[SPLIT][Schema] client scope unavailable: {error}");
-            }
+fn initialize_schema_runtime_now(pid: u32) {
+    let outcome = retry_initialization(
+        SCHEMA_INITIALIZATION_ATTEMPTS,
+        || super::process::deadlock_pid() == Some(pid),
+        || initialize_schema_runtime_once(pid),
+        || thread::sleep(SCHEMA_INITIALIZATION_RETRY_DELAY),
+    );
+
+    match outcome {
+        InitializationRetryOutcome::Initialized { attempts } => {
+            println!(
+                "[SPLIT][Schema] district runtime initialized after {attempts} attempt(s)"
+            );
         }
-        Ok(None) => eprintln!(
-            "[SPLIT][Interface] {SCHEMA_SYSTEM_INTERFACE} unavailable: exact interface not found"
+        InitializationRetryOutcome::Exhausted {
+            attempts,
+            last_error,
+        } => eprintln!(
+            "[SPLIT][Schema] district initialization exhausted after {attempts} attempts: {last_error}"
         ),
-        Err(error) => {
-            eprintln!("[SPLIT][Interface] {SCHEMA_SYSTEM_INTERFACE} unavailable: {error}")
-        }
+        InitializationRetryOutcome::SessionEnded { attempts } => println!(
+            "[SPLIT][Schema] district initialization stopped after {attempts} attempt(s): Deadlock session ended"
+        ),
     }
+}
+
+fn initialize_schema_runtime_once(pid: u32) -> Result<(), String> {
+    let address = find_interface_with_module_retry(
+        pid,
+        SCHEMA_SYSTEM_MODULE,
+        SCHEMA_SYSTEM_INTERFACE,
+        1,
+        Duration::ZERO,
+    )?
+    .ok_or_else(|| format!("exact interface {SCHEMA_SYSTEM_INTERFACE} was not found"))?;
+
+    #[cfg(debug_assertions)]
+    super::district::debug_schema_ready(address);
+
+    super::schema::initialize_client_runtime(pid, address)?;
+    println!("[SPLIT][Interface] {SCHEMA_SYSTEM_INTERFACE} = 0x{address:016X}");
+    Ok(())
 }
 
 fn open_process_read_only(pid: u32) -> Result<HANDLE, String> {
@@ -521,8 +613,110 @@ fn read_u64(image: &[u8], offset: usize, label: &str) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     const BASE: u64 = 0x0000_7FF6_1000_0000;
+
+    #[test]
+    fn initialization_retry_succeeds_on_first_attempt() {
+        let attempts = Cell::new(0);
+        let waits = Cell::new(0);
+
+        let outcome = retry_initialization(
+            4,
+            || true,
+            || {
+                attempts.set(attempts.get() + 1);
+                Ok(())
+            },
+            || waits.set(waits.get() + 1),
+        );
+
+        assert_eq!(
+            outcome,
+            InitializationRetryOutcome::Initialized { attempts: 1 }
+        );
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(waits.get(), 0);
+    }
+
+    #[test]
+    fn initialization_retry_recovers_after_transient_failure() {
+        let attempts = Cell::new(0);
+        let waits = Cell::new(0);
+
+        let outcome = retry_initialization(
+            4,
+            || true,
+            || {
+                attempts.set(attempts.get() + 1);
+                if attempts.get() == 1 {
+                    Err("schema not ready".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            || waits.set(waits.get() + 1),
+        );
+
+        assert_eq!(
+            outcome,
+            InitializationRetryOutcome::Initialized { attempts: 2 }
+        );
+        assert_eq!(attempts.get(), 2);
+        assert_eq!(waits.get(), 1);
+    }
+
+    #[test]
+    fn initialization_retry_reports_exhaustion() {
+        let attempts = Cell::new(0);
+        let waits = Cell::new(0);
+
+        let outcome = retry_initialization(
+            3,
+            || true,
+            || {
+                attempts.set(attempts.get() + 1);
+                Err(format!("failure {}", attempts.get()))
+            },
+            || waits.set(waits.get() + 1),
+        );
+
+        assert_eq!(
+            outcome,
+            InitializationRetryOutcome::Exhausted {
+                attempts: 3,
+                last_error: "failure 3".to_string(),
+            }
+        );
+        assert_eq!(attempts.get(), 3);
+        assert_eq!(waits.get(), 2);
+    }
+
+    #[test]
+    fn initialization_retry_stops_when_session_ends() {
+        let session_valid = Cell::new(true);
+        let attempts = Cell::new(0);
+        let waits = Cell::new(0);
+
+        let outcome = retry_initialization(
+            4,
+            || session_valid.get(),
+            || {
+                attempts.set(attempts.get() + 1);
+                session_valid.set(false);
+                Err("process exited".to_string())
+            },
+            || waits.set(waits.get() + 1),
+        );
+
+        assert_eq!(
+            outcome,
+            InitializationRetryOutcome::SessionEnded { attempts: 1 }
+        );
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(waits.get(), 0);
+    }
 
     fn put_u64(image: &mut [u8], offset: usize, value: u64) {
         image[offset..offset + 8].copy_from_slice(&value.to_le_bytes());

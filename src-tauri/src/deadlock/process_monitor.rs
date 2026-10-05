@@ -60,7 +60,7 @@ fn apply_transition(app: &AppHandle, transition: ProcessTransition) {
     {
         println!("[SPLIT][Deadlock] new game session detected (PID {pid}), applying savestate.cfg");
 
-        super::interfaces::log_schema_system_interface(pid);
+        super::interfaces::initialize_schema_runtime(pid);
 
         if let Err(error) = super::repair_integration_on_startup() {
             eprintln!("[SPLIT] Deadlock start integration repair failed: {error}");

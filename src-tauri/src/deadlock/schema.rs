@@ -408,42 +408,24 @@ impl SchemaResolver {
     }
 }
 
-pub(crate) fn log_client_scope(pid: u32, schema_system: u64) -> Result<(), String> {
+pub(crate) fn initialize_client_runtime(pid: u32, schema_system: u64) -> Result<(), String> {
     let resolver = SchemaResolver::from_schema_system(pid, schema_system)?;
-
-    for (index, scope) in resolver.scopes().iter().take(MAX_SCOPE_LOGS).enumerate() {
-        println!("[SPLIT][Schema] scope[{index}] name=\"{}\"", scope.name);
-    }
-    if resolver.scopes().len() > MAX_SCOPE_LOGS {
-        println!(
-            "[SPLIT][Schema] scope log truncated: {} of {} shown",
-            MAX_SCOPE_LOGS,
-            resolver.scopes().len()
-        );
-    }
 
     let client = resolver
         .find_scope("client")?
         .or(resolver.find_scope("client.dll")?)
         .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
-    println!("[SPLIT][Schema] client scope = 0x{client:016X}");
 
     const CLASS_NAME: &str = "C_CitadelPlayerPawn";
     const FIELD_NAME: &str = "m_nMapDistrictLocation";
     let class = resolver
         .find_class(client, CLASS_NAME)?
         .ok_or_else(|| format!("Exact schema class {CLASS_NAME} was not found"))?;
-    println!("[SPLIT][Schema] class {CLASS_NAME} = 0x{class:016X}");
 
     let class_layout = resolver.read_class_layout(class)?;
-    println!(
-        "[SPLIT][Schema] class {CLASS_NAME} field_count={}",
-        class_layout.field_count
-    );
     let offset = resolver
         .find_field_offset(client, CLASS_NAME, FIELD_NAME)?
         .ok_or_else(|| format!("Exact schema field {CLASS_NAME}::{FIELD_NAME} was not found"))?;
-    println!("[SPLIT][Schema] {CLASS_NAME}::{FIELD_NAME} = 0x{offset:X}");
     #[cfg(debug_assertions)]
     super::district::debug_schema_offset(offset);
 
@@ -460,9 +442,6 @@ pub(crate) fn log_client_scope(pid: u32, schema_system: u64) -> Result<(), Strin
                     "Exact schema field {CONTROLLER_CLASS_NAME}::{controller_field} was not found"
                 )
             })?;
-        println!(
-            "[SPLIT][Schema] {CONTROLLER_CLASS_NAME}::{controller_field} = 0x{controller_offset:X}"
-        );
         controller_offsets[index] = controller_offset;
     }
 
@@ -489,6 +468,32 @@ pub(crate) fn log_client_scope(pid: u32, schema_system: u64) -> Result<(), Strin
         offset,
         initial_pawn,
     )?;
+
+    for (index, scope) in resolver.scopes().iter().take(MAX_SCOPE_LOGS).enumerate() {
+        println!("[SPLIT][Schema] scope[{index}] name=\"{}\"", scope.name);
+    }
+    if resolver.scopes().len() > MAX_SCOPE_LOGS {
+        println!(
+            "[SPLIT][Schema] scope log truncated: {} of {} shown",
+            MAX_SCOPE_LOGS,
+            resolver.scopes().len()
+        );
+    }
+    println!("[SPLIT][Schema] client scope = 0x{client:016X}");
+    println!("[SPLIT][Schema] class {CLASS_NAME} = 0x{class:016X}");
+    println!(
+        "[SPLIT][Schema] class {CLASS_NAME} field_count={}",
+        class_layout.field_count
+    );
+    println!("[SPLIT][Schema] {CLASS_NAME}::{FIELD_NAME} = 0x{offset:X}");
+    for (controller_field, controller_offset) in [
+        ("m_bIsLocalPlayerController", controller_offsets[0]),
+        ("m_hPawn", controller_offsets[1]),
+    ] {
+        println!(
+            "[SPLIT][Schema] {CONTROLLER_CLASS_NAME}::{controller_field} = 0x{controller_offset:X}"
+        );
+    }
 
     Ok(())
 }
