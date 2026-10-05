@@ -1,4 +1,7 @@
-use std::sync::{LazyLock, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    LazyLock, Mutex,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{net::SocketAddr, str::FromStr};
 
@@ -117,6 +120,7 @@ impl ConsolePhaseState {
         self.clear_transient_match_state();
         self.clear_hero();
         self.server_kind = ServerKind::Unknown;
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         self.broadcast_active = true;
         if !was_active || match_id.is_some() {
             self.spectating_match_id = match_id;
@@ -140,6 +144,7 @@ impl ConsolePhaseState {
     }
 
     fn begin_real_match_hero_capture(&mut self) {
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         if self.current_map.as_deref() == Some("dl_hideout") {
             log_hideout_tracking(false, "real_match");
         }
@@ -292,6 +297,12 @@ static PATTERNS: LazyLock<Patterns> = LazyLock::new(|| Patterns {
 static CONSOLE_PHASE_STATE: LazyLock<Mutex<ConsolePhaseState>> =
     LazyLock::new(|| Mutex::new(ConsolePhaseState::default()));
 
+static HIDEOUT_READY: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn hideout_ready() -> bool {
+    HIDEOUT_READY.load(Ordering::SeqCst)
+}
+
 fn regex(pattern: &str) -> Regex {
     RegexBuilder::new(pattern)
         .case_insensitive(true)
@@ -418,20 +429,26 @@ fn apply_map(state: &mut ConsolePhaseState, map: &str, physics_loaded: bool) {
     state.last_update_ms = now_ms();
 
     if map == "dl_hideout" {
+        if entering_map {
+            HIDEOUT_READY.store(false, Ordering::SeqCst);
+        }
         state.clear_broadcast();
         state.clear_transient_match_state();
         if entering_map {
             state.clear_hero();
         }
         if physics_loaded {
+            HIDEOUT_READY.store(true, Ordering::SeqCst);
             state.hero_capture_mode = HeroCaptureMode::FreeSwap;
             log_hideout_tracking(true, "created_physics");
         }
         state.set_phase(ConsolePhase::Hideout, "Map(dl_hideout)");
     } else if state.broadcast_active {
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         state.clear_transient_match_state();
         state.set_phase(ConsolePhase::Spectating, format!("BroadcastMap({map})"));
     } else if state.server_kind == ServerKind::Local {
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         state.clear_transient_match_state();
         if entering_map {
             state.clear_hero();
@@ -444,6 +461,7 @@ fn apply_map(state: &mut ConsolePhaseState, map: &str, physics_loaded: bool) {
         }
         state.set_phase(ConsolePhase::Unknown, format!("Map({map})"));
     } else {
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         state.evidence = Some(format!("Map({map})"));
 
         if physics_loaded
@@ -504,6 +522,7 @@ pub(crate) fn parse_line(state: &mut ConsolePhaseState, line: &str) -> bool {
             }
             state.match_found = true;
             state.current_map = None;
+            HIDEOUT_READY.store(false, Ordering::SeqCst);
             state.set_phase(ConsolePhase::Loading, "ServerConnected(remote)");
         } else {
             state.clear_transient_match_state();
@@ -521,6 +540,7 @@ pub(crate) fn parse_line(state: &mut ConsolePhaseState, line: &str) -> bool {
         }
         state.match_found = true;
         state.current_map = None;
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         state.set_phase(ConsolePhase::Loading, "LobbyCreated");
     } else if let Some(captures) = patterns.change_game_state.captures(line) {
         let name = captures[1].to_lowercase();
@@ -554,6 +574,7 @@ pub(crate) fn parse_line(state: &mut ConsolePhaseState, line: &str) -> bool {
         state.clear_hero();
         state.server_kind = ServerKind::Unknown;
         state.current_map = None;
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         if completed_match {
             state.set_phase(ConsolePhase::PostMatch, "LobbyDestroyed");
         } else {
@@ -576,6 +597,7 @@ pub(crate) fn parse_line(state: &mut ConsolePhaseState, line: &str) -> bool {
             state.clear_hero();
             state.server_kind = ServerKind::Unknown;
             state.current_map = None;
+            HIDEOUT_READY.store(false, Ordering::SeqCst);
 
             if completed_match && !reason.contains("LOOPDEACTIVATE") {
                 state.set_phase(
@@ -587,8 +609,10 @@ pub(crate) fn parse_line(state: &mut ConsolePhaseState, line: &str) -> bool {
             }
         }
     } else if patterns.loop_mode_menu.is_match(line) {
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         *state = ConsolePhaseState::main_menu("LoopMode(menu)");
     } else if patterns.app_shutdown.is_match(line) {
+        HIDEOUT_READY.store(false, Ordering::SeqCst);
         *state = ConsolePhaseState::main_menu("AppShutdown");
     } else if let Some(signal) = hero_signal(line) {
         apply_hero_signal(state, signal);
@@ -597,10 +621,12 @@ pub(crate) fn parse_line(state: &mut ConsolePhaseState, line: &str) -> bool {
     *state != before
 }
 
-pub(crate) fn observe_line(line: &str) {
+pub(crate) fn observe_line(line: &str) -> bool {
+    let was_ready = hideout_ready();
     if let Ok(mut state) = CONSOLE_PHASE_STATE.lock() {
         parse_line(&mut state, line);
     }
+    !was_ready && hideout_ready()
 }
 
 pub(crate) fn replace_from_lines<'a>(lines: impl IntoIterator<Item = &'a str>) {
@@ -663,6 +689,7 @@ fn log_startup_hero_recovery(hero: &str) {
 fn log_startup_hero_recovery(_hero: &str) {}
 
 pub(crate) fn reset_for_session() {
+    HIDEOUT_READY.store(false, Ordering::SeqCst);
     if let Ok(mut state) = CONSOLE_PHASE_STATE.lock() {
         *state = ConsolePhaseState::main_menu("MainMenuFallback");
     }

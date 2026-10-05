@@ -7,6 +7,7 @@ pub(crate) mod district;
 mod history;
 mod hotkeys;
 mod interfaces;
+pub(crate) mod match_safety;
 mod parser;
 mod paths;
 mod pawn;
@@ -58,6 +59,10 @@ static SLOT_OPERATION_LOCK: Mutex<()> = Mutex::new(());
 static FAVORITE_MODE: AtomicBool = AtomicBool::new(false);
 static QUIT_CLEANUP_STARTED: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn ensure_savestate_actions_allowed() -> Result<(), String> {
+    match_safety::ensure_actions_allowed()
+}
+
 fn begin_quit_cleanup(flag: &AtomicBool) -> bool {
     !flag.swap(true, Ordering::SeqCst)
 }
@@ -102,6 +107,7 @@ pub(crate) struct PersistSlotResult {
 #[serde(rename_all = "camelCase")]
 pub struct DeadlockStatus {
     deadlock_running: bool,
+    match_safety_locked: bool,
     deadlock_path: Option<String>,
     console_log_path: Option<String>,
     console_log_exists: bool,
@@ -183,6 +189,7 @@ pub fn export_preset_archive(preset: u8, destination: String) -> Result<(), Stri
 }
 
 pub fn rename_preset(preset: u8, name: String) -> Result<Vec<String>, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -265,6 +272,7 @@ pub fn copy_slot_to_favorite(
     favorite_slot: u8,
     overwrite: bool,
 ) -> Result<FavoriteSlotSummary, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -429,6 +437,7 @@ pub fn update_quick_access_settings(
 }
 
 pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -509,6 +518,7 @@ pub fn clear_preset(preset: u8) -> Result<SlotEditResult, String> {
 }
 
 pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -597,6 +607,7 @@ pub fn import_preset(preset: u8, imported: PresetExport) -> Result<SlotEditResul
 }
 
 pub fn import_preset_archive(preset: u8, source: String) -> Result<SlotEditResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -680,6 +691,7 @@ pub fn import_preset_archive(preset: u8, source: String) -> Result<SlotEditResul
 }
 
 pub fn set_active_preset(preset: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -713,6 +725,7 @@ fn set_active_preset_locked(preset: u8) -> Result<Vec<Option<PositionSnapshot>>,
 }
 
 pub fn cycle_active_preset() -> Result<Option<(u8, Vec<Option<PositionSnapshot>>)>, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -765,6 +778,7 @@ pub(crate) fn persist_slot_position(
     position: PositionSnapshot,
     screenshot: Option<String>,
 ) -> Result<PersistSlotResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -797,6 +811,7 @@ pub(crate) fn persist_slot_position(
 }
 
 pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
+    ensure_savestate_actions_allowed()?;
     let position = watcher::get_last_position()
         .ok_or_else(|| "No position captured yet. Run getpos_exact first.".to_string())?;
 
@@ -804,6 +819,7 @@ pub fn save_slot(slot: u8) -> Result<Vec<Option<PositionSnapshot>>, String> {
 }
 
 pub fn rename_slot(slot: u8, name: String) -> Result<SlotEditResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -830,6 +846,7 @@ pub fn rename_slot(slot: u8, name: String) -> Result<SlotEditResult, String> {
 }
 
 pub fn clear_slot(slot: u8) -> Result<SlotEditResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -870,6 +887,7 @@ pub fn clear_slot(slot: u8) -> Result<SlotEditResult, String> {
 }
 
 pub fn set_slot_color(slot: u8, color: Option<String>) -> Result<SlotEditResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -906,6 +924,7 @@ pub fn get_history_state() -> Result<HistoryState, String> {
 }
 
 fn apply_history_action(undo: bool) -> Result<HistoryOperationResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -1082,6 +1101,7 @@ fn ensure_bank_change_allowed(save_pending: bool) -> Result<(), String> {
 }
 
 pub fn toggle_favorite_mode() -> Result<ActiveBankResult, String> {
+    ensure_savestate_actions_allowed()?;
     let _operation = SLOT_OPERATION_LOCK
         .lock()
         .map_err(|_| "Slot operation lock poisoned".to_string())?;
@@ -1323,6 +1343,7 @@ fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
 
     DeadlockStatus {
         deadlock_running: process::is_deadlock_running(),
+        match_safety_locked: match_safety::is_locked(),
 
         deadlock_path: Some(paths::path_to_string(&found.root)),
 
@@ -1435,6 +1456,7 @@ pub fn get_status() -> DeadlockStatus {
 
         None => DeadlockStatus {
             deadlock_running: process::is_deadlock_running(),
+            match_safety_locked: match_safety::is_locked(),
 
             deadlock_path: None,
             console_log_path: None,
@@ -1617,6 +1639,7 @@ pub fn capture_slot(app: AppHandle, slot: u8) -> Result<(), String> {
 }
 
 pub fn start_hotkeys(app: AppHandle) -> Result<(), String> {
+    match_safety::refresh(&app, process::deadlock_pid().is_some());
     hotkeys::start(app)
 }
 
@@ -1731,5 +1754,28 @@ mod tests {
             history_notification(false, false),
             crate::notifications::Notification::NothingToRedo
         );
+    }
+
+    #[test]
+    fn live_match_guard_precedes_backend_mutations() {
+        match_safety::with_test_lock(true, || {
+            let expected = match_safety::MATCH_SAFETY_ERROR;
+            assert_eq!(save_slot(1).unwrap_err(), expected);
+            assert_eq!(load_slot(1).unwrap_err(), expected);
+            assert_eq!(undo_last_action().unwrap_err(), expected);
+            assert_eq!(redo_last_action().unwrap_err(), expected);
+            assert_eq!(set_active_preset(1).unwrap_err(), expected);
+            assert_eq!(cycle_active_preset().unwrap_err(), expected);
+            assert_eq!(toggle_favorite_mode().unwrap_err(), expected);
+            assert_eq!(
+                rename_preset(1, "blocked".to_string()).unwrap_err(),
+                expected
+            );
+            assert_eq!(clear_preset(1).unwrap_err(), expected);
+            assert_eq!(rename_slot(1, "blocked".to_string()).unwrap_err(), expected);
+            assert_eq!(clear_slot(1).unwrap_err(), expected);
+            assert_eq!(set_slot_color(1, None).unwrap_err(), expected);
+            assert_eq!(copy_slot_to_favorite(1, 1, true).unwrap_err(), expected);
+        });
     }
 }

@@ -199,6 +199,7 @@ fn wait_for_save_timeout(app: AppHandle, generation: u64) {
 }
 
 pub fn request_save_slot(app: AppHandle, slot: u8) -> Result<u64, String> {
+    super::ensure_savestate_actions_allowed()?;
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid slot {slot}"));
     }
@@ -309,6 +310,12 @@ pub fn cancel_pending_save(generation: u64) {
         {
             *pending = None;
         }
+    }
+}
+
+pub(crate) fn cancel_pending_save_for_match_lock() {
+    if let Ok(mut pending) = PENDING_SAVE.lock() {
+        *pending = None;
     }
 }
 
@@ -479,7 +486,9 @@ fn event_touches_console(event: &Event) -> bool {
 
 fn process_lines(app: &AppHandle, lines: Vec<String>, assembler: &mut PositionAssembler) {
     for line in lines {
-        super::console_phase::observe_line(&line);
+        if super::console_phase::observe_line(&line) {
+            super::match_safety::refresh(app, super::process::deadlock_pid().is_some());
+        }
 
         if line.contains("setpos") || line.contains("setang") || line.contains("getpos") {
             println!("[SPLIT] Deadlock console -> {}", line);

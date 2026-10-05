@@ -751,6 +751,7 @@ impl HookEngine {
         injected_by_split: bool,
         deadlock_foreground: bool,
         presentation_mask_active: bool,
+        match_safety_locked: bool,
         settings: &HotkeySettings,
     ) -> HookDecision {
         if injected_by_split {
@@ -797,6 +798,10 @@ impl HookEngine {
             } else {
                 HookDecision::Pass
             };
+        }
+
+        if match_safety_locked {
+            return HookDecision::Pass;
         }
 
         if vk == VK_F10 && presentation_mask_active {
@@ -1091,7 +1096,7 @@ fn reconcile_quick_access_hotkeys(
         foreground,
         text_input_active,
         crate::quick_access::is_visible(),
-        crate::quick_access::is_enabled(),
+        crate::quick_access::is_enabled() && !super::match_safety::is_locked(),
     );
 
     apply_quick_access_registration_plan(
@@ -2474,6 +2479,7 @@ fn prime_active_slot(slot: u8) -> Result<bool, String> {
 }
 
 fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
+    super::ensure_savestate_actions_allowed()?;
     let (favorite, snapshot, display_name, color) = super::active_slot_state(slot)?;
 
     let Some(snapshot) = snapshot else {
@@ -2626,6 +2632,7 @@ fn load_active_slot(slot: u8, show_notification: bool) -> Result<bool, String> {
 }
 
 pub fn load_slot_from_ui(slot: u8) -> Result<(), String> {
+    super::ensure_savestate_actions_allowed()?;
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid load slot {slot}"));
     }
@@ -2657,6 +2664,7 @@ pub fn load_slot_from_ui(slot: u8) -> Result<(), String> {
 }
 
 pub fn save_slot_from_ui(app: AppHandle, slot: u8) -> Result<(), String> {
+    super::ensure_savestate_actions_allowed()?;
     if !(1..=8).contains(&slot) {
         return Err(format!("Invalid save slot {slot}"));
     }
@@ -2757,6 +2765,7 @@ physical ctrl={} alt={} shift={}",
         false,
         deadlock_foreground,
         PRESENTATION_MASK_ACTIVE.load(Ordering::SeqCst),
+        super::match_safety::is_locked(),
         &settings,
     );
 
@@ -2836,6 +2845,16 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                     Err(_) => break,
                 };
 
+                if super::match_safety::is_locked() && !matches!(&action, HotkeyAction::Shutdown) {
+                    if let HotkeyAction::User { hotkey, .. } = &action {
+                        println!(
+                            "[SPLIT][Safety] {} ignored during live match",
+                            hotkey.display()
+                        );
+                    }
+                    continue;
+                }
+
                 if let HotkeyAction::User { action: _, hotkey } = &action {
                     if !wait_for_hotkey_release(hotkey) {
                         eprintln!(
@@ -2891,6 +2910,12 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                                 continue;
                             }
                         };
+
+                        if let Err(error) = super::ensure_savestate_actions_allowed() {
+                            watcher::cancel_pending_save(generation);
+                            println!("[SPLIT][Safety] Save {slot} cancelled: {error}");
+                            continue;
+                        }
 
                         if let Err(error) = send_capture_key() {
                             watcher::cancel_pending_save(generation);
@@ -3155,7 +3180,7 @@ mod tests {
     use super::*;
 
     fn classify_down(engine: &mut HookEngine, vk: u16, settings: &HotkeySettings) -> HookDecision {
-        engine.classify(vk, true, false, false, true, false, settings)
+        engine.classify(vk, true, false, false, true, false, false, settings)
     }
 
     #[test]
@@ -3197,6 +3222,30 @@ mod tests {
             classify_down(&mut save, VK_F1, &settings),
             HookDecision::Trigger(UserHotkeyAction::Save(1), _)
         ));
+    }
+
+    #[test]
+    fn match_safety_passes_load_and_save_hotkeys_through() {
+        let settings = HotkeySettings::default();
+        let mut load = HookEngine::default();
+        assert_eq!(
+            load.classify(VK_F1, true, false, false, true, false, true, &settings),
+            HookDecision::Pass
+        );
+        assert_eq!(
+            load.classify(VK_F1, false, true, false, true, false, true, &settings),
+            HookDecision::Pass
+        );
+
+        let mut save = HookEngine::default();
+        assert_eq!(
+            save.classify(VK_LMENU, true, false, false, true, false, true, &settings),
+            HookDecision::Pass
+        );
+        assert_eq!(
+            save.classify(VK_F1, true, false, false, true, false, true, &settings),
+            HookDecision::Pass
+        );
     }
 
     #[test]
@@ -3268,11 +3317,11 @@ mod tests {
         let settings = HotkeySettings::default();
         let mut engine = HookEngine::default();
         assert_eq!(
-            engine.classify(VK_F1, true, false, false, false, false, &settings),
+            engine.classify(VK_F1, true, false, false, false, false, false, &settings),
             HookDecision::Pass
         );
         assert_eq!(
-            engine.classify(VK_F1, false, true, false, false, false, &settings),
+            engine.classify(VK_F1, false, true, false, false, false, false, &settings),
             HookDecision::Pass
         );
     }
@@ -3300,11 +3349,29 @@ mod tests {
             HookDecision::Trigger(UserHotkeyAction::Undo, _)
         ));
         assert_eq!(
-            engine.classify(VK_LCONTROL, false, true, false, true, false, &settings),
+            engine.classify(
+                VK_LCONTROL,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                &settings
+            ),
             HookDecision::Pass
         );
         assert_eq!(
-            engine.classify(b'Z' as u16, false, true, false, true, false, &settings),
+            engine.classify(
+                b'Z' as u16,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                &settings
+            ),
             HookDecision::Consume
         );
     }
@@ -3356,23 +3423,23 @@ mod tests {
         let mut engine = HookEngine::default();
 
         assert!(matches!(
-            engine.classify(VK_F10, true, false, false, true, false, &settings),
+            engine.classify(VK_F10, true, false, false, true, false, false, &settings),
             HookDecision::Trigger(UserHotkeyAction::Load(1), _)
         ));
         assert_eq!(
-            engine.classify(VK_F10, true, false, false, true, true, &settings),
+            engine.classify(VK_F10, true, false, false, true, true, false, &settings),
             HookDecision::Consume
         );
         assert_eq!(
-            engine.classify(VK_F10, false, true, false, true, true, &settings),
+            engine.classify(VK_F10, false, true, false, true, true, false, &settings),
             HookDecision::Consume
         );
         assert_eq!(
-            engine.classify(VK_F10, true, false, false, true, true, &settings),
+            engine.classify(VK_F10, true, false, false, true, true, false, &settings),
             HookDecision::EmergencyF10
         );
         assert_eq!(
-            engine.classify(VK_F10, false, true, false, true, true, &settings),
+            engine.classify(VK_F10, false, true, false, true, true, false, &settings),
             HookDecision::Pass
         );
     }
@@ -3382,7 +3449,7 @@ mod tests {
         let settings = HotkeySettings::default();
         let mut engine = HookEngine::default();
         assert_eq!(
-            engine.classify(VK_F9, true, false, true, true, false, &settings),
+            engine.classify(VK_F9, true, false, true, true, false, false, &settings),
             HookDecision::Pass
         );
     }
@@ -3428,11 +3495,11 @@ mod tests {
 
         for vk in [VK_CAPITAL, VK_ESCAPE] {
             assert_eq!(
-                engine.classify(vk, true, false, false, true, false, &settings),
+                engine.classify(vk, true, false, false, true, false, false, &settings),
                 HookDecision::Pass
             );
             assert_eq!(
-                engine.classify(vk, false, true, false, true, false, &settings),
+                engine.classify(vk, false, true, false, true, false, false, &settings),
                 HookDecision::Pass
             );
             assert!(!engine.down_keys.contains(&vk));

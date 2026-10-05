@@ -95,6 +95,8 @@ fn apply_transition(app: &AppHandle, transition: ProcessTransition) {
         eprintln!("[SPLIT] Deadlock stop console watcher failed: {error}");
     }
 
+    super::match_safety::refresh(app, super::process::deadlock_pid().is_some());
+
     crate::ui::emit_to_main_if_present(app, "deadlock-status-changed", super::get_status());
 }
 
@@ -117,13 +119,15 @@ pub fn start(app: AppHandle) -> Result<(), String> {
             }
 
             loop {
-                match stop_rx.recv_timeout(Duration::from_millis(1_500)) {
+                match stop_rx.recv_timeout(Duration::from_millis(500)) {
                     Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {
-                        if let Some(transition) = detector.observe(super::process::deadlock_pid()) {
+                        let pid = super::process::deadlock_pid();
+                        if let Some(transition) = detector.observe(pid) {
                             println!("[SPLIT] Deadlock process transition: {transition:?}");
                             apply_transition(&app, transition);
                         }
+                        super::match_safety::refresh(&app, pid.is_some());
                     }
                 }
             }

@@ -21,6 +21,10 @@ const QUICK_ACCESS_MARGIN: i32 = 14;
 static QUICK_ACCESS_VISIBLE: AtomicBool = AtomicBool::new(false);
 static QUICK_ACCESS_INTERACTIVE: AtomicBool = AtomicBool::new(false);
 
+fn quick_access_available(enabled: bool, match_safety_locked: bool) -> bool {
+    enabled && !match_safety_locked
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum QuickAccessPosition {
@@ -161,7 +165,9 @@ fn get_or_create(app: &AppHandle) -> Result<WebviewWindow, String> {
 }
 
 pub fn show(app: &AppHandle) -> Result<(), String> {
-    if !crate::editions::windows_quick_access_enabled() || !is_enabled() {
+    if !crate::editions::windows_quick_access_enabled()
+        || !quick_access_available(is_enabled(), crate::deadlock::match_safety::is_locked())
+    {
         return Ok(());
     }
 
@@ -297,7 +303,9 @@ pub fn reposition_if_visible(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn enter_interaction_mode(app: &AppHandle) -> Result<(), String> {
-    if !crate::editions::windows_quick_access_enabled() || !is_enabled() {
+    if !crate::editions::windows_quick_access_enabled()
+        || !quick_access_available(is_enabled(), crate::deadlock::match_safety::is_locked())
+    {
         return Ok(());
     }
 
@@ -437,6 +445,13 @@ mod tests {
                 position: QuickAccessPosition::Left,
             },
         );
+    }
+
+    #[test]
+    fn match_safety_makes_quick_access_unavailable() {
+        assert!(quick_access_available(true, false));
+        assert!(!quick_access_available(true, true));
+        assert!(!quick_access_available(false, false));
     }
 
     #[test]

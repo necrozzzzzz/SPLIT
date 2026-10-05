@@ -495,7 +495,7 @@ mod tests {
             &DiscordPresenceConfig::default(),
         );
         assert_eq!(compact.resolved_phase, ResolvedPhase::Sandbox);
-        assert_eq!(compact.details, "Practice");
+        assert_eq!(compact.details, "Sandbox");
         assert_eq!(compact.state, "Practicing with Haze · 1/6");
         assert_eq!(compact.large_image, "haze");
         assert!(serde_json::to_value(activity_for(&compact))

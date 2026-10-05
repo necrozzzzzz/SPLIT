@@ -11,6 +11,10 @@ import {
 } from "@tauri-apps/api/core";
 
 import {
+  getVersion,
+} from "@tauri-apps/api/app";
+
+import {
   listen,
 } from "@tauri-apps/api/event";
 
@@ -49,6 +53,7 @@ import DiscordPresenceSettings from "./DiscordPresenceSettings";
 
 type DeadlockStatus = {
   deadlockRunning: boolean;
+  matchSafetyLocked: boolean;
   deadlockPath: string | null;
   consoleLogPath: string | null;
   consoleLogExists: boolean;
@@ -511,6 +516,7 @@ function isSimpleTextHotkey(hotkey: Hotkey): boolean {
 
 const EMPTY_STATUS: DeadlockStatus = {
   deadlockRunning: false,
+  matchSafetyLocked: false,
   deadlockPath: null,
   consoleLogPath: null,
   consoleLogExists: false,
@@ -561,7 +567,8 @@ type SettingsSection =
   | "discord"
   | "hotkeys"
   | "notifications"
-  | "diagnostics";
+  | "diagnostics"
+  | "about";
 
 function formatSavedAge(
   savedAt: number | null,
@@ -633,7 +640,30 @@ function App() {
     setActiveSettingsSection,
   ] = useState<SettingsSection>(
     "general",
-  );  
+  );
+
+  const [appVersion, setAppVersion] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    void getVersion()
+      .then((version) => {
+        if (active) {
+          setAppVersion(version);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAppVersion("Unavailable");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
 
   const [
@@ -1169,6 +1199,31 @@ function App() {
       if (transitionTimer !== undefined) window.clearTimeout(transitionTimer);
       if (enterFrame !== undefined) window.cancelAnimationFrame(enterFrame);
       if (settleFrame !== undefined) window.cancelAnimationFrame(settleFrame);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<boolean>(
+      "deadlock-match-safety-changed",
+      (event) => {
+        if (!disposed) {
+          setStatus((current) => ({
+            ...current,
+            matchSafetyLocked: event.payload,
+          }));
+        }
+      },
+    ).then((cleanup) => {
+      if (disposed) cleanup();
+      else unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 
@@ -5042,6 +5097,7 @@ function App() {
           <button
             type="button"
             className={activeView === "slots" && !favoriteMode ? "active" : ""}
+            disabled={status.matchSafetyLocked && favoriteMode}
             onClick={() => {
               setActiveView("slots");
               if (favoriteMode) void leaveFavoriteMode();
@@ -5052,7 +5108,11 @@ function App() {
           <button
             type="button"
             className={activeView === "slots" && favoriteMode ? "active" : ""}
-            disabled={savingSlot !== null || loadingSlot !== null}
+            disabled={
+              status.matchSafetyLocked ||
+              savingSlot !== null ||
+              loadingSlot !== null
+            }
             onClick={() => {
               setActiveView("slots");
               if (!favoriteMode) void toggleFavorites();
@@ -5121,6 +5181,7 @@ function App() {
               className="preset-button"
               type="button"
               disabled={
+                status.matchSafetyLocked ||
                 !historyState.canUndo ||
                 savingSlot !== null ||
                 loadingSlot !== null
@@ -5138,6 +5199,7 @@ function App() {
               className="preset-button"
               type="button"
               disabled={
+                status.matchSafetyLocked ||
                 !historyState.canRedo ||
                 savingSlot !== null ||
                 loadingSlot !== null
@@ -5289,6 +5351,20 @@ function App() {
           >
             Diagnostics
           </button>
+
+          <button
+            type="button"
+            className={
+              activeSettingsSection === "about"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setActiveSettingsSection("about")
+            }
+          >
+            About
+          </button>
         </nav>
       )}
 
@@ -5397,7 +5473,20 @@ function App() {
         )}
 
       {activeView === "slots" && (
-    <section className="savestates-section">
+      <>
+      {status.matchSafetyLocked && (
+        <div className="match-safety-banner" role="status">
+          <strong>MATCH IN PROGRESS</strong>
+          <span>SPLIT is locked until you return to the Hideout.</span>
+        </div>
+      )}
+    <fieldset
+      className={`savestates-section ${
+        status.matchSafetyLocked ? "match-safety-locked" : ""
+      }`}
+      disabled={status.matchSafetyLocked}
+      aria-disabled={status.matchSafetyLocked}
+    >
       <div className="savestates-header">
         <div>
           <p className="label">
@@ -6249,7 +6338,8 @@ function App() {
           },
         )}
       </div>
-    </section>
+    </fieldset>
+      </>
       )}
 
       {activeView === "settings" && (
@@ -7845,7 +7935,52 @@ function App() {
           </div>
         </section>
       </section>
-    )}  
+    )}
+
+    {activeSettingsSection === "about" && (
+      <section
+        className="about-settings-section"
+        aria-labelledby="about-settings-title"
+      >
+        <div className="about-settings-heading">
+          <p className="label">ABOUT</p>
+          <h2 id="about-settings-title">SPLIT</h2>
+        </div>
+
+        <div className="about-settings-list">
+          <div className="about-settings-row">
+            <span>Version</span>
+            <strong>{appVersion ?? "Loading…"}</strong>
+          </div>
+
+          <div className="about-settings-row about-edition-row">
+            <span>Edition</span>
+            <div className="about-edition-value">
+              <strong className="edition-badge">
+                {splitEditionLabel}
+              </strong>
+              <p>
+                {isBorderlessEdition
+                  ? "Includes Quick Access and in-game notifications."
+                  : "Optimized for exclusive fullscreen. No external in-game overlays."}
+              </p>
+            </div>
+          </div>
+
+          <div className="about-settings-row">
+            <span>GitHub</span>
+            <a
+              className="about-github-link"
+              href="https://github.com/necrozzzzzz/SPLIT"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/necrozzzzzz/SPLIT
+            </a>
+          </div>
+        </div>
+      </section>
+    )}
       </div>
       )}
 
