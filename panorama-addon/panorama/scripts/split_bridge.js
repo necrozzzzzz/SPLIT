@@ -12,9 +12,14 @@
     var FRAME_MAGIC = 0xA0;
     var FRAME_VERSION = 1;
     var FRAME_END_FLAG = 0x08;
-    var ROUND_TIMEOUT = 0.60;
-    var ROUND_RETRY_DELAY = 0.06;
-    var MAX_ROUND_RETRIES = 2;
+    var NORMAL_CLOSE_SECONDS = 0.60;
+    var STORM_CLOSE_SECONDS = 2.5;
+    var STORM_TRIGGER_FAILURES = 2;
+    var STORM_ATTEMPTS = 4;
+    var ROUND_RETRY_DELAY = 0.10;
+    var STORM_RETRY_DELAY = 1.0;
+    var MAX_ROUND_RETRIES = 3;
+    var STATE_PANEL_PREFIX = 'SplitStateBit';
 
     function visual(key, text) {
         if (shared.diagnostics && shared.diagnostics.set) shared.diagnostics.set(key, text);
@@ -57,76 +62,170 @@
         return result;
     }
 
-    function decodeState(bytes) {
-        var compact = JSON.parse(utf8(bytes));
-        if (!compact || compact.length !== 8 || compact[0] !== 1) {
-            throw new Error('invalid state payload');
+    function unwrapSequence(raw, previous) {
+        if (previous < 0) return raw;
+        var previousRaw = previous & 0xFFFF;
+        var delta = (raw - previousRaw + 0x10000) & 0xFFFF;
+        if (delta === 0) return previous;
+        if (delta > 0x8000) return previous - (0x10000 - delta);
+        return previous + delta;
+    }
+
+    function decodeFastState(bytes, previousSequence) {
+        if (!bytes || bytes.length !== 9 || bytes[0] !== 1 || bytes[8] !== 0) {
+            throw new Error('invalid fast state payload');
         }
+        var flags = bytes[3];
         var modes = ['hidden', 'passive', 'interactive'];
-        var mode = modes[compact[2]];
-        if (!mode || !(compact[5] instanceof Array)) throw new Error('invalid state fields');
-        var slots = [];
-        for (var index = 0; index < compact[5].length; index += 1) {
-            var slot = compact[5][index];
-            if (!slot || slot.length !== 3) throw new Error('invalid slot');
-            slots.push({ index: slot[0], name: slot[1], populated: slot[2] === 1 });
+        var mode = modes[flags & 0x03];
+        if (!mode || (flags & 0xF0) !== 0) throw new Error('invalid fast state flags');
+        var rawSequence = bytes[1] | (bytes[2] << 8);
+        return {
+            protocolVersion: bytes[0],
+            sequence: unwrapSequence(rawSequence, previousSequence),
+            visibility: mode,
+            activePreset: bytes[4],
+            populatedMask: bytes[5],
+            canUndo: (flags & 0x04) !== 0,
+            canRedo: (flags & 0x08) !== 0,
+            metadataRevision: bytes[6] | (bytes[7] << 8)
+        };
+    }
+
+    function decodeMetadataItem(bytes) {
+        if (!bytes || bytes.length < 7 || bytes[0] !== 1) {
+            throw new Error('invalid metadata item payload');
+        }
+        var item = bytes[4];
+        var length = bytes[5] | (bytes[6] << 8);
+        if (item > 8 || bytes.length !== 7 + length) {
+            throw new Error('invalid metadata item fields');
         }
         return {
-            protocolVersion: compact[0],
-            sequence: compact[1],
-            visibility: mode,
-            activePreset: compact[3],
-            activePresetName: compact[4],
-            slots: slots,
-            canUndo: compact[6] === 1,
-            canRedo: compact[7] === 1
+            protocolVersion: bytes[0],
+            revision: bytes[1] | (bytes[2] << 8),
+            activePreset: bytes[3],
+            item: item,
+            value: utf8(bytes.slice(7))
+        };
+    }
+
+    function metadataMatches(cache, fast) {
+        return !!cache && cache.revision === fast.metadataRevision &&
+            cache.activePreset === fast.activePreset;
+    }
+
+    function createMetadataCache(fast) {
+        return {
+            revision: fast.metadataRevision,
+            activePreset: fast.activePreset,
+            items: [null, null, null, null, null, null, null, null, null],
+            received: [false, false, false, false, false, false, false, false, false]
+        };
+    }
+
+    function nextMissingMetadataItem(cache) {
+        for (var index = 0; index < 9; index += 1) {
+            if (!cache.received[index]) return index;
+        }
+        return -1;
+    }
+
+    function storeMetadataItem(cache, metadata) {
+        if (!cache || metadata.revision !== cache.revision ||
+            metadata.activePreset !== cache.activePreset ||
+            metadata.item < 0 || metadata.item > 8) return false;
+        cache.items[metadata.item] = metadata.value;
+        cache.received[metadata.item] = true;
+        return true;
+    }
+
+    function slotsForFast(fast, prior, cached) {
+        var slots = [];
+        for (var index = 0; index < 8; index += 1) {
+            var name = cached && cached.received[index + 1] ? cached.items[index + 1] : null;
+            if (typeof name !== 'string' && prior.activePreset === fast.activePreset &&
+                prior.slots[index] && typeof prior.slots[index].name === 'string') {
+                name = prior.slots[index].name;
+            }
+            if (typeof name !== 'string') name = 'Slot ' + (index + 1);
+            slots.push({
+                index: index + 1,
+                name: name,
+                populated: (fast.populatedMask & (1 << index)) !== 0
+            });
+        }
+        return slots;
+    }
+
+    function composeFastState(fast, prior, cached) {
+        return {
+            protocolVersion: fast.protocolVersion,
+            sequence: fast.sequence,
+            visibility: fast.visibility,
+            activePreset: fast.activePreset,
+            activePresetName: cached && cached.received[0] ? cached.items[0] :
+                (prior.activePreset === fast.activePreset ? prior.activePresetName : ''),
+            metadataRevision: fast.metadataRevision,
+            slots: slotsForFast(fast, prior, cached),
+            canUndo: fast.canUndo,
+            canRedo: fast.canRedo
+        };
+    }
+
+    if (shared.testHooks) {
+        shared.testHooks.bridgeProtocol = {
+            decodeFastState: decodeFastState,
+            decodeMetadataItem: decodeMetadataItem,
+            metadataMatches: metadataMatches,
+            createMetadataCache: createMetadataCache,
+            nextMissingMetadataItem: nextMissingMetadataItem,
+            storeMetadataItem: storeMetadataItem,
+            composeFastState: composeFastState
         };
     }
 
     modules.createBridge = function (runtime, host, state) {
-        var transport = $.CreatePanel('Panel', host, 'SplitImageTransport', {
-            hittest: 'false', hittestchildren: 'false'
-        });
         var images = [];
         var actionImage = null;
-        var loadedBits = [];
-        var roundOpen = false;
-        var loadedCount = 0;
-        for (var loadedIndex = 0; loadedIndex < FRAME_BITS; loadedIndex += 1) {
-            if (loadedBits[loadedIndex]) loadedCount += 1;
-        }
-
-        visual('ipc_loaded', 'LOADED BITS ' + loadedCount);
-        $.Msg('[SPLIT IPC] round=' + round + ' loadedBits=' + loadedCount);
+        var activeAttempt = null;
+        var attemptSerial = 0;
+        var imageLoadedEvents = 0;
         var messageId = 0;
+        var transferKind = 'fast';
+        var requestedMetadataRevision = 0;
+        var requestedMetadataPreset = 0;
+        var requestedMetadataItem = -1;
+        var metadataCache = null;
         var round = 0;
         var retry = 0;
+        var crcFailStreak = 0;
+        var stormAttemptsRemaining = 0;
         var nonce = 0;
         var payload = [];
         var closeHandle = null;
         var nextHandle = null;
+        var handlerToken = null;
 
-        transport.style.width = '2px';
-        transport.style.height = '2px';
-        transport.style.horizontalAlign = 'left';
-        transport.style.verticalAlign = 'top';
-        transport.style.opacity = '0.01';
-        transport.style.overflow = 'clip';
-        transport.hittest = false;
-        transport.hittestchildren = false;
+        function active() { return runtime.active() && utils.valid(host); }
 
-        function active() { return runtime.active() && utils.valid(transport); }
-
-        function scheduleNext(delay) {
+        function scheduleFast(delay) {
             utils.cancel(nextHandle);
-            nextHandle = $.Schedule(delay, startMessage);
+            nextHandle = $.Schedule(delay, startFastMessage);
         }
 
-        function disconnect(reason) {
+        function failTransfer(reason) {
             $.Warning('[SPLIT IPC] ' + reason);
-            visual('ipc_crc', 'CRC FAIL');
-            state.disconnect();
-            scheduleNext(1.0);
+            visual('ipc_crc', (transferKind === 'fast' ? 'FAST ' : 'METADATA ') + 'CRC FAIL');
+            if (transferKind === 'metadata') {
+                visual('ipc_item_complete', 'ITEM FAILED ' +
+                    (requestedMetadataItem + 1) + '/9');
+                visual('ipc_metadata_retry', 'RETRY LATER');
+                scheduleFast(1.0);
+            } else {
+                state.disconnect();
+                scheduleFast(1.0);
+            }
         }
 
         function parseFrame(bytes) {
@@ -142,38 +241,97 @@
             return { end: (bytes[0] & FRAME_END_FLAG) !== 0, length: length };
         }
 
-        function completeMessage() {
-            var nextState;
-            try {
-                nextState = decodeState(payload);
-            } catch (error) {
-                disconnect('message parse failed: ' + error);
-                return;
-            }
-            visual('ipc_complete', 'MESSAGE COMPLETE');
-            visual('ipc_sequence', 'SEQ ' + nextState.sequence);
-            visual('ipc_mode', 'MODE ' + nextState.visibility);
-            visual('ipc_preset', 'PRESET ' + (nextState.activePresetName || ''));
-            visual('ipc_slots', 'SLOTS ' + nextState.slots.length);
-            $.Msg('[SPLIT IPC] message=' + messageId + ' sequence=' + nextState.sequence +
-                ' mode=' + nextState.visibility + ' slots=' + nextState.slots.length);
-            state.apply(nextState);
-            scheduleNext(nextState.visibility === 'interactive' ? 0.25 :
-                (nextState.visibility === 'passive' ? 0.5 : 1.0));
+        function pollDelay(nextState) {
+            return nextState.visibility === 'interactive' ? 0.25 :
+                (nextState.visibility === 'passive' ? 0.5 : 1.0);
         }
 
-        function closeRound() {
+        function completeFastMessage() {
+            var prior = state.get();
+            var fast = decodeFastState(payload, prior.sequence);
+            if (!metadataMatches(metadataCache, fast)) {
+                metadataCache = createMetadataCache(fast);
+            }
+            var nextState = composeFastState(fast, prior, metadataCache);
+
+            visual('ipc_complete', 'FAST STATE');
+            visual('ipc_sequence', 'SEQ ' + nextState.sequence);
+            visual('ipc_mode', 'MODE ' + nextState.visibility);
+            var maskHex = fast.populatedMask.toString(16).toUpperCase();
+            if (maskHex.length < 2) maskHex = '0' + maskHex;
+            visual('ipc_slots_mask', 'SLOTS MASK 0x' + maskHex);
+            visual('ipc_meta_revision', 'META REV ' + fast.metadataRevision);
+            visual('ipc_fast_frames', 'FAST FRAMES ' + (round + 1));
+            $.Msg('[SPLIT IPC] FAST STATE message=' + messageId + ' sequence=' +
+                nextState.sequence + ' mode=' + nextState.visibility + ' slotsMask=0x' +
+                maskHex + ' metadataRevision=' + fast.metadataRevision +
+                ' frames=' + (round + 1));
+
+            // Apply the latency-sensitive state before any metadata transfer begins.
+            state.apply(nextState);
+            var missingItem = nextMissingMetadataItem(metadataCache);
+            if (missingItem >= 0) {
+                startMetadataMessage(fast.metadataRevision, fast.activePreset, missingItem);
+            } else {
+                scheduleFast(pollDelay(nextState));
+            }
+        }
+
+        function completeMetadataMessage() {
+            var metadata = decodeMetadataItem(payload);
+            if (metadata.revision !== requestedMetadataRevision ||
+                metadata.activePreset !== requestedMetadataPreset ||
+                metadata.item !== requestedMetadataItem ||
+                !storeMetadataItem(metadataCache, metadata)) {
+                throw new Error('metadata item identity mismatch');
+            }
+            state.mergeMetadataItem(metadata);
+            visual('ipc_item_complete', 'ITEM COMPLETE ' + (metadata.item + 1) + '/9');
+            visual('ipc_meta_revision', 'META REV ' + metadata.revision);
+            visual('ipc_meta_frames', 'META FRAMES ' + (round + 1));
+            $.Msg('[SPLIT IPC] ITEM COMPLETE ' + (metadata.item + 1) +
+                '/9 revision=' + metadata.revision + ' frames=' + (round + 1));
+            var missingItem = nextMissingMetadataItem(metadataCache);
+            if (missingItem < 0) {
+                visual('ipc_metadata', 'METADATA COMPLETE 9/9');
+                $.Msg('[SPLIT IPC] METADATA COMPLETE 9/9 revision=' + metadata.revision);
+                scheduleFast(pollDelay(state.get()));
+            } else {
+                startMetadataMessage(metadata.revision, metadata.activePreset, missingItem);
+            }
+        }
+
+        function completeMessage() {
+            try {
+                if (transferKind === 'fast') completeFastMessage();
+                else completeMetadataMessage();
+            } catch (error) {
+                failTransfer(transferKind + ' message parse failed: ' + error);
+            }
+        }
+
+        function closeRound(attempt) {
             closeHandle = null;
-            if (!active() || !roundOpen) return;
-            roundOpen = false;
+            if (!active() || activeAttempt !== attempt || !attempt.open) return;
+            attempt.open = false;
+            activeAttempt = null;
+            if (attempt.storm && stormAttemptsRemaining > 0) stormAttemptsRemaining -= 1;
             var bytes = [];
+            var loadedCount = 0;
             for (var byteIndex = 0; byteIndex < FRAME_BYTES; byteIndex += 1) {
                 var value = 0;
                 for (var bitIndex = 0; bitIndex < 8; bitIndex += 1) {
-                    if (loadedBits[byteIndex * 8 + bitIndex]) value |= 1 << bitIndex;
+                    if (attempt.loadedBits[byteIndex * 8 + bitIndex]) {
+                        value |= 1 << bitIndex;
+                        loadedCount += 1;
+                    }
                 }
                 bytes.push(value);
             }
+
+            visual('ipc_loaded', 'LOADED BITS ' + loadedCount);
+            $.Msg('[SPLIT IPC] round=' + round + ' retry=' + retry +
+                ' loadedBits=' + loadedCount);
 
             var hex = '';
             for (var hexIndex = 0; hexIndex < bytes.length; hexIndex += 1) {
@@ -198,18 +356,41 @@
             try {
                 frame = parseFrame(bytes);
             } catch (error) {
-                visual('ipc_crc', 'CRC FAIL');
+                crcFailStreak += 1;
+                visual('ipc_crc', (transferKind === 'fast' ? 'FAST ' : 'METADATA ') + 'CRC FAIL');
+                visual('ipc_crc_streak', 'CRC FAIL STREAK ' + crcFailStreak);
+                if (crcFailStreak >= STORM_TRIGGER_FAILURES) {
+                    var enteringStorm = stormAttemptsRemaining === 0;
+                    stormAttemptsRemaining = STORM_ATTEMPTS;
+                    visual('ipc_storm', 'STORM MODE');
+                    if (enteringStorm) {
+                        $.Warning('[SPLIT IPC] entering storm mode after ' +
+                            crcFailStreak + ' consecutive CRC failures');
+                    }
+                }
                 if (retry < MAX_ROUND_RETRIES) {
                     retry += 1;
+
                     $.Warning('[SPLIT IPC] round=' + round + ' retry=' + retry + ': ' + error);
-                    nextHandle = $.Schedule(ROUND_RETRY_DELAY, requestRound);
+
+                    var retryDelay = stormAttemptsRemaining > 0
+                        ? STORM_RETRY_DELAY
+                        : ROUND_RETRY_DELAY;
+
+                    nextHandle = $.Schedule(retryDelay, requestRound);
                 } else {
-                    disconnect('round=' + round + ' failed after retries: ' + error);
+                    failTransfer(transferKind + ' round=' + round +
+                        ' failed after retries: ' + error);
                 }
                 return;
             }
 
-            visual('ipc_crc', 'CRC OK');
+            crcFailStreak = 0;
+            visual('ipc_crc', (transferKind === 'fast' ? 'FAST ' : 'METADATA ') + 'CRC OK');
+            visual('ipc_crc_streak', 'CRC FAIL STREAK 0');
+            if (attempt.storm && stormAttemptsRemaining === 0) {
+                visual('ipc_storm', 'STORM MODE ENDED');
+            }
             for (var index = 0; index < frame.length; index += 1) payload.push(bytes[5 + index]);
             retry = 0;
             if (frame.end) {
@@ -223,50 +404,144 @@
         function requestRound() {
             nextHandle = null;
             if (!active()) return;
-            loadedBits = [];
-            roundOpen = true;
-            visual('ipc_round', 'ROUND ' + round);
+            var storm = stormAttemptsRemaining > 0;
+            var closeSeconds = storm ? STORM_CLOSE_SECONDS : NORMAL_CLOSE_SECONDS;
+            var attempt = {
+                serial: ++attemptSerial,
+                round: round,
+                retry: retry,
+                storm: storm,
+                open: true,
+                loadedBits: []
+            };
+            activeAttempt = attempt;
+            visual('ipc_round', transferKind === 'fast' ? 'FAST ROUND ' + round :
+                'ROUND ' + (round + 1));
+            visual('ipc_retry', 'RETRY ' + retry);
+            visual('ipc_close', storm ? 'CLOSE 2500ms STORM' : 'CLOSE 600ms');
+            var kindQuery = '&kind=' + transferKind;
+            if (transferKind === 'metadata') {
+                kindQuery += '&revision=' + requestedMetadataRevision +
+                    '&preset=' + requestedMetadataPreset + '&item=' + requestedMetadataItem;
+            }
             for (var index = 0; index < FRAME_BITS; index += 1) {
-                loadedBits[index] = false;
+                attempt.loadedBits[index] = false;
                 images[index].SetImage(STATE_BIT_URL + '?message=' + messageId + '&round=' + round +
-                    '&bit=' + index + '&nonce=' + (++nonce));
+                    '&retry=' + retry + '&attempt=' + attempt.serial + '&bit=' + index +
+                    kindQuery + '&nonce=' + (++nonce));
             }
             utils.cancel(closeHandle);
-            closeHandle = $.Schedule(ROUND_TIMEOUT, closeRound);
+            closeHandle = $.Schedule(closeSeconds, function () { closeRound(attempt); });
         }
 
-        function startMessage() {
+        function startMessage(kind, metadataRevision, metadataPreset, metadataItem) {
             nextHandle = null;
             if (!active()) return;
+            transferKind = kind;
+            requestedMetadataRevision = metadataRevision || 0;
+            requestedMetadataPreset = metadataPreset || 0;
+            requestedMetadataItem = metadataItem === undefined ? -1 : metadataItem;
             messageId = messageId >= 65535 ? 1 : messageId + 1;
             round = 0;
             retry = 0;
+            crcFailStreak = 0;
+            stormAttemptsRemaining = 0;
             payload = [];
             visual('ipc_status', 'SPLIT IPC');
-            visual('ipc_request', 'STATE REQUEST');
+            visual('ipc_request', kind === 'fast' ? 'FAST STATE' : 'METADATA REQUEST');
+            if (kind === 'metadata') {
+                visual('ipc_metadata', 'METADATA');
+                visual('ipc_metadata_item', 'ITEM ' + (requestedMetadataItem + 1) + '/9');
+                visual('ipc_metadata_name', requestedMetadataItem === 0 ? 'PRESET' :
+                    'SLOT ' + requestedMetadataItem);
+                visual('ipc_metadata_retry', '');
+                visual('ipc_meta_revision', 'META REV ' + requestedMetadataRevision);
+                $.Msg('[SPLIT IPC] METADATA REQUEST item=' +
+                    (requestedMetadataItem + 1) + '/9 revision=' +
+                    requestedMetadataRevision + ' preset=' + requestedMetadataPreset);
+            }
+            visual('ipc_crc_streak', 'CRC FAIL STREAK 0');
             requestRound();
         }
 
-        function markLoaded(index) {
-            return function () {
-                if (active() && roundOpen) loadedBits[index] = true;
-            };
+        function startFastMessage() {
+            startMessage('fast', 0, 0, -1);
+        }
+
+        function startMetadataMessage(revision, preset, item) {
+            startMessage('metadata', revision, preset, item);
+        }
+
+        function onImageLoaded(panel) {
+            if (!active() || !panel) return;
+
+            var id = '';
+            try {
+                id = String(panel.id || '');
+            } catch (error) {
+                return;
+            }
+
+            if (id.indexOf(STATE_PANEL_PREFIX) !== 0) return;
+
+            var suffix = id.substring(STATE_PANEL_PREFIX.length);
+            if (!/^\d+$/.test(suffix)) return;
+            var index = Number(suffix);
+
+            if (!isFinite(index) ||
+                Math.floor(index) !== index ||
+                index < 0 ||
+                index >= FRAME_BITS) {
+                return;
+            }
+
+            imageLoadedEvents += 1;
+            visual('ipc_image_events', 'IMAGELOADED EVENTS ' + imageLoadedEvents);
+            visual('ipc_last_image', 'LAST IMAGE BIT ' + index);
+
+            var attempt = activeAttempt;
+            if (!attempt || !attempt.open || attempt.round !== round || attempt.retry !== retry) return;
+            attempt.loadedBits[index] = true;
         }
 
         function createImage(id) {
-            var image = $.CreatePanel('Image', transport, id, {
+            var image = $.CreatePanel('Image', host, id, {
                 hittest: 'false', hittestchildren: 'false'
             });
-            image.style.width = '1px';
-            image.style.height = '1px';
-            image.style.opacity = '0.01';
+            image.visible = false;
+            image.style.width = '2px';
+            image.style.height = '2px';
             image.hittest = false;
+            image.hittestchildren = false;
             return image;
         }
 
+        if (!shared.imageLoadedHandlerInstalled) {
+            try {
+                $.RegisterForUnhandledEvent('ImageLoaded', function (panel) {
+                    var target = shared.currentImageLoadedHandler;
+                    if (typeof target === 'function') target(panel);
+                });
+                shared.imageLoadedHandlerInstalled = true;
+            } catch (error) {
+                $.Warning('[SPLIT IPC] global ImageLoaded registration failed: ' + error);
+                visual('ipc_handler', 'IMAGELOADED HANDLER FAILED');
+            }
+        }
+
+        handlerToken = function (panel) {
+            var currentRuntime = shared.runtime;
+            if (!handlerToken.active || !currentRuntime ||
+                currentRuntime.generation !== handlerToken.generation ||
+                !currentRuntime.active()) return;
+            onImageLoaded(panel);
+        };
+        handlerToken.generation = runtime.generation;
+        handlerToken.active = true;
+        shared.currentImageLoadedHandler = handlerToken;
+
         for (var index = 0; index < FRAME_BITS; index += 1) {
             var image = createImage('SplitStateBit' + index);
-            $.RegisterEventHandler('ImageLoaded', image, markLoaded(index));
             images.push(image);
         }
         actionImage = createImage('SplitActionRequest');
@@ -281,16 +556,24 @@
         }
 
         visual('ipc_status', 'SPLIT IPC');
-        startMessage();
+        startFastMessage();
 
         return {
             send: send,
             retire: function () {
-                roundOpen = false;
+                if (activeAttempt) activeAttempt.open = false;
+                activeAttempt = null;
                 utils.cancel(closeHandle);
                 utils.cancel(nextHandle);
+                handlerToken.active = false;
+                if (shared.currentImageLoadedHandler === handlerToken) {
+                    shared.currentImageLoadedHandler = null;
+                }
                 state.disconnect();
-                if (utils.valid(transport)) transport.DeleteAsync(0);
+                for (var index = 0; index < images.length; index += 1) {
+                    if (utils.valid(images[index])) images[index].DeleteAsync(0);
+                }
+                if (utils.valid(actionImage)) actionImage.DeleteAsync(0);
                 images = [];
                 actionImage = null;
             }

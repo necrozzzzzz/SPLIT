@@ -51,8 +51,8 @@ const sourceFiles = [
   "styles/split_quick_access.css",
 ];
 
-const stockClientVersion = "6745";
-const stockSourceRevision = "11078118";
+const stockClientVersion = "6746";
+const stockSourceRevision = "11080740";
 const expectedStyleIncludes = ["s2r://panorama/styles/split_quick_access.vcss_c"];
 const expectedScriptIncludes = [
   "s2r://panorama/scripts/split_utils.vjs_c",
