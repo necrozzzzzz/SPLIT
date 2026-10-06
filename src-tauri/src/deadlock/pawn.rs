@@ -835,6 +835,7 @@ pub(crate) fn debug_scan_other_pawns(
             }
         }
     }
+    
 
     println!(
         "[SPLIT][PawnScan] found {} other Citadel pawns",
@@ -843,6 +844,191 @@ pub(crate) fn debug_scan_other_pawns(
 
     for sample in 0..50 {
         for &(entity_index, pawn) in &pawns {
+
+
+            let controller_handle = read_remote_u32(
+                process.0,
+                pawn + 0x1050,
+                "m_hController",
+            )
+            .unwrap_or(0);
+
+            let default_controller_handle = read_remote_u32(
+                process.0,
+                pawn + 0x1054,
+                "m_hDefaultController",
+            )
+            .unwrap_or(0);
+
+            let controller_handle = read_remote_u32(
+                process.0,
+                pawn + 0x1050,
+                "m_hController",
+            )
+            .unwrap_or(0);
+
+            let default_controller_handle = read_remote_u32(
+                process.0,
+                pawn + 0x1054,
+                "m_hDefaultController",
+            )
+            .unwrap_or(0);
+
+            let controller_index = identity_index(controller_handle);
+            let default_controller_index = identity_index(default_controller_handle);
+
+            let mut controller_address = 0_u64;
+            let mut controller_rtti = String::from("unresolved");
+
+            if controller_handle != 0 && controller_handle != u32::MAX {
+                match resolve_handle(
+                    process.0,
+                    &chunks,
+                    controller_handle,
+                    identity_size,
+                ) {
+                    Ok(controller) => {
+                        controller_address = controller;
+
+                        match read_remote_u64(
+                            process.0,
+                            controller,
+                            "bot controller vtable",
+                        ) {
+                            Ok(vtable) => {
+                                controller_rtti = read_msvc_rtti_name(
+                                    process.0,
+                                    vtable,
+                                    client_range,
+                                    "bot controller",
+                                )
+                                .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                            }
+
+                            Err(error) => {
+                                controller_rtti = format!("VTABLE_ERROR:{error}");
+                            }
+                        }
+                    }
+
+                    Err(error) => {
+                        controller_rtti = format!("RESOLVE_ERROR:{error}");
+                    }
+                }
+            }
+
+            let mut default_controller_address = 0_u64;
+            let mut default_controller_rtti = String::from("unresolved");
+
+            if default_controller_handle != 0
+                && default_controller_handle != u32::MAX
+            {
+                match resolve_handle(
+                    process.0,
+                    &chunks,
+                    default_controller_handle,
+                    identity_size,
+                ) {
+                    Ok(controller) => {
+                        default_controller_address = controller;
+
+                        match read_remote_u64(
+                            process.0,
+                            controller,
+                            "default bot controller vtable",
+                        ) {
+                            Ok(vtable) => {
+                                default_controller_rtti = read_msvc_rtti_name(
+                                    process.0,
+                                    vtable,
+                                    client_range,
+                                    "default bot controller",
+                                )
+                                .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                            }
+
+                            Err(error) => {
+                                default_controller_rtti =
+                                    format!("VTABLE_ERROR:{error}");
+                            }
+                        }
+                    }
+
+                    Err(error) => {
+                        default_controller_rtti =
+                            format!("RESOLVE_ERROR:{error}");
+                    }
+                }
+            }
+
+
+            let body_component = read_remote_u64(
+                process.0,
+                pawn + 0x30,
+                "m_CBodyComponent",
+            )
+            .unwrap_or(0);
+
+            let mut body_rtti = String::from("null");
+
+            if body_component != 0 {
+                match read_remote_u64(
+                    process.0,
+                    body_component,
+                    "body component vtable",
+                ) {
+                    Ok(vtable) => {
+                        body_rtti = read_msvc_rtti_name(
+                            process.0,
+                            vtable,
+                            client_range,
+                            "body component",
+                        )
+                        .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                    }
+
+                    Err(error) => {
+                        body_rtti = format!("VTABLE_ERROR:{error}");
+                    }
+                }
+            }
+
+            let animation_controller = if body_component != 0 {
+                read_remote_u64(
+                    process.0,
+                    body_component + 0x530,
+                    "m_animationController",
+                )
+                .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let mut animation_controller_rtti = String::from("null");
+
+            if animation_controller != 0 {
+                match read_remote_u64(
+                    process.0,
+                    animation_controller,
+                    "animation controller vtable",
+                ) {
+                    Ok(vtable) => {
+                        animation_controller_rtti = read_msvc_rtti_name(
+                            process.0,
+                            vtable,
+                            client_range,
+                            "animation controller",
+                        )
+                        .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                    }
+
+                    Err(error) => {
+                        animation_controller_rtti =
+                            format!("VTABLE_ERROR:{error}");
+                    }
+                }
+            }
+
             let scene_node = match read_remote_u64(
                 process.0,
                 checked_add(
@@ -1018,33 +1204,31 @@ pub(crate) fn debug_scan_other_pawns(
             let loco_lean_triggered = (loco_flags & 0xFF) != 0;
             let loco_run_to_stop = ((loco_flags >> 8) & 0xFF) != 0;
 
+            let eye_angles = read_remote_f32x3(
+                process.0,
+                pawn + 0x1108,
+                "m_angEyeAngles",
+            )
+            .unwrap_or([0.0; 3]);
+
+            let locked_eye_angles = read_remote_f32x3(
+                process.0,
+                pawn + 0x1430,
+                "m_angLockedEyeAngles",
+            )
+            .unwrap_or([0.0; 3]);
+
             println!(
                 "[SPLIT][PawnScan] sample={} ent={} pawn=0x{:X} \
-            pos=({:.2},{:.2},{:.2}) \
-            vel=({:.2},{:.2},{:.2}) \
-            yaw={:.2} \
-            predSlow={:.3} \
-            slow={:.3} \
-            locoLean={} \
-            runToStop={}",
+            body=0x{:X} bodyRTTI={:?} \
+            animController=0x{:X} animControllerRTTI={:?}",
                 sample,
                 entity_index,
                 pawn,
-
-                position[0],
-                position[1],
-                position[2],
-
-                velocity[0],
-                velocity[1],
-                velocity[2],
-
-                ang_abs_rotation[1],
-
-                pred_slow_speed,
-                slow_speed,
-                loco_lean_triggered,
-                loco_run_to_stop,
+                body_component,
+                body_rtti,
+                animation_controller,
+                animation_controller_rtti,
             );
         }
 

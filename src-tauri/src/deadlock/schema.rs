@@ -491,43 +491,29 @@ pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
         .or(resolver.find_scope("client.dll")?)
         .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
 
-    for class_name in [
-        "C_BaseAnimGraph",
-        "C_BaseFlex",
-        "C_BaseCombatCharacter",
-        "C_BasePlayerPawn",
-        "C_CitadelPlayerPawn",
-    ] {
-        println!("[SPLIT][Schema][Class] {class_name}");
+    println!("[SPLIT][Schema][Class] CBodyComponentBaseAnimGraph");
 
-        let Ok(fields) = resolver.debug_list_fields(client, class_name) else {
-            println!("[SPLIT][Schema][ClassMissing] {class_name}");
-            continue;
-        };
+    match resolver.debug_list_fields(client, "CBodyComponentBaseAnimGraph") {
+        Ok(fields) => {
+            println!(
+                "[SPLIT][Schema][ClassFields] CBodyComponentBaseAnimGraph count={}",
+                fields.len()
+            );
 
-        for (name, offset) in fields {
-            let lower = name.to_ascii_lowercase();
-
-            if lower.contains("anim")
-                || lower.contains("move")
-                || lower.contains("speed")
-                || lower.contains("velocity")
-                || lower.contains("yaw")
-                || lower.contains("turn")
-                || lower.contains("dir")
-                || lower.contains("loco")
-                || lower.contains("pose")
-                || lower.contains("sequence")
-                || lower.contains("graph")
-            {
+            for (name, offset) in fields {
                 println!(
-                    "[SPLIT][Schema][Field] {class_name}::{name} = 0x{offset:X}"
+                    "[SPLIT][Schema][Field] CBodyComponentBaseAnimGraph::{name} = 0x{offset:X}"
                 );
             }
         }
+
+        Err(error) => {
+            println!(
+                "[SPLIT][Schema][ClassError] CBodyComponentBaseAnimGraph: {error}"
+            );
+        }
     }
         
-
     let required = |class_name: &str, field_name: &str| -> Result<u32, String> {
         resolver
             .find_field_offset(client, class_name, field_name)?
