@@ -860,19 +860,7 @@ pub(crate) fn debug_scan_other_pawns(
             )
             .unwrap_or(0);
 
-            let controller_handle = read_remote_u32(
-                process.0,
-                pawn + 0x1050,
-                "m_hController",
-            )
-            .unwrap_or(0);
-
-            let default_controller_handle = read_remote_u32(
-                process.0,
-                pawn + 0x1054,
-                "m_hDefaultController",
-            )
-            .unwrap_or(0);
+        
 
             let controller_index = identity_index(controller_handle);
             let default_controller_index = identity_index(default_controller_handle);
@@ -994,15 +982,62 @@ pub(crate) fn debug_scan_other_pawns(
             }
 
             let animation_controller = if body_component != 0 {
-                read_remote_u64(
-                    process.0,
-                    body_component + 0x530,
-                    "m_animationController",
-                )
-                .unwrap_or(0)
+                body_component + 0x530
             } else {
                 0
             };
+
+            let anim_ctrl_qword0 = read_remote_u64(
+                process.0,
+                animation_controller,
+                "animation controller qword0",
+            )
+            .unwrap_or(0);
+
+            let anim_ctrl_qword1 = read_remote_u64(
+                process.0,
+                animation_controller + 0x8,
+                "animation controller qword1",
+            )
+            .unwrap_or(0);
+
+            let anim_ctrl_qword2 = read_remote_u64(
+                process.0,
+                animation_controller + 0x10,
+                "animation controller qword2",
+            )
+            .unwrap_or(0);
+
+            let anim_ctrl_qword3 = read_remote_u64(
+                process.0,
+                animation_controller + 0x18,
+                "animation controller qword3",
+            )
+            .unwrap_or(0);
+
+            let mut q1_rtti = String::from("null");
+
+            if anim_ctrl_qword1 != 0 {
+                match read_remote_u64(
+                    process.0,
+                    anim_ctrl_qword1,
+                    "animation controller q1 vtable",
+                ) {
+                    Ok(vtable) => {
+                        q1_rtti = read_msvc_rtti_name(
+                            process.0,
+                            vtable,
+                            client_range,
+                            "animation controller q1 object",
+                        )
+                        .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                    }
+
+                    Err(error) => {
+                        q1_rtti = format!("VTABLE_ERROR:{error}");
+                    }
+                }
+            }
 
             let mut animation_controller_rtti = String::from("null");
 
@@ -1220,16 +1255,80 @@ pub(crate) fn debug_scan_other_pawns(
 
             println!(
                 "[SPLIT][PawnScan] sample={} ent={} pawn=0x{:X} \
-            body=0x{:X} bodyRTTI={:?} \
-            animController=0x{:X} animControllerRTTI={:?}",
+            body=0x{:X} \
+            animController=0x{:X} \
+            graphInstance=0x{:X} graphInstanceRTTI={:?} \
+            graphDefinition=0x{:016X} primaryGraphId=0x{:016X}",
                 sample,
                 entity_index,
                 pawn,
                 body_component,
-                body_rtti,
                 animation_controller,
-                animation_controller_rtti,
+                graph_instance_ag2,
+                graph_instance_rtti,
+                graph_definition_ag2,
+                primary_graph_id,
             );
+
+
+            let graph_instance_ag2 = if animation_controller != 0 {
+                read_remote_u64(
+                    process.0,
+                    animation_controller + 0x3C8,
+                    "m_pGraphInstanceAG2",
+                )
+                .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let mut graph_instance_rtti = String::from("null");
+
+            if graph_instance_ag2 != 0 {
+                match read_remote_u64(
+                    process.0,
+                    graph_instance_ag2,
+                    "AG2 graph instance vtable",
+                ) {
+                    Ok(vtable) => {
+                        graph_instance_rtti = read_msvc_rtti_name(
+                            process.0,
+                            vtable,
+                            client_range,
+                            "AG2 graph instance",
+                        )
+                        .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                    }
+
+                    Err(error) => {
+                        graph_instance_rtti =
+                            format!("VTABLE_ERROR:{error}");
+                    }
+                }
+            }
+
+            let graph_definition_ag2 = if animation_controller != 0 {
+                read_remote_u64(
+                    process.0,
+                    animation_controller + 0x2F0,
+                    "m_hGraphDefinitionAG2",
+                )
+                .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let primary_graph_id = if animation_controller != 0 {
+                read_remote_u64(
+                    process.0,
+                    animation_controller + 0x388,
+                    "m_primaryGraphId",
+                )
+                .unwrap_or(0)
+            } else {
+                0
+            };
+
         }
 
         std::thread::sleep(std::time::Duration::from_millis(100));

@@ -491,25 +491,25 @@ pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
         .or(resolver.find_scope("client.dll")?)
         .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
 
-    println!("[SPLIT][Schema][Class] CBodyComponentBaseAnimGraph");
+    println!("[SPLIT][Schema][Class] CBaseAnimGraphController");
 
-    match resolver.debug_list_fields(client, "CBodyComponentBaseAnimGraph") {
+    match resolver.debug_list_fields(client, "CBaseAnimGraphController") {
         Ok(fields) => {
             println!(
-                "[SPLIT][Schema][ClassFields] CBodyComponentBaseAnimGraph count={}",
+                "[SPLIT][Schema][ClassFields] CBaseAnimGraphController count={}",
                 fields.len()
             );
 
             for (name, offset) in fields {
                 println!(
-                    "[SPLIT][Schema][Field] CBodyComponentBaseAnimGraph::{name} = 0x{offset:X}"
+                    "[SPLIT][Schema][Field] CBaseAnimGraphController::{name} = 0x{offset:X}"
                 );
             }
         }
 
         Err(error) => {
             println!(
-                "[SPLIT][Schema][ClassError] CBodyComponentBaseAnimGraph: {error}"
+                "[SPLIT][Schema][ClassError] CBaseAnimGraphController: {error}"
             );
         }
     }
