@@ -83,6 +83,30 @@ pub(crate) struct SchemaResolver {
     scopes: Vec<ScopeEntry>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RouteSchema {
+    pub(crate) local_flag_offset: u32,
+    pub(crate) pawn_handle_offset: u32,
+    pub(crate) identity_size: u32,
+    pub(crate) game_scene_node_offset: u32,
+    pub(crate) local_origin_offset: u32,
+    pub(crate) absolute_origin_offset: u32,
+    pub(crate) wrapped_local_origin_offset: u32,
+
+    pub(crate) scene_node_ang_rotation_offset: u32,
+    pub(crate) scene_node_ang_abs_rotation_offset: u32,
+    pub(crate) scene_node_ang_wrapped_local_rotation_offset: u32,
+
+    pub(crate) absolute_velocity_offset: u32,
+    pub(crate) simulation_tick_offset: u32,
+    pub(crate) simulation_time_offset: u32,
+    pub(crate) old_origin_offset: u32,
+    pub(crate) view_angles_offset: u32,
+    pub(crate) client_camera_angles_offset: u32,
+    pub(crate) prediction_error_offset: u32,
+    pub(crate) prediction_error_time_offset: u32,
+}
+
 impl SchemaResolver {
     pub(crate) fn from_schema_system(pid: u32, schema_system: u64) -> Result<Self, String> {
         let process = open_process_read_only(pid)?;
@@ -403,9 +427,148 @@ impl SchemaResolver {
         Ok(None)
     }
 
+    pub(crate) fn debug_list_fields(
+        &self,
+        scope: u64,
+        class_name: &str,
+    ) -> Result<Vec<(String, u32)>, String> {
+        let class = self
+            .find_class(scope, class_name)?
+            .ok_or_else(|| format!("Schema class {class_name} was not found"))?;
+
+        let layout = self.read_class_layout(class)?;
+
+        let fields_size = layout
+            .field_count
+            .checked_mul(CLASS_FIELD_SIZE)
+            .ok_or_else(|| "Schema field-array size overflow".to_string())?;
+
+        let fields = read_exact(
+            self._process.0,
+            layout.fields,
+            fields_size,
+            "SchemaClassFieldData array",
+        )?;
+
+        let mut result = Vec::new();
+
+        for index in 0..layout.field_count {
+            let field_offset = index * CLASS_FIELD_SIZE;
+
+            let name_pointer =
+                read_u64(&fields, field_offset, "schema field name pointer")?;
+
+            let name = read_bounded_c_string(
+                self._process.0,
+                name_pointer,
+                MAX_SCHEMA_NAME,
+                "schema field name",
+            )?;
+
+            let offset =
+                read_i32(&fields, field_offset + 0x10, "schema field runtime offset")?;
+
+            if let Ok(offset) = validate_field_offset(offset, layout.size) {
+                result.push((name, offset));
+            }
+        }
+
+        Ok(result)
+    }
+
     fn scopes(&self) -> &[ScopeEntry] {
         &self.scopes
     }
+}
+
+pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
+    let schema_system =
+        super::interfaces::find_interface(pid, "schemasystem.dll", "SchemaSystem_001")?
+            .ok_or_else(|| "Exact interface SchemaSystem_001 was not found".to_string())?;
+    let resolver = SchemaResolver::from_schema_system(pid, schema_system)?;
+    let client = resolver
+        .find_scope("client")?
+        .or(resolver.find_scope("client.dll")?)
+        .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
+
+    for class_name in [
+        "C_BaseAnimGraph",
+        "C_BaseFlex",
+        "C_BaseCombatCharacter",
+        "C_BasePlayerPawn",
+        "C_CitadelPlayerPawn",
+    ] {
+        println!("[SPLIT][Schema][Class] {class_name}");
+
+        let Ok(fields) = resolver.debug_list_fields(client, class_name) else {
+            println!("[SPLIT][Schema][ClassMissing] {class_name}");
+            continue;
+        };
+
+        for (name, offset) in fields {
+            let lower = name.to_ascii_lowercase();
+
+            if lower.contains("anim")
+                || lower.contains("move")
+                || lower.contains("speed")
+                || lower.contains("velocity")
+                || lower.contains("yaw")
+                || lower.contains("turn")
+                || lower.contains("dir")
+                || lower.contains("loco")
+                || lower.contains("pose")
+                || lower.contains("sequence")
+                || lower.contains("graph")
+            {
+                println!(
+                    "[SPLIT][Schema][Field] {class_name}::{name} = 0x{offset:X}"
+                );
+            }
+        }
+    }
+        
+
+    let required = |class_name: &str, field_name: &str| -> Result<u32, String> {
+        resolver
+            .find_field_offset(client, class_name, field_name)?
+            .ok_or_else(|| format!("Exact schema field {class_name}::{field_name} was not found"))
+    };
+
+    Ok(RouteSchema {
+        local_flag_offset: required("CBasePlayerController", "m_bIsLocalPlayerController")?,
+        pawn_handle_offset: required("CBasePlayerController", "m_hPawn")?,
+        identity_size: resolver
+            .find_class_size(client, "CEntityIdentity")?
+            .ok_or_else(|| "Exact schema class CEntityIdentity was not found".to_string())?,
+        game_scene_node_offset: required("C_BaseEntity", "m_pGameSceneNode")?,
+        local_origin_offset: required("CGameSceneNode", "m_vecOrigin")?,
+        absolute_origin_offset: required("CGameSceneNode", "m_vecAbsOrigin")?,
+        wrapped_local_origin_offset: required("CGameSceneNode", "m_vecWrappedLocalOrigin")?,
+
+        scene_node_ang_rotation_offset: required(
+            "CGameSceneNode",
+            "m_angRotation",
+        )?,
+
+        scene_node_ang_abs_rotation_offset: required(
+            "CGameSceneNode",
+            "m_angAbsRotation",
+        )?,
+
+        scene_node_ang_wrapped_local_rotation_offset: required(
+            "CGameSceneNode",
+            "m_angWrappedLocalRotation",
+        )?,
+
+        absolute_velocity_offset: required("C_BaseEntity", "m_vecAbsVelocity")?,
+        simulation_tick_offset: required("C_BaseEntity", "m_nSimulationTick")?,
+        simulation_time_offset: required("C_BaseEntity", "m_flSimulationTime")?,
+        old_origin_offset: required("C_BasePlayerPawn", "m_vOldOrigin")?,
+        view_angles_offset: required("C_BasePlayerPawn", "v_angle")?,
+        client_camera_angles_offset: required("C_CitadelPlayerPawn", "m_angClientCamera")?,
+        prediction_error_offset: required("C_BasePlayerPawn", "m_vecPredictionError")?,
+        prediction_error_time_offset: required("C_BasePlayerPawn", "m_flPredictionErrorTime")?,
+    })
 }
 
 pub(crate) fn initialize_client_runtime(pid: u32, schema_system: u64) -> Result<(), String> {

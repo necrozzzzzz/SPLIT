@@ -5010,6 +5010,79 @@ select:hover:not(:disabled) {
   text-decoration: underline;
 }
 
+.route-recorder-card {
+  margin-top: 14px;
+  border: 1px solid rgba(79, 209, 197, 0.16);
+  border-radius: 7px;
+  padding: 14px;
+  background: rgba(9, 18, 19, 0.28);
+}
+
+.route-recorder-heading,
+.route-recorder-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.route-recorder-heading .label {
+  margin: 0 0 4px;
+  color: #d6a85f;
+}
+
+.route-recorder-heading h3 {
+  margin: 0;
+  color: #dceae7;
+  font-size: 13px;
+}
+
+.route-recorder-heading > span {
+  color: #718884;
+  font-size: 10px;
+}
+
+.route-recorder-status {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 13px 0;
+  color: #879995;
+  font-size: 11px;
+}
+
+.route-recorder-status strong {
+  color: #cbdad7;
+  font-size: 12px;
+}
+
+.route-recorder-status small {
+  color: #d6a85f;
+  font-size: 10px;
+}
+
+.route-recorder-actions {
+  justify-content: flex-start;
+}
+
+.ghost-playback-card {
+  border-color: rgba(100, 220, 255, 0.2);
+}
+
+.ghost-loop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin: 0 0 12px;
+  color: #9db1ad;
+  font-size: 11px;
+}
+
+.ghost-loop-toggle input {
+  accent-color: #4fd1c5;
+}
+
 .diagnostics-group {
   min-width: 0;
 }

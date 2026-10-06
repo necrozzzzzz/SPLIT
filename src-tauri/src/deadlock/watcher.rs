@@ -64,7 +64,7 @@ static WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
  * forcément le watcher.
  */
 static WATCHER_LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
-const PHASE_RESYNC_MAX_BYTES: u64 = 4 * 1024 * 1024;
+const PHASE_RESYNC_MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 pub fn is_running() -> bool {
     WATCHER_RUNNING.load(Ordering::SeqCst)
@@ -665,6 +665,16 @@ fn start_inner(app: AppHandle, console_log: PathBuf) -> Result<(), String> {
                         .unwrap_or(0)
                 }
             };
+
+            let startup_phase = super::console_phase::snapshot();
+
+            println!(
+                "[SPLIT][ConsoleResync] phase={:?} map={:?} server={:?}",
+                startup_phase.phase,
+                startup_phase.current_map,
+                startup_phase.server_kind
+            );
+
             let mut tail = ConsoleTail::new(console_log.clone(), initial_offset);
 
             let mut assembler = PositionAssembler::default();

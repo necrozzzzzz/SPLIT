@@ -31,6 +31,7 @@ pub(crate) const PREPARE_BIND: &str =
     "bind \"F13\" \"exec savestate; exec savestate_prepare\"";
 pub(crate) const PRESENTATION_RESUME_BIND: &str = "bind \"F24\" \"r_force_no_present 0\"";
 pub(crate) const MOMENTUM_RESET_BIND: &str = "bind \"F14\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"";
+pub(crate) const GHOST_FRAME_BIND: &str = "bind \"F24\" \"exec split_ghost_frame\"";
 pub(crate) const LEGACY_MOMENTUM_RESET_BIND: &str = "bind \"F9\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"";
 
 static TELEPORT_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -65,6 +66,24 @@ pub(crate) fn mark_teleports_prepared() {
             }
         });
     }
+}
+
+pub(crate) fn ensure_ghost_transport(cfg_file: &Path) -> Result<(), String> {
+    let mut content = fs::read_to_string(cfg_file)
+        .map_err(|error| format!("Could not read {}: {error}", cfg_file.display()))?;
+    if !content.starts_with("// SPLIT 2 - auto-generated") {
+        return Err("savestate.cfg is not owned by SPLIT; refusing to add Ghost transport".into());
+    }
+    if content.lines().any(|line| line.trim() == GHOST_FRAME_BIND) {
+        return Ok(());
+    }
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(GHOST_FRAME_BIND);
+    content.push('\n');
+    atomic_write(cfg_file, content)
+        .map_err(|error| format!("Could not install Ghost transport: {error}"))
 }
 
 fn owned_cycle_bind_key(content: &str) -> Option<String> {
@@ -121,12 +140,23 @@ pub fn write_savestate_cfg(
     let namespace = teleport_namespace();
 
     let prepare_cfg_path = parent.join("savestate_prepare.cfg");
+    let ghost_frame_cfg_path = parent.join("split_ghost_frame.cfg");
 
     let mut prepare_output = String::from(
         "// SPLIT 2 - prepared teleport points\n\n\
         // Remove stale SPLIT teleport points before creating the new generation.\n\
         ent_fire split_tp_* Kill\n\n",
     );
+    atomic_write(
+        &ghost_frame_cfg_path,
+        "ent_fire split_ghost_marker Kill\n",
+    )
+    .map_err(|error| {
+        format!(
+            "Could not write {}: {error}",
+            ghost_frame_cfg_path.display()
+        )
+    })?;
 
     output.push_str("// SPLIT 2 - auto-generated, do not edit manually\n\n");
 
@@ -172,13 +202,14 @@ pub fn write_savestate_cfg(
      *
      * F10 physique reste Redo grâce au hook SPLIT.
      * F11 physique reste Favorite Mode.
-     * F12 n'est jamais bindé côté Deadlock : le défaut Cycle Preset
-     * est intercepté directement par SPLIT.
+     * F12 physique reste Cycle Preset car le hook SPLIT l'intercepte.
+     * F12 injecté par le prototype Ghost exécute sa frame CFG.
      */
     output.push_str(
         "bind \"F13\" \"exec savestate; exec savestate_prepare\"\n\
         bind \"F24\" \"r_force_no_present 0\"\n\
-        bind \"F14\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"\n\n",
+        bind \"F14\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"\n\
+        bind \"F24\" \"exec split_ghost_frame\"\n\n",
     );
 
     for index in 0..8 {
@@ -394,7 +425,7 @@ mod tests {
         assert!(content.contains(PREPARE_BIND));
         assert!(content.contains(PRESENTATION_RESUME_BIND));
         assert!(content.contains("bind \"F23\" \"savestate_getpos\""));
-        assert!(!content.contains("bind \"F12\""));
+        assert!(content.contains(GHOST_FRAME_BIND));
         for (index, key) in LOAD_TRANSPORT_KEYS.iter().enumerate() {
             assert!(content.contains(&format!(
                 "bind \"{key}\" \"exec savestate; load_slot_{}\"",

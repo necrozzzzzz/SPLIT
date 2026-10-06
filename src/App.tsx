@@ -222,6 +222,46 @@ type QuickAccessSettings = {
   position: "left" | "right";
 };
 
+type RouteRecordingStatus = {
+  recording: boolean;
+  elapsedMs: number;
+  sampleCount: number;
+  hasRecording: boolean;
+  stopReason: string | null;
+};
+
+const EMPTY_ROUTE_RECORDING_STATUS: RouteRecordingStatus = {
+  recording: false,
+  elapsedMs: 0,
+  sampleCount: 0,
+  hasRecording: false,
+  stopReason: null,
+};
+
+type GhostPlaybackStatus = {
+  playing: boolean;
+  elapsedMs: number;
+  durationMs: number;
+  currentSample: number;
+  sampleCount: number;
+  reconstructedSamples: number;
+  routeSource: string | null;
+  looping: boolean;
+  stopReason: string | null;
+};
+
+const EMPTY_GHOST_PLAYBACK_STATUS: GhostPlaybackStatus = {
+  playing: false,
+  elapsedMs: 0,
+  durationMs: 0,
+  currentSample: 0,
+  sampleCount: 0,
+  reconstructedSamples: 0,
+  routeSource: null,
+  looping: false,
+  stopReason: null,
+};
+
 type HotkeyTarget =
   | { group: "loadSlots" | "saveSlots"; index: number }
   | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" | "quickAccess" };
@@ -1161,6 +1201,182 @@ function App() {
     setError,
   ] =
     useState<string | null>(null);
+
+  const [
+    routeRecordingStatus,
+    setRouteRecordingStatus,
+  ] = useState<RouteRecordingStatus>(
+    EMPTY_ROUTE_RECORDING_STATUS,
+  );
+
+  const [
+    routeRecorderBusy,
+    setRouteRecorderBusy,
+  ] = useState(false);
+
+  const [ghostPlaybackStatus, setGhostPlaybackStatus] =
+    useState<GhostPlaybackStatus>(EMPTY_GHOST_PLAYBACK_STATUS);
+  const [ghostPlaybackBusy, setGhostPlaybackBusy] = useState(false);
+  const [ghostLoop, setGhostLoop] = useState(false);
+
+  useEffect(() => {
+    if (activeSettingsSection !== "about") {
+      return;
+    }
+    let disposed = false;
+    const refresh = () => {
+      void invoke<RouteRecordingStatus>(
+        "get_route_recording_status",
+      )
+        .then((next) => {
+          if (!disposed) {
+            setRouteRecordingStatus(next);
+          }
+        })
+        .catch((reason) => {
+          if (!disposed) {
+            setError(String(reason));
+          }
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 250);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [activeSettingsSection]);
+
+  useEffect(() => {
+    if (activeSettingsSection !== "about") return;
+    let disposed = false;
+    const refresh = () => {
+      void invoke<GhostPlaybackStatus>("get_ghost_playback_status")
+        .then((next) => {
+          if (!disposed) setGhostPlaybackStatus(next);
+        })
+        .catch((reason) => {
+          if (!disposed) setError(String(reason));
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 250);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [activeSettingsSection]);
+
+  const startRouteRecording = useCallback(async () => {
+    setRouteRecorderBusy(true);
+    setError(null);
+    try {
+      setRouteRecordingStatus(
+        await invoke<RouteRecordingStatus>(
+          "start_route_recording",
+        ),
+      );
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setRouteRecorderBusy(false);
+    }
+  }, []);
+
+  const stopRouteRecording = useCallback(async () => {
+    setRouteRecorderBusy(true);
+    setError(null);
+    try {
+      setRouteRecordingStatus(
+        await invoke<RouteRecordingStatus>(
+          "stop_route_recording",
+        ),
+      );
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setRouteRecorderBusy(false);
+    }
+  }, []);
+
+  const saveRouteRecording = useCallback(async () => {
+    setRouteRecorderBusy(true);
+    setError(null);
+    try {
+      const filePath = await save({
+        defaultPath: `split-route-debug-${new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")}.json`,
+        filters: [
+          {
+            name: "SPLIT route debug JSON",
+            extensions: ["json"],
+          },
+        ],
+      });
+      if (filePath !== null) {
+        await invoke("save_route_recording_json", {
+          path: filePath,
+        });
+      }
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setRouteRecorderBusy(false);
+    }
+  }, []);
+
+  const loadGhostRoute = useCallback(async () => {
+    setGhostPlaybackBusy(true);
+    setError(null);
+    try {
+      const filePath = await open({
+        multiple: false,
+        filters: [{ name: "SPLIT route debug JSON", extensions: ["json"] }],
+      });
+      if (typeof filePath === "string") {
+        setGhostPlaybackStatus(
+          await invoke<GhostPlaybackStatus>("load_ghost_route_json", {
+            path: filePath,
+          }),
+        );
+      }
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setGhostPlaybackBusy(false);
+    }
+  }, []);
+
+  const startGhostPlayback = useCallback(async () => {
+    setGhostPlaybackBusy(true);
+    setError(null);
+    try {
+      setGhostPlaybackStatus(
+        await invoke<GhostPlaybackStatus>("start_ghost_playback", {
+          looping: ghostLoop,
+        }),
+      );
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setGhostPlaybackBusy(false);
+    }
+  }, [ghostLoop]);
+
+  const stopGhostPlayback = useCallback(async () => {
+    setGhostPlaybackBusy(true);
+    setError(null);
+    try {
+      setGhostPlaybackStatus(
+        await invoke<GhostPlaybackStatus>("stop_ghost_playback"),
+      );
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setGhostPlaybackBusy(false);
+    }
+  }, []);
     
 
   useEffect(() => {
@@ -7977,6 +8193,157 @@ function App() {
             >
               github.com/necrozzzzzz/SPLIT
             </a>
+          </div>
+        </div>
+
+        <div className="route-recorder-card">
+          <div className="route-recorder-heading">
+            <div>
+              <p className="label">EXPERIMENTAL</p>
+              <h3>Route Recorder</h3>
+            </div>
+            <span>60 Hz raw telemetry</span>
+          </div>
+
+          {routeRecordingStatus.recording ? (
+            <>
+              <p className="route-recorder-status">
+                Recording route...
+                <strong>
+                  {(routeRecordingStatus.elapsedMs / 1000).toFixed(2)} s
+                  {" - "}
+                  {routeRecordingStatus.sampleCount} samples
+                </strong>
+              </p>
+              <button
+                className="refresh-button"
+                type="button"
+                disabled={routeRecorderBusy}
+                onClick={() => void stopRouteRecording()}
+              >
+                {routeRecorderBusy ? "Stopping..." : "Stop Recording"}
+              </button>
+            </>
+          ) : (
+            <>
+              {routeRecordingStatus.hasRecording ? (
+                <p className="route-recorder-status">
+                  Recorded {(routeRecordingStatus.elapsedMs / 1000).toFixed(2)} s
+                  {" - "}
+                  {routeRecordingStatus.sampleCount} samples
+                  {routeRecordingStatus.stopReason && (
+                    <small>{routeRecordingStatus.stopReason}</small>
+                  )}
+                </p>
+              ) : (
+                <p className="route-recorder-status">
+                  Records raw local-player position and velocity in Practice.
+                </p>
+              )}
+
+              <div className="route-recorder-actions">
+                <button
+                  className="refresh-button"
+                  type="button"
+                  disabled={
+                    routeRecorderBusy ||
+                    !status.deadlockRunning ||
+                    status.matchSafetyLocked
+                  }
+                  onClick={() => void startRouteRecording()}
+                >
+                  {routeRecorderBusy ? "Starting..." : "Start Recording"}
+                </button>
+
+                {routeRecordingStatus.hasRecording && (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={routeRecorderBusy}
+                    onClick={() => void saveRouteRecording()}
+                  >
+                    Save JSON
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="route-recorder-card ghost-playback-card">
+          <div className="route-recorder-heading">
+            <div>
+              <p className="label">EXPERIMENTAL</p>
+              <h3>Ghost Trajectory Playback</h3>
+            </div>
+            <span>3D practice marker</span>
+          </div>
+
+          <p className="route-recorder-status">
+            {ghostPlaybackStatus.playing
+              ? "Playing prepared route..."
+              : ghostPlaybackStatus.sampleCount > 0
+                ? "Route prepared for visual playback."
+                : "Uses the latest recording, or load a route JSON."}
+            {ghostPlaybackStatus.sampleCount > 0 && (
+              <strong>
+                {ghostPlaybackStatus.currentSample}/
+                {ghostPlaybackStatus.sampleCount} samples
+                {" - "}
+                {ghostPlaybackStatus.reconstructedSamples} reconstructed
+              </strong>
+            )}
+            {ghostPlaybackStatus.routeSource && (
+              <small>{ghostPlaybackStatus.routeSource}</small>
+            )}
+            {ghostPlaybackStatus.stopReason && (
+              <small>{ghostPlaybackStatus.stopReason}</small>
+            )}
+          </p>
+
+          <label className="ghost-loop-toggle">
+            <input
+              type="checkbox"
+              checked={ghostLoop}
+              disabled={ghostPlaybackStatus.playing || ghostPlaybackBusy}
+              onChange={(event) => setGhostLoop(event.currentTarget.checked)}
+            />
+            Loop
+          </label>
+
+          <div className="route-recorder-actions">
+            {ghostPlaybackStatus.playing ? (
+              <button
+                className="refresh-button"
+                type="button"
+                disabled={ghostPlaybackBusy}
+                onClick={() => void stopGhostPlayback()}
+              >
+                {ghostPlaybackBusy ? "Stopping..." : "Stop Ghost Playback"}
+              </button>
+            ) : (
+              <button
+                className="refresh-button"
+                type="button"
+                disabled={
+                  ghostPlaybackBusy ||
+                  !status.deadlockRunning ||
+                  status.matchSafetyLocked ||
+                  routeRecordingStatus.recording
+                }
+                onClick={() => void startGhostPlayback()}
+              >
+                {ghostPlaybackBusy ? "Starting..." : "Start Ghost Playback"}
+              </button>
+            )}
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={ghostPlaybackBusy || ghostPlaybackStatus.playing}
+              onClick={() => void loadGhostRoute()}
+            >
+              Load Route JSON
+            </button>
           </div>
         </div>
       </section>

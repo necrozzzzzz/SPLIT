@@ -11,6 +11,10 @@ use super::{
 };
 
 pub(crate) const MATCH_SAFETY_ERROR: &str = "SPLIT save states are disabled during a live match.";
+pub(crate) const ROUTE_RECORDER_SAFETY_ERROR: &str =
+    "Route recording is only available in a confirmed local practice context.";
+pub(crate) const GHOST_PLAYBACK_SAFETY_ERROR: &str =
+    "Ghost playback is only available in a confirmed local practice context.";
 
 static MATCH_SAFETY_LOCKED: AtomicBool = AtomicBool::new(false);
 static POST_MATCH_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -48,6 +52,71 @@ pub(crate) fn with_test_lock<T>(locked: bool, operation: impl FnOnce() -> T) -> 
 
 pub(crate) fn ensure_actions_allowed() -> Result<(), String> {
     ensure_actions_allowed_when(is_locked())
+}
+
+pub(crate) fn ensure_route_recording_allowed() -> Result<(), String> {
+    ensure_route_context_allowed(ROUTE_RECORDER_SAFETY_ERROR)
+}
+
+pub(crate) fn ensure_ghost_playback_allowed() -> Result<(), String> {
+    ensure_route_context_allowed(GHOST_PLAYBACK_SAFETY_ERROR)
+}
+
+fn ensure_route_context_allowed(context_error: &str) -> Result<(), String> {
+    if is_locked() {
+        return Err(MATCH_SAFETY_ERROR.to_string());
+    }
+
+    let console = super::console_phase::snapshot();
+    let memory = super::deadlock_state::read_deadlock_state()
+        .ok()
+        .flatten();
+    if route_context_is_safe(memory, &console) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} [server_kind={:?}, map={:?}, broadcast_active={}, hideout_ready={}, district={:?}, memory={:?}]",
+            context_error,
+            console.server_kind,
+            console.current_map,
+            console.broadcast_active,
+            super::console_phase::hideout_ready(),
+            super::district::current_raw(),
+            memory
+        ))
+    }
+}
+
+fn route_context_is_safe(
+    memory: Option<DeadlockState>,
+    console: &ConsolePhaseState,
+) -> bool {
+    if console.broadcast_active {
+        return false;
+    }
+
+    if console.server_kind == ServerKind::Local {
+        return true;
+    }
+
+    if matches!(
+        console.current_map.as_deref(),
+        Some("dl_hideout") | Some("new_player_basics")
+    ) {
+        return true;
+    }
+
+    // District probing only runs in confirmed local Explore NYC on dl_midtown.
+    // This gives us a positive safety signal even when the console snapshot
+    // temporarily falls back to Unknown / None.
+    if super::district::current_raw().is_some() {
+        return true;
+    }
+
+    memory.is_some_and(|memory| {
+        matches!(memory.game_mode, GameMode::Sandbox | GameMode::OneVsOneTest)
+            || matches!(memory.match_mode, MatchMode::ServerTest | MatchMode::Tutorial)
+    })
 }
 
 fn ensure_actions_allowed_when(locked: bool) -> Result<(), String> {
@@ -424,5 +493,17 @@ mod tests {
         data.push("slot two".to_string());
 
         assert_eq!(data.len(), 2);
+    }
+
+    #[test]
+    fn route_recording_requires_practice_and_obeys_the_live_match_lock() {
+        let local = console(ConsolePhase::InMatch, Some("dl_midtown"), ServerKind::Local);
+        let remote = console(ConsolePhase::InMatch, Some("dl_midtown"), ServerKind::Remote);
+
+        assert!(route_context_is_safe(None, &local));
+        assert!(!route_context_is_safe(None, &remote));
+        with_test_lock(true, || {
+            assert_eq!(ensure_route_recording_allowed().unwrap_err(), MATCH_SAFETY_ERROR);
+        });
     }
 }

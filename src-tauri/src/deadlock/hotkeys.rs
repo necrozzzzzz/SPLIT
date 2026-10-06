@@ -31,7 +31,7 @@ use windows_sys::{
                 VK_F2, VK_F20, VK_F21, VK_F22, VK_F23, VK_F24, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
                 VK_F8, VK_F9, VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT,
                 VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_SHIFT,
-                VK_SPACE, VK_UP,
+                VK_SPACE, VK_UP, 
             },
             WindowsAndMessaging::{
                 BringWindowToTop, CallNextHookEx, DispatchMessageW, EnumWindows,
@@ -2252,6 +2252,22 @@ fn send_present_resume_key() -> Result<(), String> {
 
 fn send_momentum_reset_key() -> Result<(), String> {
     send_virtual_key(VK_F14)
+}
+
+pub(crate) fn activate_ghost_transport_from_ui() -> Result<(), String> {
+    focus_deadlock_window()?;
+    thread::sleep(Duration::from_millis(75));
+    send_prepare_key()
+}
+
+pub(crate) fn send_ghost_frame() -> Result<(), String> {
+    if !super::process::is_deadlock_running() {
+        return Err("Deadlock is not running".to_string());
+    }
+    if !is_deadlock_foreground() {
+        return Err("Deadlock lost foreground during Ghost playback".to_string());
+    }
+    send_virtual_key(VK_F24)
 }
 
 pub(crate) fn prepare_teleports_after_cfg_update() {

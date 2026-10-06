@@ -5,6 +5,7 @@ pub(crate) mod console_phase;
 pub(crate) mod deadlock_state;
 pub(crate) mod district;
 mod history;
+mod ghost_playback;
 mod hotkeys;
 mod interfaces;
 pub(crate) mod match_safety;
@@ -13,14 +14,17 @@ mod paths;
 mod pawn;
 mod process;
 mod process_monitor;
+mod route_recorder;
 mod schema;
 mod screenshot;
 mod slots;
 mod watcher;
 pub use history::HistoryState;
+pub use ghost_playback::GhostPlaybackStatus;
 pub use hotkeys::HotkeySettings;
 pub use parser::PositionSnapshot;
 pub use paths::{LaunchFolderState, StartupSoundSettings};
+pub use route_recorder::RouteRecordingStatus;
 pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
 
 pub(crate) fn trace_startup(reset: bool, message: &str) {
@@ -1307,6 +1311,7 @@ fn status_from_paths(found: paths::DeadlockPaths) -> DeadlockStatus {
                 && content.contains(cfg::PREPARE_BIND)
                 && content.contains(cfg::PRESENTATION_RESUME_BIND)
                 && content.contains(cfg::MOMENTUM_RESET_BIND)
+                && content.contains(cfg::GHOST_FRAME_BIND)
                 && !content.contains(cfg::LEGACY_MOMENTUM_RESET_BIND)
         })
         .unwrap_or(false);
@@ -1676,6 +1681,8 @@ pub fn start_process_monitor(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn shutdown_background_services() {
+    ghost_playback::shutdown();
+    route_recorder::shutdown();
     if let Err(error) = process_monitor::stop() {
         eprintln!("[SPLIT] Could not stop process monitor cleanly: {error}");
     }
@@ -1685,6 +1692,38 @@ pub fn shutdown_background_services() {
     if let Err(error) = watcher::stop() {
         eprintln!("[SPLIT] Could not stop console watcher cleanly: {error}");
     }
+}
+
+pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
+    route_recorder::start_route_recording()
+}
+
+pub fn stop_route_recording() -> Result<RouteRecordingStatus, String> {
+    route_recorder::stop_route_recording()
+}
+
+pub fn get_route_recording_status() -> Result<RouteRecordingStatus, String> {
+    route_recorder::get_route_recording_status()
+}
+
+pub fn save_route_recording_json(path: String) -> Result<(), String> {
+    route_recorder::save_route_recording_json(path)
+}
+
+pub fn load_ghost_route_json(path: String) -> Result<GhostPlaybackStatus, String> {
+    ghost_playback::load_route_json(path)
+}
+
+pub fn start_ghost_playback(looping: bool) -> Result<GhostPlaybackStatus, String> {
+    ghost_playback::start(looping)
+}
+
+pub fn stop_ghost_playback() -> Result<GhostPlaybackStatus, String> {
+    ghost_playback::stop()
+}
+
+pub fn get_ghost_playback_status() -> Result<GhostPlaybackStatus, String> {
+    ghost_playback::status()
 }
 
 pub fn cleanup_transport_on_true_quit() {
