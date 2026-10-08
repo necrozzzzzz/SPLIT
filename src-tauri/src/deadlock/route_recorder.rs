@@ -172,19 +172,14 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
         .map_err(|error| format!("Could not start route recorder: {error}"))?;
 
     println!("[SPLIT][RouteRecorder] started pid={pid}");
-    if let Err(error) = super::pawn::debug_scan_other_pawns(
-        pid,
-        route_schema.identity_size,
-        resolution.pawn,
-        route_schema.game_scene_node_offset,
-        route_schema.absolute_origin_offset,
-        route_schema.scene_node_ang_rotation_offset,
-        route_schema.scene_node_ang_abs_rotation_offset,
-        route_schema.scene_node_ang_wrapped_local_rotation_offset,
-    ) {
-        eprintln!("[SPLIT][PawnScan] failed: {error}");
-    }
-        
+    // Keep recorder startup lean. The old experimental PawnScan walked every
+    // Citadel pawn, resolved RTTI repeatedly and intentionally slept between
+    // 50 samples. Because start_route_recording waits for this function to
+    // return before the frontend leaves "Starting...", that diagnostic scan
+    // could turn recorder startup into a multi-second (or much longer) stall.
+    //
+    // The scan is still available as a standalone diagnostic helper in
+    // pawn.rs, but it must never run on the normal recording path.
     println!("[SPLIT][RouteRecorder] pawn=0x{:016X}", resolution.pawn);
     println!("[SPLIT][RouteRecorder] sampling target={TARGET_SAMPLE_RATE_HZ}Hz");
 
