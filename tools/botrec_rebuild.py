@@ -1,5 +1,7 @@
 from pathlib import Path
 import base64
+import zlib
+import struct
 
 import zstandard as zstd
 
@@ -47,7 +49,16 @@ def main():
     if len(original_packed) < 5:
         raise ValueError("packed.bin est trop petit")
 
-    header = original_packed[:5]
+    # Byte 0 = version
+    version = original_packed[0]
+
+    # Bytes 1..4 = CRC32 du payload décompressé, little-endian
+    crc = zlib.crc32(decoded) & 0xFFFFFFFF
+
+    header = bytes([version]) + struct.pack("<I", crc)
+
+    print(f"crc32        = 0x{crc:08X}")
+    print(f"new header   = {header.hex(' ')}")
 
     rebuilt = encode_botrec(header, decoded)
 

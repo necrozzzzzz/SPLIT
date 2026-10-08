@@ -1,4 +1,5 @@
 from pathlib import Path
+import struct
 
 
 SRC = Path("botrec_debug/decoded.bin")
@@ -22,9 +23,16 @@ def replace_exact(data, old, new, expected_count, name):
 def main():
     data = SRC.read_bytes()
 
-    # field 6 / wire 5 = leftmove
+    # Change le héros enregistré dans le BOTREC.
+    # Haze = 13
+    # Bebop = 15
+    data = bytearray(data)
+    struct.pack_into("<I", data, 0, 15)
+    data = bytes(data)
+
     #
-    # 0x35 = (6 << 3) | 5
+    # 1. Inverser leftmove
+    #
 
     minus_075 = bytes.fromhex("35 00 00 40 BF")
     plus_075  = bytes.fromhex("35 00 00 40 3F")
@@ -57,6 +65,42 @@ def main():
         plus_025,
         1,
         "left -0.25 -> +0.25",
+    )
+
+    #
+    # 2. Inverser le bouton logique
+    #
+    # RIGHT = 0x400
+    # protobuf varint : 80 08
+    #
+    # LEFT = 0x200
+    # protobuf varint : 80 04
+    #
+
+    right_field1 = bytes.fromhex("08 80 08")
+    left_field1  = bytes.fromhex("08 80 04")
+
+    right_field2 = bytes.fromhex("10 80 08")
+    left_field2  = bytes.fromhex("10 80 04")
+
+    # field1 = held
+    # Il apparaît au PRESS.
+    data = replace_exact(
+        data,
+        right_field1,
+        left_field1,
+        1,
+        "held RIGHT 0x400 -> LEFT 0x200",
+    )
+
+    # field2 = changed
+    # Il apparaît au PRESS + au RELEASE.
+    data = replace_exact(
+        data,
+        right_field2,
+        left_field2,
+        2,
+        "changed RIGHT 0x400 -> LEFT 0x200",
     )
 
     DST.write_bytes(data)
