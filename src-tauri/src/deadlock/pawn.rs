@@ -1015,6 +1015,98 @@ pub(crate) fn debug_scan_other_pawns(
             )
             .unwrap_or(0);
 
+            if sample == 0 {
+                println!(
+                    "[SPLIT][AnimCtrlScan] base=0x{:X}",
+                    animation_controller,
+                );
+
+                for offset in (0x2E0_u64..=0x3D0_u64).step_by(8) {
+                    let value = read_remote_u64(
+                        process.0,
+                        animation_controller + offset,
+                        "animation controller scan qword",
+                    )
+                    .unwrap_or(0);
+
+                    if value >= client_range.0
+                        && value < client_range.0 + client_range.1
+                    {
+                        let rtti = read_msvc_rtti_name(
+                            process.0,
+                            value,
+                            client_range,
+                            "animation controller scan",
+                        )
+                        .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+
+                        println!(
+                            "[SPLIT][AnimCtrlScan] +0x{:03X} value=0x{:016X} RTTI={:?}",
+                            offset,
+                            value,
+                            rtti,
+                        );
+                    } else {
+                        println!(
+                            "[SPLIT][AnimCtrlScan] +0x{:03X} value=0x{:016X}",
+                            offset,
+                            value,
+                        );
+                    }
+                }
+
+
+                let ag2_candidate = read_remote_u64(
+                    process.0,
+                    animation_controller + 0x3D0,
+                    "AG2 candidate +0x3D0",
+                )
+                .unwrap_or(0);
+
+                let mut ag2_candidate_rtti = String::from("null");
+
+                if ag2_candidate != 0 {
+                    match read_remote_u64(
+                        process.0,
+                        ag2_candidate,
+                        "AG2 candidate vtable",
+                    ) {
+                        Ok(vtable) => {
+                            ag2_candidate_rtti = read_msvc_rtti_name(
+                                process.0,
+                                vtable,
+                                client_range,
+                                "AG2 candidate",
+                            )
+                            .unwrap_or_else(|error| format!("RTTI_ERROR:{error}"));
+                        }
+
+                        Err(error) => {
+                            ag2_candidate_rtti =
+                                format!("VTABLE_ERROR:{error}");
+                        }
+                    }
+                }
+
+                println!(
+                    "[SPLIT][AG2Candidate] ptr=0x{:X} RTTI={:?}",
+                    ag2_candidate,
+                    ag2_candidate_rtti,
+                );
+
+            }
+
+            if sample == 0 {
+                println!(
+                    "[SPLIT][PawnScan] sample={} ent={} pawn=0x{:X} body=0x{:X} animController=0x{:X}",
+                    sample,
+                    entity_index,
+                    pawn,
+                    body_component,
+                    animation_controller,
+                );
+            }
+
             let mut q1_rtti = String::from("null");
 
             if anim_ctrl_qword1 != 0 {
@@ -1253,24 +1345,6 @@ pub(crate) fn debug_scan_other_pawns(
             )
             .unwrap_or([0.0; 3]);
 
-            println!(
-                "[SPLIT][PawnScan] sample={} ent={} pawn=0x{:X} \
-            body=0x{:X} \
-            animController=0x{:X} \
-            graphInstance=0x{:X} graphInstanceRTTI={:?} \
-            graphDefinition=0x{:016X} primaryGraphId=0x{:016X}",
-                sample,
-                entity_index,
-                pawn,
-                body_component,
-                animation_controller,
-                graph_instance_ag2,
-                graph_instance_rtti,
-                graph_definition_ag2,
-                primary_graph_id,
-            );
-
-
             let graph_instance_ag2 = if animation_controller != 0 {
                 read_remote_u64(
                     process.0,
@@ -1328,6 +1402,8 @@ pub(crate) fn debug_scan_other_pawns(
             } else {
                 0
             };
+
+            
 
         }
 
