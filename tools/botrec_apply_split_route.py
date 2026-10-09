@@ -819,7 +819,7 @@ def main():
 
         if (
             frame_index % preview_every == 0
-            or frame_index == usable - 1
+            or frame_index == route_frame_count - 1
         ):
             print(
                 f"frame={frame_index:<4} "
