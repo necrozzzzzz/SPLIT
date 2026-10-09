@@ -491,28 +491,10 @@ pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
         .or(resolver.find_scope("client.dll")?)
         .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
 
-    println!("[SPLIT][Schema][Class] CBaseAnimGraphController");
-
-    match resolver.debug_list_fields(client, "CBaseAnimGraphController") {
-        Ok(fields) => {
-            println!(
-                "[SPLIT][Schema][ClassFields] CBaseAnimGraphController count={}",
-                fields.len()
-            );
-
-            for (name, offset) in fields {
-                println!(
-                    "[SPLIT][Schema][Field] CBaseAnimGraphController::{name} = 0x{offset:X}"
-                );
-            }
-        }
-
-        Err(error) => {
-            println!(
-                "[SPLIT][Schema][ClassError] CBaseAnimGraphController: {error}"
-            );
-        }
-    }
+    // Route recording must not run expensive schema diagnostics on every Start.
+    // The former CBaseAnimGraphController dump traversed the schema class hash
+    // and read/logged every field before recording could begin. Keep schema
+    // discovery here limited to the fields the recorder actually needs.
         
     let required = |class_name: &str, field_name: &str| -> Result<u32, String> {
         resolver
