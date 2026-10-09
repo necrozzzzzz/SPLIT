@@ -167,7 +167,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     let stage = Instant::now();
     let first = {
         let reader = pawn::PawnTelemetryReader::new(pid, resolution, route_schema)?;
-        sample_from_telemetry(started_at.elapsed(), reader.read()?, None)?
+        sample_from_telemetry(started_at.elapsed(), reader.read_route_fast()?, None)?
     };
     println!(
         "[SPLIT][RouteRecorder][StartTiming] first_sample={:.2}ms",
@@ -365,7 +365,7 @@ fn run_worker(
         }
 
         let elapsed = started_at.elapsed();
-        match reader.read().and_then(|telemetry| {
+        match reader.read_route_fast().and_then(|telemetry| {
             sample_from_telemetry(elapsed, telemetry, samples.last())
         })
         {
