@@ -362,8 +362,12 @@ def movement_from_velocity(vx, vy, yaw_degrees, speed_ref):
     forward_x = math.cos(yaw)
     forward_y = math.sin(yaw)
 
-    left_x = math.sin(yaw)
-    left_y = -math.cos(yaw)
+    # Deadlock's BOTREC leftmove sign is opposite to the
+    # world-space left basis used above. The previous conversion produced
+    # forward -> right -> back -> left for a SPLIT route recorded as
+    # forward -> left -> back -> right, so invert the lateral basis.
+    left_x = -math.sin(yaw)
+    left_y = math.cos(yaw)
 
     forward = (
         nx * forward_x
