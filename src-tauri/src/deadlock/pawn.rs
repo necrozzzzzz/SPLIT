@@ -160,6 +160,80 @@ impl PawnTelemetryReader {
         Ok(reader)
     }
 
+    /// Lean route-recorder read path.
+    ///
+    /// The diagnostic reader below intentionally takes 2-3 complete snapshots
+    /// to detect torn reads. That was useful while validating offsets, but it is
+    /// too expensive for the normal 60 Hz recorder. For route recording we only
+    /// need position, velocity and camera angles, so read each source once and
+    /// mark the sample as a single-attempt coherent sample.
+    pub(crate) fn read_route_fast(&self) -> Result<PawnTelemetry, String> {
+        self.ensure_current_pawn()?;
+
+        let pawn = self.resolution.pawn;
+        let scene_node = read_remote_u64(
+            self.process.0,
+            checked_add(
+                pawn,
+                self.game_scene_node_offset as u64,
+                "game scene node member",
+            )?,
+            "game scene node",
+        )?;
+
+        let position = read_remote_f32x3(
+            self.process.0,
+            checked_add(
+                scene_node,
+                self.absolute_origin_offset as u64,
+                "absolute origin member",
+            )?,
+            "absolute origin",
+        )?;
+
+        let velocity = read_remote_f32x3(
+            self.process.0,
+            checked_add(
+                pawn,
+                self.absolute_velocity_offset as u64,
+                "absolute velocity member",
+            )?,
+            "absolute velocity",
+        )?;
+
+        let camera = read_remote_f32x3(
+            self.process.0,
+            checked_add(
+                pawn,
+                self.client_camera_angles_offset as u64,
+                "client camera angles member",
+            )?,
+            "client camera angles",
+        )?;
+
+        Ok(PawnTelemetry {
+            position,
+            velocity,
+            pitch: Some(camera[0]),
+            yaw: Some(camera[1]),
+            diagnostics: PawnTelemetryDiagnostics {
+                scene_node,
+                local_origin: position,
+                absolute_origin: position,
+                wrapped_local_origin: position,
+                old_origin: position,
+                view_angles: camera,
+                client_camera_angles: camera,
+                prediction_error: [0.0; 3],
+                prediction_error_time: 0.0,
+                simulation_tick: 0,
+                simulation_time: 0.0,
+                coherent: true,
+                read_attempts: 1,
+            },
+        })
+    }
+
     pub(crate) fn read(&self) -> Result<PawnTelemetry, String> {
         self.ensure_current_pawn()?;
         let first = self.read_snapshot()?;
