@@ -111,30 +111,68 @@ enum RecorderState {
 static RECORDER: Mutex<RecorderState> = Mutex::new(RecorderState::Idle { last: None });
 
 pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
+    let startup_total = Instant::now();
+
     if super::ghost_playback::is_playing() {
         return Err("Stop Ghost playback before recording a route.".to_string());
     }
+
+    let stage = Instant::now();
     let mut state = RECORDER
         .lock()
         .map_err(|_| "Route recorder lock poisoned".to_string())?;
     reap_finished(&mut state)?;
     ensure_can_start(matches!(*state, RecorderState::Recording(_)))?;
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] state_lock={:.2}ms",
+        stage.elapsed().as_secs_f64() * 1_000.0
+    );
 
+    let stage = Instant::now();
     let pid = process::deadlock_pid().ok_or_else(|| "Deadlock is not running.".to_string())?;
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] deadlock_pid={:.2}ms",
+        stage.elapsed().as_secs_f64() * 1_000.0
+    );
+
+    let stage = Instant::now();
     match_safety::ensure_route_recording_allowed()?;
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] match_safety={:.2}ms",
+        stage.elapsed().as_secs_f64() * 1_000.0
+    );
+
+    let stage = Instant::now();
     let route_schema = schema::resolve_route_schema(pid)?;
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] resolve_route_schema={:.2}ms",
+        stage.elapsed().as_secs_f64() * 1_000.0
+    );
+
+    let stage = Instant::now();
     let resolution = pawn::resolve_local_pawn(
         pid,
         route_schema.local_flag_offset,
         route_schema.pawn_handle_offset,
         route_schema.identity_size,
     )?;
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] resolve_local_pawn={:.2}ms",
+        stage.elapsed().as_secs_f64() * 1_000.0
+    );
+
     let started_at = Instant::now();
     let started_at_text = rfc3339_now()?;
+
+    let stage = Instant::now();
     let first = {
         let reader = pawn::PawnTelemetryReader::new(pid, resolution, route_schema)?;
         sample_from_telemetry(started_at.elapsed(), reader.read()?, None)?
     };
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] first_sample={:.2}ms",
+        stage.elapsed().as_secs_f64() * 1_000.0
+    );
 
     let sample_count = std::sync::Arc::new(AtomicU64::new(1));
     let worker_count = sample_count.clone();
@@ -171,6 +209,10 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
         })
         .map_err(|error| format!("Could not start route recorder: {error}"))?;
 
+    println!(
+        "[SPLIT][RouteRecorder][StartTiming] total_before_ready={:.2}ms",
+        startup_total.elapsed().as_secs_f64() * 1_000.0
+    );
     println!("[SPLIT][RouteRecorder] started pid={pid}");
     // Keep recorder startup lean. The old experimental PawnScan walked every
     // Citadel pawn, resolved RTTI repeatedly and intentionally slept between
