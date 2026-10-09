@@ -37,6 +37,10 @@ pub struct RouteSample {
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 struct RouteButtons {
+    forward: bool,
+    back: bool,
+    left: bool,
+    right: bool,
     jump: bool,
     crouch: bool,
     dash: bool,
@@ -494,6 +498,12 @@ fn sample_from_telemetry(
 
 fn capture_route_buttons() -> RouteButtons {
     RouteButtons {
+        // Support both the user's AZERTY ZQSD layout and QWERTY WASD.
+        // GetAsyncKeyState uses virtual-key codes for the actual key labels.
+        forward: key_is_down(b'Z' as u16) || key_is_down(b'W' as u16),
+        back: key_is_down(b'S' as u16),
+        left: key_is_down(b'Q' as u16) || key_is_down(b'A' as u16),
+        right: key_is_down(b'D' as u16),
         jump: key_is_down(VK_SPACE),
         crouch: key_is_down(VK_CONTROL),
         dash: key_is_down(VK_SHIFT),
@@ -552,7 +562,7 @@ fn finish_recording(
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 2,
+        version: 3,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -560,7 +570,7 @@ fn finish_recording(
         position_source: "CGameSceneNode::m_vecAbsOrigin",
         velocity_source: "C_BaseEntity::m_vecAbsVelocity",
         view_angles_source: "C_CitadelPlayerPawn::m_angClientCamera",
-        buttons_source: "Win32 GetAsyncKeyState: Space=jump, Ctrl=crouch/slide, Shift=dash",
+        buttons_source: "Win32 GetAsyncKeyState: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
         sampling_stats,
         stop_reason,
         samples,
