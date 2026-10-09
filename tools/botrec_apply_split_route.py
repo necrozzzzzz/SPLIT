@@ -1118,11 +1118,48 @@ def main():
             "La route SPLIT ne contient pas tMs sur tous les samples"
         )
 
-    times_ms = [float(sample["tMs"]) for sample in samples]
-    route_time_zero = times_ms[0]
-    times_ms = [value - route_time_zero for value in times_ms]
+    wall_times_ms = [float(sample["tMs"]) for sample in samples]
+    wall_time_zero = wall_times_ms[0]
+    wall_times_ms = [
+        value - wall_time_zero
+        for value in wall_times_ms
+    ]
 
-    route_duration_ms = times_ms[-1]
+    simulation_ticks = [
+        sample.get("diagnostics", {}).get("simulationTick")
+        for sample in samples
+    ]
+
+    has_simulation_timeline = (
+        all(isinstance(value, int) for value in simulation_ticks)
+        and all(
+            right >= left
+            for left, right in zip(
+                simulation_ticks,
+                simulation_ticks[1:],
+            )
+        )
+        and simulation_ticks[-1] > simulation_ticks[0]
+    )
+
+    if has_simulation_timeline:
+        first_simulation_tick = simulation_ticks[0]
+        times_ms = [
+            (tick - first_simulation_tick)
+            * (1000.0 / BOTREC_HZ)
+            for tick in simulation_ticks
+        ]
+        route_duration_ms = times_ms[-1]
+        timing_source = "simulationTick"
+        wall_duration_ms = wall_times_ms[-1]
+        timing_drift_ms = (
+            wall_duration_ms - route_duration_ms
+        )
+    else:
+        times_ms = wall_times_ms
+        route_duration_ms = times_ms[-1]
+        timing_source = "tMs"
+        timing_drift_ms = 0.0
 
     speed_ref = choose_reference_speed(samples)
     has_button_data = any(
@@ -1161,6 +1198,12 @@ def main():
     )
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
+    print(f"Timing      : {timing_source}")
+    if has_simulation_timeline:
+        print(
+            f"Drift tMs   : {timing_drift_ms:+.3f} ms "
+            "(wall clock vs game ticks)"
+        )
     print(f"Speed ref   : {speed_ref:.2f}")
     print(
         "Buttons     : "
@@ -1222,9 +1265,20 @@ def main():
     # Applique la route
     # -----------------------------
 
-    route_frame_count = int(
-        math.floor(route_duration_ms * BOTREC_HZ / 1000.0)
-    ) + 1
+    if has_simulation_timeline:
+        route_frame_count = (
+            simulation_ticks[-1]
+            - simulation_ticks[0]
+            + 1
+        )
+    else:
+        route_frame_count = int(
+            math.floor(
+                route_duration_ms
+                * BOTREC_HZ
+                / 1000.0
+            )
+        ) + 1
 
     if route_frame_count <= 0:
         raise RuntimeError(
