@@ -28,6 +28,7 @@ HEADER_START_Z = 0x0C
 HEADER_START_PITCH = 0x10
 HEADER_START_YAW = 0x14
 HEADER_START_ROLL = 0x18
+HEADER_FRAME_COUNT = 0x1C
 
 
 # ---------------------------------------------------------
@@ -598,6 +599,12 @@ def movement_from_velocity(vx, vy, yaw_degrees, speed_ref):
     return forward, left
 
 
+def patch_header_frame_count(header, frame_count):
+    patched = bytearray(header)
+    struct.pack_into("<I", patched, HEADER_FRAME_COUNT, int(frame_count))
+    return bytes(patched)
+
+
 def patch_header_spawn(header, sample):
     """
     Remplace le point de départ natif du BOTREC par le premier
@@ -754,32 +761,33 @@ def main():
         math.floor(route_duration_ms * BOTREC_HZ / 1000.0)
     ) + 1
 
-    usable = min(
-        len(frames),
-        route_frame_count,
-    )
-
-    if usable <= 0:
+    if route_frame_count <= 0:
         raise RuntimeError(
             "Aucune frame utilisable"
         )
 
-    print(
-        f"Frames route appliquées : {usable}"
-    )
-
     if route_frame_count > len(frames):
         missing = route_frame_count - len(frames)
-        print(
-            f"ATTENTION   : template trop court de {missing} frame(s) "
-            f"(~{missing / BOTREC_HZ:.2f} s)"
+        raise RuntimeError(
+            "Le BOTREC template est encore trop court pour cette route : "
+            f"{missing} frame(s) manquante(s) "
+            f"(~{missing / BOTREC_HZ:.2f} s). "
+            "Pour l'instant, utilise une route plus courte que le template."
         )
 
-    modified_frames = list(frames)
+    # On garde exactement le nombre de frames correspondant à la durée SPLIT.
+    # Les frames de fin du vieux template ne sont plus conservées.
+    modified_frames = list(frames[:route_frame_count])
+    header = patch_header_frame_count(header, route_frame_count)
+
+    print(
+        f"Frames finales : {route_frame_count} "
+        f"(template original : {len(frames)})"
+    )
 
     preview_every = int(BOTREC_HZ)
 
-    for frame_index in range(usable):
+    for frame_index in range(route_frame_count):
         target_ms = frame_index * (1000.0 / BOTREC_HZ)
 
         vx, vy, route_yaw, route_pitch = resample_route_at_ms(
@@ -796,7 +804,7 @@ def main():
         )
 
         cleaned_frame = patch_frame_view_and_buttons(
-            frames[frame_index],
+            modified_frames[frame_index],
             route_pitch,
             route_yaw,
         )
@@ -822,28 +830,6 @@ def main():
                 f"forward={forward:+.3f} "
                 f"left={left:+.3f}"
             )
-
-    # Après la durée réelle de la route :
-    # on force STOP sur les frames restantes du template.
-
-    for frame_index in range(
-        usable,
-        len(modified_frames),
-    ):
-        last_sample = samples[-1]
-        cleaned_frame = patch_frame_view_and_buttons(
-            frames[frame_index],
-            float(last_sample.get("pitch", 0.0)),
-            float(last_sample.get("yaw", 0.0)),
-        )
-
-        modified_frames[frame_index] = (
-            patch_frame_movement(
-                cleaned_frame,
-                0.0,
-                0.0,
-            )
-        )
 
     # -----------------------------
     # Reconstruit decoded_modified
