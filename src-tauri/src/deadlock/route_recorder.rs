@@ -11,6 +11,9 @@ use std::{
 };
 
 use serde::Serialize;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VK_CONTROL, VK_SHIFT, VK_SPACE,
+};
 
 use super::{match_safety, pawn, process, schema};
 
@@ -27,7 +30,16 @@ pub struct RouteSample {
     yaw: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pitch: Option<f32>,
+    buttons: RouteButtons,
     diagnostics: RouteSampleDiagnostics,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+struct RouteButtons {
+    jump: bool,
+    crouch: bool,
+    dash: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -75,6 +87,7 @@ pub struct RouteRecording {
     position_source: &'static str,
     velocity_source: &'static str,
     view_angles_source: &'static str,
+    buttons_source: &'static str,
     sampling_stats: SamplingStats,
     #[serde(skip_serializing_if = "Option::is_none")]
     stop_reason: Option<String>,
@@ -447,6 +460,7 @@ fn sample_from_telemetry(
         velocity: telemetry.velocity,
         pitch: telemetry.pitch,
         yaw: telemetry.yaw,
+        buttons: capture_route_buttons(),
         diagnostics: RouteSampleDiagnostics {
             scene_node: telemetry.diagnostics.scene_node,
             local_origin: telemetry.diagnostics.local_origin,
@@ -476,6 +490,21 @@ fn sample_from_telemetry(
     };
     validate_sample(&sample)?;
     Ok(sample)
+}
+
+fn capture_route_buttons() -> RouteButtons {
+    RouteButtons {
+        jump: key_is_down(VK_SPACE),
+        crouch: key_is_down(VK_CONTROL),
+        dash: key_is_down(VK_SHIFT),
+    }
+}
+
+fn key_is_down(virtual_key: u16) -> bool {
+    // High bit = key is currently down. Route recording already samples at
+    // ~60 Hz, so preserving the held state gives BOTREC enough information
+    // to reconstruct press/release transitions on the output timeline.
+    unsafe { (GetAsyncKeyState(i32::from(virtual_key)) as u16 & 0x8000) != 0 }
 }
 
 fn validate_sample(sample: &RouteSample) -> Result<(), String> {
@@ -523,7 +552,7 @@ fn finish_recording(
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 1,
+        version: 2,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -531,6 +560,7 @@ fn finish_recording(
         position_source: "CGameSceneNode::m_vecAbsOrigin",
         velocity_source: "C_BaseEntity::m_vecAbsVelocity",
         view_angles_source: "C_CitadelPlayerPawn::m_angClientCamera",
+        buttons_source: "Win32 GetAsyncKeyState: Space=jump, Ctrl=crouch/slide, Shift=dash",
         sampling_stats,
         stop_reason,
         samples,
@@ -680,6 +710,7 @@ mod tests {
             velocity: [4.0, 5.0, 6.0],
             yaw: Some(90.0),
             pitch: Some(-10.0),
+            buttons: RouteButtons::default(),
             diagnostics: RouteSampleDiagnostics {
                 scene_node: 0x1234,
                 local_origin: [1.0, 2.0, 3.0],
