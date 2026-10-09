@@ -1,4 +1,5 @@
 from pathlib import Path
+import bisect
 import json
 import math
 import struct
@@ -10,6 +11,7 @@ OUTPUT_PATH = Path("botrec_debug/decoded_modified.bin")
 
 HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
+BOTREC_HZ = 64.0
 
 
 # ---------------------------------------------------------
@@ -293,7 +295,7 @@ def find_first_moving_sample(samples):
     )
 
 
-def choose_reference_speed(samples, start):
+def choose_reference_speed(samples):
     """
     90e percentile des vitesses horizontales.
 
@@ -303,7 +305,7 @@ def choose_reference_speed(samples, start):
 
     speeds = []
 
-    for sample in samples[start:]:
+    for sample in samples:
         speed = horizontal_speed(sample)
 
         if speed > DEADZONE_SPEED:
@@ -321,6 +323,58 @@ def choose_reference_speed(samples, start):
     reference = speeds[index]
 
     return max(reference, 1.0)
+
+
+def interpolate_angle_degrees(a, b, alpha):
+    """
+    Interpolation angulaire par le chemin le plus court.
+    Évite un grand tour quand le yaw traverse -180/180.
+    """
+    delta = (b - a + 180.0) % 360.0 - 180.0
+    return a + delta * alpha
+
+
+def resample_route_at_ms(samples, times_ms, target_ms):
+    """
+    Échantillonne la route SPLIT au temps demandé.
+
+    Position n'est pas nécessaire ici : pour le BOTREC on convertit
+    vitesse monde + yaw caméra en forwardmove/leftmove.
+    """
+    if target_ms <= times_ms[0]:
+        sample = samples[0]
+        vel = sample.get("velocity", [0.0, 0.0, 0.0])
+        return float(vel[0]), float(vel[1]), float(sample.get("yaw", 0.0))
+
+    if target_ms >= times_ms[-1]:
+        return 0.0, 0.0, float(samples[-1].get("yaw", 0.0))
+
+    right = bisect.bisect_right(times_ms, target_ms)
+    left_index = max(0, right - 1)
+    right_index = min(len(samples) - 1, right)
+
+    left_sample = samples[left_index]
+    right_sample = samples[right_index]
+
+    left_t = times_ms[left_index]
+    right_t = times_ms[right_index]
+
+    if right_t <= left_t:
+        alpha = 0.0
+    else:
+        alpha = (target_ms - left_t) / (right_t - left_t)
+
+    left_vel = left_sample.get("velocity", [0.0, 0.0, 0.0])
+    right_vel = right_sample.get("velocity", [0.0, 0.0, 0.0])
+
+    vx = float(left_vel[0]) + (float(right_vel[0]) - float(left_vel[0])) * alpha
+    vy = float(left_vel[1]) + (float(right_vel[1]) - float(left_vel[1])) * alpha
+
+    left_yaw = float(left_sample.get("yaw", 0.0))
+    right_yaw = float(right_sample.get("yaw", left_yaw))
+    yaw = interpolate_angle_degrees(left_yaw, right_yaw, alpha)
+
+    return vx, vy, yaw
 
 
 # ---------------------------------------------------------
@@ -416,12 +470,18 @@ def main():
 
     route_meta, samples = load_route(route_path)
 
-    route_start = find_first_moving_sample(samples)
+    if any("tMs" not in sample for sample in samples):
+        raise RuntimeError(
+            "La route SPLIT ne contient pas tMs sur tous les samples"
+        )
 
-    speed_ref = choose_reference_speed(
-        samples,
-        route_start,
-    )
+    times_ms = [float(sample["tMs"]) for sample in samples]
+    route_time_zero = times_ms[0]
+    times_ms = [value - route_time_zero for value in times_ms]
+
+    route_duration_ms = times_ms[-1]
+
+    speed_ref = choose_reference_speed(samples)
 
     # -----------------------------
     # Charge template BOTREC
@@ -440,7 +500,8 @@ def main():
         f"Sample rate : "
         f"{route_meta.get('targetSampleRateHz', '?')} Hz"
     )
-    print(f"Début mouv. : sample {route_start}")
+    print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
+    print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
     print(f"Speed ref   : {speed_ref:.2f}")
     print()
     print(f"BOTREC      : {len(frames)} frames")
@@ -490,13 +551,13 @@ def main():
     # Applique la route
     # -----------------------------
 
-    available_route_samples = (
-        len(samples) - route_start
-    )
+    route_frame_count = int(
+        math.floor(route_duration_ms * BOTREC_HZ / 1000.0)
+    ) + 1
 
     usable = min(
         len(frames),
-        available_route_samples,
+        route_frame_count,
     )
 
     if usable <= 0:
@@ -508,26 +569,25 @@ def main():
         f"Frames route appliquées : {usable}"
     )
 
+    if route_frame_count > len(frames):
+        missing = route_frame_count - len(frames)
+        print(
+            f"ATTENTION   : template trop court de {missing} frame(s) "
+            f"(~{missing / BOTREC_HZ:.2f} s)"
+        )
+
     modified_frames = list(frames)
 
-    preview_every = 60
+    preview_every = int(BOTREC_HZ)
 
     for frame_index in range(usable):
-        sample_index = (
-            route_start + frame_index
+        target_ms = frame_index * (1000.0 / BOTREC_HZ)
+
+        vx, vy, route_yaw = resample_route_at_ms(
+            samples,
+            times_ms,
+            target_ms,
         )
-
-        sample = samples[sample_index]
-
-        vel = sample.get(
-            "velocity",
-            [0.0, 0.0, 0.0],
-        )
-
-        vx = float(vel[0])
-        vy = float(vel[1])
-
-        route_yaw = float(sample.get("yaw", 0.0))
 
         forward, left = movement_from_velocity(
             vx,
@@ -550,7 +610,7 @@ def main():
         ):
             print(
                 f"frame={frame_index:<4} "
-                f"sample={sample_index:<4} "
+                f"t={target_ms / 1000.0:6.3f}s "
                 f"vel=({vx:+7.1f},{vy:+7.1f}) "
                 f"yaw={route_yaw:+7.2f} "
                 f"=> "
@@ -558,8 +618,8 @@ def main():
                 f"left={left:+.3f}"
             )
 
-    # Après la partie route :
-    # on force STOP sur les frames restantes.
+    # Après la durée réelle de la route :
+    # on force STOP sur les frames restantes du template.
 
     for frame_index in range(
         usable,
