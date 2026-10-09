@@ -158,6 +158,203 @@ def load_frames(data):
     return header, frames
 
 
+
+def extract_command_tick(command):
+    for field, wire, start, end in parse_fields(command):
+        if field == 2 and wire == 0:
+            value, _ = read_varint(command, start)
+            return value
+    return None
+
+
+def patch_frame_tick(frame, tick):
+    """
+    Remplace command.field2 (client tick) par une nouvelle valeur.
+    Sert uniquement aux frames synthétiques ajoutées au-delà du template.
+    """
+    out = bytearray()
+    offset = 0
+    patched = False
+
+    while offset < len(frame):
+        key_start = offset
+        key, after_key = read_varint(frame, offset)
+        field = key >> 3
+        wire = key & 7
+        offset = after_key
+
+        if wire == 0:
+            _, end = read_varint(frame, offset)
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 1:
+            end = offset + 8
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 5:
+            end = offset + 4
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 7:
+            out += frame[key_start:offset]
+
+        elif wire == 2:
+            size, payload_start = read_varint(frame, offset)
+            payload_end = payload_start + size
+            payload = frame[payload_start:payload_end]
+
+            if field == 1 and not patched:
+                command_out = bytearray()
+                command_offset = 0
+                tick_replaced = False
+
+                while command_offset < len(payload):
+                    cmd_key_start = command_offset
+                    cmd_key, cmd_after_key = read_varint(payload, command_offset)
+                    cmd_field = cmd_key >> 3
+                    cmd_wire = cmd_key & 7
+                    command_offset = cmd_after_key
+
+                    if cmd_wire == 0:
+                        _, cmd_end = read_varint(payload, command_offset)
+
+                        if cmd_field == 2 and not tick_replaced:
+                            command_out += encode_varint((2 << 3) | 0)
+                            command_out += encode_varint(int(tick))
+                            tick_replaced = True
+                        else:
+                            command_out += payload[cmd_key_start:cmd_end]
+
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 1:
+                        cmd_end = command_offset + 8
+                        command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 5:
+                        cmd_end = command_offset + 4
+                        command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 7:
+                        command_out += payload[cmd_key_start:command_offset]
+
+                    elif cmd_wire == 2:
+                        cmd_size, cmd_payload_start = read_varint(payload, command_offset)
+                        cmd_payload_end = cmd_payload_start + cmd_size
+                        command_out += payload[cmd_key_start:cmd_payload_end]
+                        command_offset = cmd_payload_end
+
+                    else:
+                        raise RuntimeError(
+                            f"wire command {cmd_wire} non supporté"
+                        )
+
+                if not tick_replaced:
+                    command_out += encode_varint((2 << 3) | 0)
+                    command_out += encode_varint(int(tick))
+
+                out += encode_varint(key)
+                out += encode_varint(len(command_out))
+                out += command_out
+                patched = True
+
+            else:
+                out += frame[key_start:payload_end]
+
+            offset = payload_end
+
+        else:
+            raise RuntimeError(
+                f"wire {wire} non supporté"
+            )
+
+    if not patched:
+        raise RuntimeError(
+            "command message introuvable dans une frame"
+        )
+
+    return bytes(out)
+
+
+def strip_outer_position(frame):
+    """
+    Supprime outer.field2 (position optionnelle) d'une frame synthétique.
+    Les frames natives existantes restent inchangées.
+    """
+    out = bytearray()
+    offset = 0
+
+    while offset < len(frame):
+        key_start = offset
+        key, after_key = read_varint(frame, offset)
+        field = key >> 3
+        wire = key & 7
+        offset = after_key
+
+        if wire == 0:
+            _, end = read_varint(frame, offset)
+
+        elif wire == 1:
+            end = offset + 8
+
+        elif wire == 5:
+            end = offset + 4
+
+        elif wire == 7:
+            end = offset
+
+        elif wire == 2:
+            size, payload_start = read_varint(frame, offset)
+            end = payload_start + size
+
+        else:
+            raise RuntimeError(
+                f"wire {wire} non supporté"
+            )
+
+        if field != 2:
+            out += frame[key_start:end]
+
+        offset = end
+
+    return bytes(out)
+
+
+def infer_tick_step(frames):
+    ticks = []
+
+    for frame in frames:
+        command = get_command(frame)
+        if command is None:
+            continue
+
+        tick = extract_command_tick(command)
+        if tick is not None:
+            ticks.append(tick)
+
+    if len(ticks) < 2:
+        return 1, ticks[-1] if ticks else 0
+
+    positive_diffs = [
+        b - a
+        for a, b in zip(ticks, ticks[1:])
+        if b > a
+    ]
+
+    if not positive_diffs:
+        return 1, ticks[-1]
+
+    positive_diffs.sort()
+    step = positive_diffs[len(positive_diffs) // 2]
+
+    return max(1, int(step)), ticks[-1]
+
+
 def get_command(frame):
     for field, wire, start, end in parse_fields(frame):
         if field == 1 and wire == 2:
@@ -766,19 +963,47 @@ def main():
             "Aucune frame utilisable"
         )
 
-    if route_frame_count > len(frames):
-        missing = route_frame_count - len(frames)
-        raise RuntimeError(
-            "Le BOTREC template est encore trop court pour cette route : "
-            f"{missing} frame(s) manquante(s) "
-            f"(~{missing / BOTREC_HZ:.2f} s). "
-            "Pour l'instant, utilise une route plus courte que le template."
+    # Construit exactement le nombre de frames demandé.
+    #
+    # - route <= template : on tronque comme avant.
+    # - route > template  : on ajoute des frames synthétiques à partir
+    #   d'une frame native propre, avec ticks continus.
+    modified_frames = list(frames[:min(route_frame_count, len(frames))])
+
+    synthetic_count = max(
+        0,
+        route_frame_count - len(modified_frames),
+    )
+
+    if synthetic_count:
+        tick_step, last_tick = infer_tick_step(frames)
+
+        synthetic_base = strip_outer_position(frames[-1])
+
+        for extra_index in range(synthetic_count):
+            synthetic_tick = (
+                last_tick
+                + tick_step * (extra_index + 1)
+            )
+
+            synthetic_frame = patch_frame_tick(
+                synthetic_base,
+                synthetic_tick,
+            )
+
+            modified_frames.append(
+                synthetic_frame
+            )
+
+        print(
+            f"Frames synthétiques : {synthetic_count} "
+            f"(tick step={tick_step})"
         )
 
-    # On garde exactement le nombre de frames correspondant à la durée SPLIT.
-    # Les frames de fin du vieux template ne sont plus conservées.
-    modified_frames = list(frames[:route_frame_count])
-    header = patch_header_frame_count(header, route_frame_count)
+    header = patch_header_frame_count(
+        header,
+        route_frame_count,
+    )
 
     print(
         f"Frames finales : {route_frame_count} "
