@@ -13,6 +13,11 @@ HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
 BOTREC_HZ = 64.0
 
+# Button masks validated from native Deadlock BOTREC recordings.
+BUTTON_CROUCH = 0x0000000000000004
+BUTTON_DASH = 0x0000100000000000
+BUTTON_JUMP = 0x0101000000000000
+
 # Internal BOTREC header layout inferred from native recordings:
 # 0x00 u32 hero id
 # 0x04 f32 start X
@@ -77,6 +82,15 @@ def encode_varint(value):
 def float_field(field_number, value):
     key = (field_number << 3) | 5
     return encode_varint(key) + struct.pack("<f", value)
+
+
+def varint_field(field_number, value):
+    key = (field_number << 3) | 0
+    return encode_varint(key) + encode_varint(value)
+
+
+def clear_field(field_number):
+    return encode_varint((field_number << 3) | 7)
 
 
 def parse_fields(data):
@@ -515,6 +529,147 @@ def patch_frame_view_and_buttons(frame, pitch, yaw):
     return bytes(out)
 
 
+def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
+    """
+    Remplace command.field3 par un delta buttons natif.
+
+    Modes:
+    - None: aucun delta buttons sur cette frame.
+    - "change": field1=held, field2=changed.
+    - "clear_changed": clear field2 après une transition maintenue.
+    - "reset": clear complet après une release vers held=0.
+    """
+    out = bytearray()
+    offset = 0
+    patched = False
+
+    while offset < len(frame):
+        key_start = offset
+        key, after_key = read_varint(frame, offset)
+        field = key >> 3
+        wire = key & 7
+        offset = after_key
+
+        if wire == 0:
+            _, end = read_varint(frame, offset)
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 1:
+            end = offset + 8
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 5:
+            end = offset + 4
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 7:
+            out += frame[key_start:offset]
+
+        elif wire == 2:
+            size, payload_start = read_varint(frame, offset)
+            payload_end = payload_start + size
+            payload = frame[payload_start:payload_end]
+
+            if field == 1 and not patched:
+                command_out = bytearray()
+                command_offset = 0
+
+                while command_offset < len(payload):
+                    cmd_key_start = command_offset
+                    cmd_key, cmd_after_key = read_varint(payload, command_offset)
+                    cmd_field = cmd_key >> 3
+                    cmd_wire = cmd_key & 7
+                    command_offset = cmd_after_key
+
+                    if cmd_wire == 0:
+                        _, cmd_end = read_varint(payload, command_offset)
+                        if cmd_field != 3:
+                            command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 1:
+                        cmd_end = command_offset + 8
+                        if cmd_field != 3:
+                            command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 5:
+                        cmd_end = command_offset + 4
+                        if cmd_field != 3:
+                            command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 7:
+                        if cmd_field != 3:
+                            command_out += payload[cmd_key_start:command_offset]
+
+                    elif cmd_wire == 2:
+                        cmd_size, cmd_payload_start = read_varint(payload, command_offset)
+                        cmd_payload_end = cmd_payload_start + cmd_size
+                        if cmd_field != 3:
+                            command_out += payload[cmd_key_start:cmd_payload_end]
+                        command_offset = cmd_payload_end
+
+                    else:
+                        raise RuntimeError(
+                            f"wire command {cmd_wire} non supporté"
+                        )
+
+                if mode == "change":
+                    buttons_payload = bytearray()
+
+                    if held_mask:
+                        buttons_payload += varint_field(1, held_mask)
+                    else:
+                        buttons_payload += clear_field(1)
+
+                    buttons_payload += varint_field(2, changed_mask)
+
+                    command_out += encode_varint((3 << 3) | 2)
+                    command_out += encode_varint(len(buttons_payload))
+                    command_out += buttons_payload
+
+                elif mode == "clear_changed":
+                    buttons_payload = clear_field(2)
+                    command_out += encode_varint((3 << 3) | 2)
+                    command_out += encode_varint(len(buttons_payload))
+                    command_out += buttons_payload
+
+                elif mode == "reset":
+                    command_out += clear_field(3)
+
+                elif mode is not None:
+                    raise RuntimeError(
+                        f"mode buttons inconnu : {mode}"
+                    )
+
+                out += encode_varint(key)
+                out += encode_varint(len(command_out))
+                out += command_out
+                patched = True
+
+            else:
+                out += frame[key_start:payload_end]
+
+            offset = payload_end
+
+        else:
+            raise RuntimeError(
+                f"wire {wire} non supporté"
+            )
+
+    if not patched:
+        raise RuntimeError(
+            "command message introuvable dans une frame"
+        )
+
+    return bytes(out)
+
+
+
 def patch_frame_movement(frame, forward, left):
     """
     Ajoute forwardmove/leftmove à la FIN du command message.
@@ -614,6 +769,41 @@ def load_route(path):
         )
 
     return obj, samples
+
+
+def route_button_mask(sample):
+    buttons = sample.get("buttons")
+
+    if not isinstance(buttons, dict):
+        return 0
+
+    mask = 0
+
+    if buttons.get("jump"):
+        mask |= BUTTON_JUMP
+
+    if buttons.get("crouch"):
+        mask |= BUTTON_CROUCH
+
+    if buttons.get("dash"):
+        mask |= BUTTON_DASH
+
+    return mask
+
+
+def route_button_mask_at_ms(samples, times_ms, target_ms):
+    if target_ms <= times_ms[0]:
+        return route_button_mask(samples[0])
+
+    if target_ms >= times_ms[-1]:
+        return route_button_mask(samples[-1])
+
+    index = max(
+        0,
+        bisect.bisect_right(times_ms, target_ms) - 1,
+    )
+
+    return route_button_mask(samples[index])
 
 
 def horizontal_speed(sample):
@@ -881,6 +1071,10 @@ def main():
     route_duration_ms = times_ms[-1]
 
     speed_ref = choose_reference_speed(samples)
+    has_button_data = any(
+        isinstance(sample.get("buttons"), dict)
+        for sample in samples
+    )
 
     # -----------------------------
     # Charge template BOTREC
@@ -906,6 +1100,10 @@ def main():
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
     print(f"Speed ref   : {speed_ref:.2f}")
+    print(
+        "Buttons     : "
+        + ("jump/crouch/dash" if has_button_data else "aucun (ancienne route)")
+    )
     print()
     print(f"BOTREC      : {len(frames)} frames")
 
@@ -1011,6 +1209,9 @@ def main():
     )
 
     preview_every = int(BOTREC_HZ)
+    previous_button_mask = 0
+    clear_changed_next = False
+    button_transition_count = 0
 
     for frame_index in range(route_frame_count):
         target_ms = frame_index * (1000.0 / BOTREC_HZ)
@@ -1028,10 +1229,41 @@ def main():
             speed_ref,
         )
 
+        current_button_mask = route_button_mask_at_ms(
+            samples,
+            times_ms,
+            target_ms,
+        )
+
+        changed_button_mask = (
+            previous_button_mask ^ current_button_mask
+        )
+
+        if changed_button_mask:
+            button_mode = "change"
+            clear_changed_next = True
+            button_transition_count += 1
+        elif clear_changed_next:
+            button_mode = (
+                "reset"
+                if current_button_mask == 0
+                else "clear_changed"
+            )
+            clear_changed_next = False
+        else:
+            button_mode = None
+
         cleaned_frame = patch_frame_view_and_buttons(
             modified_frames[frame_index],
             route_pitch,
             route_yaw,
+        )
+
+        cleaned_frame = patch_frame_buttons(
+            cleaned_frame,
+            button_mode,
+            current_button_mask,
+            changed_button_mask,
         )
 
         modified_frames[frame_index] = (
@@ -1041,6 +1273,8 @@ def main():
                 left,
             )
         )
+
+        previous_button_mask = current_button_mask
 
         if (
             frame_index % preview_every == 0
@@ -1055,6 +1289,10 @@ def main():
                 f"forward={forward:+.3f} "
                 f"left={left:+.3f}"
             )
+
+    print(
+        f"Transitions buttons : {button_transition_count}"
+    )
 
     # -----------------------------
     # Reconstruit decoded_modified
