@@ -13,6 +13,22 @@ HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
 BOTREC_HZ = 64.0
 
+# Internal BOTREC header layout inferred from native recordings:
+# 0x00 u32 hero id
+# 0x04 f32 start X
+# 0x08 f32 start Y
+# 0x0C f32 start Z
+# 0x10 f32 start pitch
+# 0x14 f32 start yaw
+# 0x18 f32 start roll
+# 0x1C u32 frame count
+HEADER_START_X = 0x04
+HEADER_START_Y = 0x08
+HEADER_START_Z = 0x0C
+HEADER_START_PITCH = 0x10
+HEADER_START_YAW = 0x14
+HEADER_START_ROLL = 0x18
+
 
 # ---------------------------------------------------------
 # VARINT
@@ -439,6 +455,42 @@ def movement_from_velocity(vx, vy, yaw_degrees, speed_ref):
     return forward, left
 
 
+def patch_header_spawn(header, sample):
+    """
+    Remplace le point de départ natif du BOTREC par le premier
+    sample de la route SPLIT. On conserve hero id et frame count.
+    """
+    position = sample.get("position")
+    if not position or len(position) < 3:
+        raise RuntimeError(
+            "Le premier sample SPLIT n'a pas de position XYZ"
+        )
+
+    x = float(position[0])
+    y = float(position[1])
+    z = float(position[2])
+
+    pitch = float(sample.get("pitch", 0.0))
+    yaw = float(sample.get("yaw", 0.0))
+    roll = 0.0
+
+    patched = bytearray(header)
+    struct.pack_into("<f", patched, HEADER_START_X, x)
+    struct.pack_into("<f", patched, HEADER_START_Y, y)
+    struct.pack_into("<f", patched, HEADER_START_Z, z)
+    struct.pack_into("<f", patched, HEADER_START_PITCH, pitch)
+    struct.pack_into("<f", patched, HEADER_START_YAW, yaw)
+    struct.pack_into("<f", patched, HEADER_START_ROLL, roll)
+
+    print(
+        "Spawn BOTREC : "
+        f"({x:.2f}, {y:.2f}, {z:.2f}) "
+        f"pitch={pitch:.2f} yaw={yaw:.2f}"
+    )
+
+    return bytes(patched)
+
+
 # ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
@@ -490,6 +542,10 @@ def main():
     original = BOTREC_PATH.read_bytes()
 
     header, frames = load_frames(original)
+
+    # Le BOTREC natif contient son point de spawn dans son header.
+    # On le remplace par la position/caméra du début de la route SPLIT.
+    header = patch_header_spawn(header, samples[0])
 
     print()
     print("=== SPLIT -> BOTREC ===")
