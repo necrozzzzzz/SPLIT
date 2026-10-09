@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     mem::{size_of, zeroed},
+    sync::{Mutex, OnceLock},
 };
 
 use windows_sys::Win32::{
@@ -105,6 +106,13 @@ pub(crate) struct RouteSchema {
     pub(crate) client_camera_angles_offset: u32,
     pub(crate) prediction_error_offset: u32,
     pub(crate) prediction_error_time_offset: u32,
+}
+
+
+static ROUTE_SCHEMA_CACHE: OnceLock<Mutex<Option<(u32, RouteSchema)>>> = OnceLock::new();
+
+fn route_schema_cache() -> &'static Mutex<Option<(u32, RouteSchema)>> {
+    ROUTE_SCHEMA_CACHE.get_or_init(|| Mutex::new(None))
 }
 
 impl SchemaResolver {
@@ -482,61 +490,79 @@ impl SchemaResolver {
 }
 
 pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
-    let schema_system =
-        super::interfaces::find_interface(pid, "schemasystem.dll", "SchemaSystem_001")?
-            .ok_or_else(|| "Exact interface SchemaSystem_001 was not found".to_string())?;
-    let resolver = SchemaResolver::from_schema_system(pid, schema_system)?;
-    let client = resolver
-        .find_scope("client")?
-        .or(resolver.find_scope("client.dll")?)
-        .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
+    if let Ok(cache) = route_schema_cache().lock() {
+        if let Some((cached_pid, cached)) = *cache {
+            if cached_pid == pid {
+                println!("[SPLIT][Schema] route schema cache hit pid={pid}");
+                return Ok(cached);
+            }
+        }
+    }
 
-    // Route recording must not run expensive schema diagnostics on every Start.
-    // The former CBaseAnimGraphController dump traversed the schema class hash
-    // and read/logged every field before recording could begin. Keep schema
-    // discovery here limited to the fields the recorder actually needs.
+    let resolved = (|| -> Result<RouteSchema, String> {
+        let schema_system =
+                super::interfaces::find_interface(pid, "schemasystem.dll", "SchemaSystem_001")?
+                    .ok_or_else(|| "Exact interface SchemaSystem_001 was not found".to_string())?;
+            let resolver = SchemaResolver::from_schema_system(pid, schema_system)?;
+            let client = resolver
+                .find_scope("client")?
+                .or(resolver.find_scope("client.dll")?)
+                .ok_or_else(|| "Exact client/client.dll scope was not found".to_string())?;
         
-    let required = |class_name: &str, field_name: &str| -> Result<u32, String> {
-        resolver
-            .find_field_offset(client, class_name, field_name)?
-            .ok_or_else(|| format!("Exact schema field {class_name}::{field_name} was not found"))
-    };
+            // Route recording must not run expensive schema diagnostics on every Start.
+            // The former CBaseAnimGraphController dump traversed the schema class hash
+            // and read/logged every field before recording could begin. Keep schema
+            // discovery here limited to the fields the recorder actually needs.
+                
+            let required = |class_name: &str, field_name: &str| -> Result<u32, String> {
+                resolver
+                    .find_field_offset(client, class_name, field_name)?
+                    .ok_or_else(|| format!("Exact schema field {class_name}::{field_name} was not found"))
+            };
+        
+            Ok(RouteSchema {
+                local_flag_offset: required("CBasePlayerController", "m_bIsLocalPlayerController")?,
+                pawn_handle_offset: required("CBasePlayerController", "m_hPawn")?,
+                identity_size: resolver
+                    .find_class_size(client, "CEntityIdentity")?
+                    .ok_or_else(|| "Exact schema class CEntityIdentity was not found".to_string())?,
+                game_scene_node_offset: required("C_BaseEntity", "m_pGameSceneNode")?,
+                local_origin_offset: required("CGameSceneNode", "m_vecOrigin")?,
+                absolute_origin_offset: required("CGameSceneNode", "m_vecAbsOrigin")?,
+                wrapped_local_origin_offset: required("CGameSceneNode", "m_vecWrappedLocalOrigin")?,
+        
+                scene_node_ang_rotation_offset: required(
+                    "CGameSceneNode",
+                    "m_angRotation",
+                )?,
+        
+                scene_node_ang_abs_rotation_offset: required(
+                    "CGameSceneNode",
+                    "m_angAbsRotation",
+                )?,
+        
+                scene_node_ang_wrapped_local_rotation_offset: required(
+                    "CGameSceneNode",
+                    "m_angWrappedLocalRotation",
+                )?,
+        
+                absolute_velocity_offset: required("C_BaseEntity", "m_vecAbsVelocity")?,
+                simulation_tick_offset: required("C_BaseEntity", "m_nSimulationTick")?,
+                simulation_time_offset: required("C_BaseEntity", "m_flSimulationTime")?,
+                old_origin_offset: required("C_BasePlayerPawn", "m_vOldOrigin")?,
+                view_angles_offset: required("C_BasePlayerPawn", "v_angle")?,
+                client_camera_angles_offset: required("C_CitadelPlayerPawn", "m_angClientCamera")?,
+                prediction_error_offset: required("C_BasePlayerPawn", "m_vecPredictionError")?,
+                prediction_error_time_offset: required("C_BasePlayerPawn", "m_flPredictionErrorTime")?,
+            })
+    })()?;
 
-    Ok(RouteSchema {
-        local_flag_offset: required("CBasePlayerController", "m_bIsLocalPlayerController")?,
-        pawn_handle_offset: required("CBasePlayerController", "m_hPawn")?,
-        identity_size: resolver
-            .find_class_size(client, "CEntityIdentity")?
-            .ok_or_else(|| "Exact schema class CEntityIdentity was not found".to_string())?,
-        game_scene_node_offset: required("C_BaseEntity", "m_pGameSceneNode")?,
-        local_origin_offset: required("CGameSceneNode", "m_vecOrigin")?,
-        absolute_origin_offset: required("CGameSceneNode", "m_vecAbsOrigin")?,
-        wrapped_local_origin_offset: required("CGameSceneNode", "m_vecWrappedLocalOrigin")?,
+    if let Ok(mut cache) = route_schema_cache().lock() {
+        *cache = Some((pid, resolved));
+    }
 
-        scene_node_ang_rotation_offset: required(
-            "CGameSceneNode",
-            "m_angRotation",
-        )?,
-
-        scene_node_ang_abs_rotation_offset: required(
-            "CGameSceneNode",
-            "m_angAbsRotation",
-        )?,
-
-        scene_node_ang_wrapped_local_rotation_offset: required(
-            "CGameSceneNode",
-            "m_angWrappedLocalRotation",
-        )?,
-
-        absolute_velocity_offset: required("C_BaseEntity", "m_vecAbsVelocity")?,
-        simulation_tick_offset: required("C_BaseEntity", "m_nSimulationTick")?,
-        simulation_time_offset: required("C_BaseEntity", "m_flSimulationTime")?,
-        old_origin_offset: required("C_BasePlayerPawn", "m_vOldOrigin")?,
-        view_angles_offset: required("C_BasePlayerPawn", "v_angle")?,
-        client_camera_angles_offset: required("C_CitadelPlayerPawn", "m_angClientCamera")?,
-        prediction_error_offset: required("C_BasePlayerPawn", "m_vecPredictionError")?,
-        prediction_error_time_offset: required("C_BasePlayerPawn", "m_flPredictionErrorTime")?,
-    })
+    println!("[SPLIT][Schema] route schema cached pid={pid}");
+    Ok(resolved)
 }
 
 pub(crate) fn initialize_client_runtime(pid: u32, schema_system: u64) -> Result<(), String> {
