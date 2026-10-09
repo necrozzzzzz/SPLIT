@@ -15,6 +15,10 @@ BOTREC_HZ = 64.0
 
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
+BUTTON_FORWARD = 0x0000000000000008
+BUTTON_BACK = 0x0000000000000010
+BUTTON_LEFT = 0x0000000000000200
+BUTTON_RIGHT = 0x0000000000000400
 BUTTON_DASH = 0x0000100000000000
 BUTTON_JUMP = 0x0101000000000000
 
@@ -779,6 +783,18 @@ def route_button_mask(sample):
 
     mask = 0
 
+    if buttons.get("forward"):
+        mask |= BUTTON_FORWARD
+
+    if buttons.get("back"):
+        mask |= BUTTON_BACK
+
+    if buttons.get("left"):
+        mask |= BUTTON_LEFT
+
+    if buttons.get("right"):
+        mask |= BUTTON_RIGHT
+
     if buttons.get("jump"):
         mask |= BUTTON_JUMP
 
@@ -804,6 +820,44 @@ def route_button_mask_at_ms(samples, times_ms, target_ms):
     )
 
     return route_button_mask(samples[index])
+
+
+def route_movement_at_ms(samples, times_ms, target_ms):
+    if target_ms <= times_ms[0]:
+        sample = samples[0]
+    elif target_ms >= times_ms[-1]:
+        sample = samples[-1]
+    else:
+        index = max(
+            0,
+            bisect.bisect_right(times_ms, target_ms) - 1,
+        )
+        sample = samples[index]
+
+    buttons = sample.get("buttons")
+
+    if not isinstance(buttons, dict):
+        return None
+
+    movement_keys_present = any(
+        key in buttons
+        for key in ("forward", "back", "left", "right")
+    )
+
+    if not movement_keys_present:
+        return None
+
+    forward = (
+        (1.0 if buttons.get("forward") else 0.0)
+        - (1.0 if buttons.get("back") else 0.0)
+    )
+
+    left = (
+        (1.0 if buttons.get("left") else 0.0)
+        - (1.0 if buttons.get("right") else 0.0)
+    )
+
+    return forward, left
 
 
 def horizontal_speed(sample):
@@ -1075,6 +1129,14 @@ def main():
         isinstance(sample.get("buttons"), dict)
         for sample in samples
     )
+    has_movement_input_data = any(
+        isinstance(sample.get("buttons"), dict)
+        and any(
+            key in sample["buttons"]
+            for key in ("forward", "back", "left", "right")
+        )
+        for sample in samples
+    )
 
     # -----------------------------
     # Charge template BOTREC
@@ -1102,7 +1164,15 @@ def main():
     print(f"Speed ref   : {speed_ref:.2f}")
     print(
         "Buttons     : "
-        + ("jump/crouch/dash" if has_button_data else "aucun (ancienne route)")
+        + (
+            "movement+jump/crouch/dash"
+            if has_movement_input_data
+            else (
+                "jump/crouch/dash"
+                if has_button_data
+                else "aucun (ancienne route)"
+            )
+        )
     )
     print()
     print(f"BOTREC      : {len(frames)} frames")
@@ -1222,12 +1292,21 @@ def main():
             target_ms,
         )
 
-        forward, left = movement_from_velocity(
-            vx,
-            vy,
-            route_yaw,
-            speed_ref,
+        movement_input = route_movement_at_ms(
+            samples,
+            times_ms,
+            target_ms,
         )
+
+        if movement_input is not None:
+            forward, left = movement_input
+        else:
+            forward, left = movement_from_velocity(
+                vx,
+                vy,
+                route_yaw,
+                speed_ref,
+            )
 
         current_button_mask = route_button_mask_at_ms(
             samples,
