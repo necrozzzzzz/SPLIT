@@ -188,6 +188,135 @@ def extract_view_yaw(command, current_yaw):
     return current_yaw
 
 
+
+def vec3_delta_payload(pitch, yaw, roll=0.0):
+    return (
+        float_field(1, pitch)
+        + float_field(2, yaw)
+        + float_field(3, roll)
+    )
+
+
+def patch_frame_view_and_buttons(frame, pitch, yaw):
+    """
+    Nettoie les inputs hérités du template :
+    - field 3 (buttons) => reset complet
+    - field 4 (viewangles) => yaw/pitch de la route SPLIT
+
+    On garde les autres champs de command intacts.
+    """
+    out = bytearray()
+    offset = 0
+    patched = False
+
+    while offset < len(frame):
+        key_start = offset
+        key, after_key = read_varint(frame, offset)
+
+        field = key >> 3
+        wire = key & 7
+        offset = after_key
+
+        if wire == 0:
+            _, end = read_varint(frame, offset)
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 1:
+            end = offset + 8
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 5:
+            end = offset + 4
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 7:
+            out += frame[key_start:offset]
+
+        elif wire == 2:
+            size, payload_start = read_varint(frame, offset)
+            payload_end = payload_start + size
+            payload = frame[payload_start:payload_end]
+
+            if field == 1 and not patched:
+                command_out = bytearray()
+                command_offset = 0
+
+                while command_offset < len(payload):
+                    cmd_key_start = command_offset
+                    cmd_key, cmd_after_key = read_varint(payload, command_offset)
+                    cmd_field = cmd_key >> 3
+                    cmd_wire = cmd_key & 7
+                    command_offset = cmd_after_key
+
+                    if cmd_wire == 0:
+                        _, cmd_end = read_varint(payload, command_offset)
+                        if cmd_field not in (3, 4):
+                            command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 1:
+                        cmd_end = command_offset + 8
+                        if cmd_field not in (3, 4):
+                            command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 5:
+                        cmd_end = command_offset + 4
+                        if cmd_field not in (3, 4):
+                            command_out += payload[cmd_key_start:cmd_end]
+                        command_offset = cmd_end
+
+                    elif cmd_wire == 7:
+                        if cmd_field not in (3, 4):
+                            command_out += payload[cmd_key_start:command_offset]
+
+                    elif cmd_wire == 2:
+                        cmd_size, cmd_payload_start = read_varint(payload, command_offset)
+                        cmd_payload_end = cmd_payload_start + cmd_size
+                        if cmd_field not in (3, 4):
+                            command_out += payload[cmd_key_start:cmd_payload_end]
+                        command_offset = cmd_payload_end
+
+                    else:
+                        raise RuntimeError(
+                            f"wire command {cmd_wire} non supporté"
+                        )
+
+                # Reset buttons (field 3 / wire 7)
+                command_out += encode_varint((3 << 3) | 7)
+
+                # Replace viewangles (field 4 / wire 2)
+                view_payload = vec3_delta_payload(pitch, yaw, 0.0)
+                command_out += encode_varint((4 << 3) | 2)
+                command_out += encode_varint(len(view_payload))
+                command_out += view_payload
+
+                out += encode_varint(key)
+                out += encode_varint(len(command_out))
+                out += command_out
+                patched = True
+
+            else:
+                out += frame[key_start:payload_end]
+
+            offset = payload_end
+
+        else:
+            raise RuntimeError(
+                f"wire {wire} non supporté"
+            )
+
+    if not patched:
+        raise RuntimeError(
+            "command message introuvable dans une frame"
+        )
+
+    return bytes(out)
+
+
 def patch_frame_movement(frame, forward, left):
     """
     Ajoute forwardmove/leftmove à la FIN du command message.
@@ -360,10 +489,20 @@ def resample_route_at_ms(samples, times_ms, target_ms):
     if target_ms <= times_ms[0]:
         sample = samples[0]
         vel = sample.get("velocity", [0.0, 0.0, 0.0])
-        return float(vel[0]), float(vel[1]), float(sample.get("yaw", 0.0))
+        return (
+            float(vel[0]),
+            float(vel[1]),
+            float(sample.get("yaw", 0.0)),
+            float(sample.get("pitch", 0.0)),
+        )
 
     if target_ms >= times_ms[-1]:
-        return 0.0, 0.0, float(samples[-1].get("yaw", 0.0))
+        return (
+            0.0,
+            0.0,
+            float(samples[-1].get("yaw", 0.0)),
+            float(samples[-1].get("pitch", 0.0)),
+        )
 
     right = bisect.bisect_right(times_ms, target_ms)
     left_index = max(0, right - 1)
@@ -390,7 +529,11 @@ def resample_route_at_ms(samples, times_ms, target_ms):
     right_yaw = float(right_sample.get("yaw", left_yaw))
     yaw = interpolate_angle_degrees(left_yaw, right_yaw, alpha)
 
-    return vx, vy, yaw
+    left_pitch = float(left_sample.get("pitch", 0.0))
+    right_pitch = float(right_sample.get("pitch", left_pitch))
+    pitch = interpolate_angle_degrees(left_pitch, right_pitch, alpha)
+
+    return vx, vy, yaw, pitch
 
 
 # ---------------------------------------------------------
@@ -639,7 +782,7 @@ def main():
     for frame_index in range(usable):
         target_ms = frame_index * (1000.0 / BOTREC_HZ)
 
-        vx, vy, route_yaw = resample_route_at_ms(
+        vx, vy, route_yaw, route_pitch = resample_route_at_ms(
             samples,
             times_ms,
             target_ms,
@@ -652,9 +795,15 @@ def main():
             speed_ref,
         )
 
+        cleaned_frame = patch_frame_view_and_buttons(
+            frames[frame_index],
+            route_pitch,
+            route_yaw,
+        )
+
         modified_frames[frame_index] = (
             patch_frame_movement(
-                frames[frame_index],
+                cleaned_frame,
                 forward,
                 left,
             )
@@ -681,9 +830,16 @@ def main():
         usable,
         len(modified_frames),
     ):
+        last_sample = samples[-1]
+        cleaned_frame = patch_frame_view_and_buttons(
+            frames[frame_index],
+            float(last_sample.get("pitch", 0.0)),
+            float(last_sample.get("yaw", 0.0)),
+        )
+
         modified_frames[frame_index] = (
             patch_frame_movement(
-                frames[frame_index],
+                cleaned_frame,
                 0.0,
                 0.0,
             )
