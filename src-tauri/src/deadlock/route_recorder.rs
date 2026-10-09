@@ -184,7 +184,14 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     let stage = Instant::now();
     let first = {
         let reader = pawn::PawnTelemetryReader::new(pid, resolution, route_schema)?;
-        sample_from_telemetry(started_at.elapsed(), reader.read_route_fast()?, None)?
+        let elapsed = started_at.elapsed();
+        let buttons = capture_route_buttons();
+        sample_from_telemetry(
+            elapsed,
+            reader.read_route_fast()?,
+            buttons,
+            None,
+        )?
     };
     println!(
         "[SPLIT][RouteRecorder][StartTiming] first_sample={:.2}ms",
@@ -382,8 +389,14 @@ fn run_worker(
         }
 
         let elapsed = started_at.elapsed();
+        let buttons = capture_route_buttons();
         match reader.read_route_fast().and_then(|telemetry| {
-            sample_from_telemetry(elapsed, telemetry, samples.last())
+            sample_from_telemetry(
+                elapsed,
+                telemetry,
+                buttons,
+                samples.last(),
+            )
         })
         {
             Ok(sample) => {
@@ -444,6 +457,7 @@ fn advance_deadline(next_deadline: &mut Instant, now: Instant) -> u64 {
 fn sample_from_telemetry(
     elapsed: Duration,
     telemetry: pawn::PawnTelemetry,
+    buttons: RouteButtons,
     previous: Option<&RouteSample>,
 ) -> Result<RouteSample, String> {
     let t_ms = elapsed.as_secs_f64() * 1_000.0;
@@ -464,7 +478,7 @@ fn sample_from_telemetry(
         velocity: telemetry.velocity,
         pitch: telemetry.pitch,
         yaw: telemetry.yaw,
-        buttons: capture_route_buttons(),
+        buttons,
         diagnostics: RouteSampleDiagnostics {
             scene_node: telemetry.diagnostics.scene_node,
             local_origin: telemetry.diagnostics.local_origin,
