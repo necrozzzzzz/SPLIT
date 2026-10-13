@@ -16,6 +16,12 @@ BOTREC_HZ = 64.0
 GROUND_POSITION_CHECKPOINT_MS = 250.0
 GROUND_POSITION_MAX_ABS_VZ = 8.0
 
+# Native donor supplied by the user (wall-jump -> mantle -> buffered crouch -> slide).
+# These anchors were measured from the successful native BOTREC.
+DONOR_CHAIN_JUMP_MS = 2406.0
+DONOR_CHAIN_CROUCH_MS = 3266.0
+DONOR_CHAIN_END_MS = 4828.0
+
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
 BUTTON_FORWARD = 0x0000000000000008
@@ -1385,6 +1391,121 @@ def patch_header_spawn(header, sample):
     return bytes(patched)
 
 
+def find_route_first_chain_anchors(route_meta):
+    """
+    Detect the first wall-jump -> buffered crouch -> crouch-release chain
+    from high-rate inputEvents.
+
+    We deliberately use input edges rather than telemetry timing:
+    - first jump rising edge,
+    - first crouch rising edge after that jump,
+    - first crouch falling edge after the crouch press.
+    """
+    raw_events = route_meta.get("inputEvents")
+    if not isinstance(raw_events, list):
+        return None
+
+    jump_ms = None
+    crouch_ms = None
+    end_ms = None
+    previous = {
+        "jump": False,
+        "crouch": False,
+    }
+
+    for event in raw_events:
+        if not isinstance(event, dict):
+            continue
+        buttons = event.get("buttons")
+        if not isinstance(buttons, dict):
+            continue
+
+        t_ms = float(event.get("tMs", 0.0))
+        jump = bool(buttons.get("jump"))
+        crouch = bool(buttons.get("crouch"))
+
+        if jump_ms is None and jump and not previous["jump"]:
+            jump_ms = t_ms
+
+        if (
+            jump_ms is not None
+            and crouch_ms is None
+            and crouch
+            and not previous["crouch"]
+            and t_ms > jump_ms
+        ):
+            crouch_ms = t_ms
+
+        if (
+            crouch_ms is not None
+            and end_ms is None
+            and previous["crouch"]
+            and not crouch
+            and t_ms > crouch_ms
+        ):
+            end_ms = t_ms
+            break
+
+        previous["jump"] = jump
+        previous["crouch"] = crouch
+
+    if jump_ms is None or crouch_ms is None or end_ms is None:
+        return None
+
+    return jump_ms, crouch_ms, end_ms
+
+
+def piecewise_map_time(value, src_a, src_b, dst_a, dst_b):
+    if src_b <= src_a:
+        return dst_a
+    alpha = (value - src_a) / (src_b - src_a)
+    return dst_a + alpha * (dst_b - dst_a)
+
+
+def donor_time_for_route_ms(route_ms, route_anchors):
+    """
+    Time-warp the donor's successful mechanical chain onto the route's first
+    jump/crouch/release chain. This is the key difference from the previous
+    donor mode, which kept donor metadata at its original absolute frame
+    numbers even though the route performed the wall-jump at a different time.
+    """
+    if route_anchors is None:
+        return route_ms
+
+    route_jump, route_crouch, route_end = route_anchors
+
+    if route_ms <= route_jump:
+        return DONOR_CHAIN_JUMP_MS + (route_ms - route_jump)
+
+    if route_ms <= route_crouch:
+        return piecewise_map_time(
+            route_ms,
+            route_jump,
+            route_crouch,
+            DONOR_CHAIN_JUMP_MS,
+            DONOR_CHAIN_CROUCH_MS,
+        )
+
+    if route_ms <= route_end:
+        return piecewise_map_time(
+            route_ms,
+            route_crouch,
+            route_end,
+            DONOR_CHAIN_CROUCH_MS,
+            DONOR_CHAIN_END_MS,
+        )
+
+    return DONOR_CHAIN_END_MS + (route_ms - route_end)
+
+
+def frame_at_time(frames, target_ms):
+    if not frames:
+        raise RuntimeError("Template BOTREC vide")
+    index = int(round(target_ms * BOTREC_HZ / 1000.0))
+    index = max(0, min(len(frames) - 1, index))
+    return frames[index]
+
+
 # ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
@@ -1403,6 +1524,7 @@ def main():
 
     route_path = Path(args[0])
     template_path = BOTREC_PATH
+    warp_native_chain = False
 
     i = 1
     while i < len(args):
@@ -1413,6 +1535,11 @@ def main():
                 raise SystemExit("--template attend un decoded.bin")
             template_path = Path(args[i + 1])
             i += 2
+            continue
+
+        if arg == "--warp-native-chain":
+            warp_native_chain = True
+            i += 1
             continue
 
         raise SystemExit(f"Argument inconnu : {arg}")
@@ -1454,6 +1581,21 @@ def main():
         route_time_zero,
     )
 
+    route_chain_anchors = (
+        find_route_first_chain_anchors(route_meta)
+        if warp_native_chain
+        else None
+    )
+    if warp_native_chain and route_chain_anchors is None:
+        raise RuntimeError(
+            "Impossible de détecter jump -> crouch -> release dans inputEvents"
+        )
+    if route_chain_anchors is not None:
+        route_chain_anchors = tuple(
+            value - route_time_zero
+            for value in route_chain_anchors
+        )
+
     speed_ref = choose_reference_speed(samples)
     has_button_data = bool(input_events) or any(
         isinstance(sample.get("buttons"), dict)
@@ -1485,6 +1627,16 @@ def main():
     print()
     print(f"Route       : {route_path}")
     print(f"Template    : {template_path}")
+    if route_chain_anchors is not None:
+        print(
+            "Donor warp  : "
+            f"route {route_chain_anchors[0]:.1f}/"
+            f"{route_chain_anchors[1]:.1f}/"
+            f"{route_chain_anchors[2]:.1f} ms -> "
+            f"donor {DONOR_CHAIN_JUMP_MS:.1f}/"
+            f"{DONOR_CHAIN_CROUCH_MS:.1f}/"
+            f"{DONOR_CHAIN_END_MS:.1f} ms"
+        )
     print(f"Samples     : {len(samples)}")
     print(
         f"Sample rate : "
@@ -1589,15 +1741,38 @@ def main():
     # - route <= template : on tronque comme avant.
     # - route > template  : on ajoute des frames synthétiques à partir
     #   d'une frame native propre, avec ticks continus.
-    modified_frames = [
-        strip_outer_position(frame)
-        for frame in frames[:min(route_frame_count, len(frames))]
-    ]
+    if route_chain_anchors is not None:
+        modified_frames = []
+        tick_step, _ = infer_tick_step(frames)
+        first_tick = extract_command_tick(get_command(frames[0])) or 0
 
-    synthetic_count = max(
-        0,
-        route_frame_count - len(modified_frames),
-    )
+        for frame_index in range(route_frame_count):
+            route_ms = frame_index * (1000.0 / BOTREC_HZ)
+            donor_ms = donor_time_for_route_ms(
+                route_ms,
+                route_chain_anchors,
+            )
+            donor_frame = strip_outer_position(
+                frame_at_time(frames, donor_ms)
+            )
+            modified_frames.append(
+                patch_frame_tick(
+                    donor_frame,
+                    first_tick + tick_step * frame_index,
+                )
+            )
+
+        synthetic_count = 0
+    else:
+        modified_frames = [
+            strip_outer_position(frame)
+            for frame in frames[:min(route_frame_count, len(frames))]
+        ]
+
+        synthetic_count = max(
+            0,
+            route_frame_count - len(modified_frames),
+        )
 
     if synthetic_count:
         tick_step, last_tick = infer_tick_step(frames)
