@@ -455,6 +455,103 @@ def vec3_delta_payload(pitch, yaw, roll=0.0):
     )
 
 
+def patch_frame_view_only(frame, pitch, yaw):
+    """
+    Replace command.field4 (viewangles) while preserving every native
+    movement/button/mechanical field from the donor command.
+    """
+    out = bytearray()
+    offset = 0
+    patched = False
+
+    while offset < len(frame):
+        key_start = offset
+        key, after_key = read_varint(frame, offset)
+        field = key >> 3
+        wire = key & 7
+        offset = after_key
+
+        if wire == 0:
+            _, end = read_varint(frame, offset)
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 1:
+            end = offset + 8
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 5:
+            end = offset + 4
+            out += frame[key_start:end]
+            offset = end
+
+        elif wire == 7:
+            out += frame[key_start:offset]
+
+        elif wire == 2:
+            size, payload_start = read_varint(frame, offset)
+            payload_end = payload_start + size
+            payload = frame[payload_start:payload_end]
+
+            if field == 1 and not patched:
+                command_out = bytearray()
+                command_offset = 0
+
+                while command_offset < len(payload):
+                    cmd_key_start = command_offset
+                    cmd_key, cmd_after_key = read_varint(
+                        payload,
+                        command_offset,
+                    )
+                    cmd_field = cmd_key >> 3
+                    cmd_wire = cmd_key & 7
+                    command_offset = cmd_after_key
+
+                    if cmd_wire == 0:
+                        _, cmd_end = read_varint(payload, command_offset)
+                    elif cmd_wire == 1:
+                        cmd_end = command_offset + 8
+                    elif cmd_wire == 5:
+                        cmd_end = command_offset + 4
+                    elif cmd_wire == 7:
+                        cmd_end = command_offset
+                    elif cmd_wire == 2:
+                        cmd_size, cmd_payload_start = read_varint(
+                            payload,
+                            command_offset,
+                        )
+                        cmd_end = cmd_payload_start + cmd_size
+                    else:
+                        raise RuntimeError(
+                            f"wire command {cmd_wire} non supporté"
+                        )
+
+                    if cmd_field != 4:
+                        command_out += payload[cmd_key_start:cmd_end]
+
+                    command_offset = cmd_end
+
+                view_payload = vec3_delta_payload(pitch, yaw, 0.0)
+                command_out += encode_varint((4 << 3) | 2)
+                command_out += encode_varint(len(view_payload))
+                command_out += view_payload
+
+                out += encode_varint((1 << 3) | 2)
+                out += encode_varint(len(command_out))
+                out += command_out
+                patched = True
+            else:
+                out += frame[key_start:payload_end]
+
+            offset = payload_end
+
+        else:
+            raise RuntimeError(f"wire {wire} non supporté")
+
+    return bytes(out)
+
+
 def patch_frame_view_and_buttons(frame, pitch, yaw):
     """
     Nettoie les inputs hérités du template :
@@ -1518,13 +1615,16 @@ def main():
             "Usage :\n"
             "py tools\\botrec_apply_split_route.py "
             "\"chemin\\route.json\" "
-            "[--template chemin\\decoded.bin]"
+            "[--template chemin\\decoded.bin] "
+            "[--warp-native-chain] "
+            "[--preserve-native-chain-command]"
         )
         raise SystemExit(1)
 
     route_path = Path(args[0])
     template_path = BOTREC_PATH
     warp_native_chain = False
+    preserve_native_chain_command = False
 
     i = 1
     while i < len(args):
@@ -1538,6 +1638,12 @@ def main():
             continue
 
         if arg == "--warp-native-chain":
+            warp_native_chain = True
+            i += 1
+            continue
+
+        if arg == "--preserve-native-chain-command":
+            preserve_native_chain_command = True
             warp_native_chain = True
             i += 1
             continue
@@ -1636,6 +1742,11 @@ def main():
             f"donor {DONOR_CHAIN_JUMP_MS:.1f}/"
             f"{DONOR_CHAIN_CROUCH_MS:.1f}/"
             f"{DONOR_CHAIN_END_MS:.1f} ms"
+        )
+    if preserve_native_chain_command:
+        print(
+            "Native chain: preserve donor buttons/movement/mechanical fields; "
+            "patch route view only"
         )
     print(f"Samples     : {len(samples)}")
     print(
@@ -1886,30 +1997,47 @@ def main():
         else:
             button_mode = None
 
-        cleaned_frame = patch_frame_view_and_buttons(
-            modified_frames[frame_index],
-            route_pitch,
-            route_yaw,
+        in_native_chain = (
+            preserve_native_chain_command
+            and route_chain_anchors is not None
+            and route_chain_anchors[0] <= target_ms <= route_chain_anchors[2]
         )
 
-        cleaned_frame = patch_frame_buttons(
-            cleaned_frame,
-            button_mode,
-            current_button_mask,
-            changed_button_mask,
-        )
+        if in_native_chain:
+            # This is the important donor experiment:
+            # keep the donor's native field3 buttons, field5/6 movement,
+            # field7/upmove, field10, field17, etc. exactly as recorded.
+            # Only rotate/aim with the SPLIT route camera.
+            positioned_frame = patch_frame_view_only(
+                modified_frames[frame_index],
+                route_pitch,
+                route_yaw,
+            )
+        else:
+            cleaned_frame = patch_frame_view_and_buttons(
+                modified_frames[frame_index],
+                route_pitch,
+                route_yaw,
+            )
 
-        positioned_frame = patch_frame_movement(
-            cleaned_frame,
-            forward,
-            left,
-        )
+            cleaned_frame = patch_frame_buttons(
+                cleaned_frame,
+                button_mode,
+                current_button_mask,
+                changed_button_mask,
+            )
 
-        # Do not fight airborne/mantle physics with position state.
-        # Apply only occasional, grounded corrections, and only on frames
-        # where the native BOTREC template already carried outer.field2.
+            positioned_frame = patch_frame_movement(
+                cleaned_frame,
+                forward,
+                left,
+            )
+
+        # Never inject XYZ during the native mechanical chain.
+        # Outside it, keep the conservative grounded corrections.
         use_position_checkpoint = (
-            frame_index < len(frames)
+            not in_native_chain
+            and frame_index < len(frames)
             and has_outer_position(frames[frame_index])
             and should_apply_ground_position_checkpoint(
                 samples,
