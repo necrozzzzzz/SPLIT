@@ -1174,12 +1174,16 @@ def should_apply_ground_position_checkpoint(
     last_checkpoint_ms,
 ):
     """
-    Position correction is deliberately conservative.
+    Only correct position when the route is stably grounded.
 
-    Per-frame XYZ updates were fighting Deadlock's wall-jump/mantle physics.
-    We only allow a correction when the recorded route is effectively
-    grounded (very small vertical velocity), and no more often than every
-    GROUND_POSITION_CHECKPOINT_MS.
+    A single |vz| ~= 0 sample is NOT enough: wall contacts, mantles and the
+    apex of a jump can all briefly report near-zero vertical speed. Those
+    false positives were causing mid-air teleports immediately after the
+    first wall-jump.
+
+    Require a short window around the target where:
+    - vertical speed stays near zero for every sample;
+    - Z stays essentially flat.
     """
     if (
         last_checkpoint_ms is not None
@@ -1187,17 +1191,46 @@ def should_apply_ground_position_checkpoint(
     ):
         return False
 
-    _, sample = route_sample_at_ms(
-        samples,
+    window_ms = 70.0
+    z_tolerance = 0.75
+
+    left = bisect.bisect_left(
         times_ms,
-        target_ms,
+        target_ms - window_ms,
+    )
+    right = bisect.bisect_right(
+        times_ms,
+        target_ms + window_ms,
     )
 
-    velocity = sample.get("velocity", [0.0, 0.0, 0.0])
-    vz = float(velocity[2]) if len(velocity) >= 3 else 0.0
+    window = samples[left:right]
 
-    return abs(vz) <= GROUND_POSITION_MAX_ABS_VZ
+    # At ~60 Hz we want several consecutive telemetry samples, not a
+    # one-frame zero caused by collision/mantle/apex state.
+    if len(window) < 5:
+        return False
 
+    z_values = []
+
+    for sample in window:
+        velocity = sample.get("velocity", [0.0, 0.0, 0.0])
+        position = sample.get("position", [0.0, 0.0, 0.0])
+
+        if len(velocity) < 3 or len(position) < 3:
+            return False
+
+        vz = float(velocity[2])
+        z = float(position[2])
+
+        if abs(vz) > GROUND_POSITION_MAX_ABS_VZ:
+            return False
+
+        z_values.append(z)
+
+    if max(z_values) - min(z_values) > z_tolerance:
+        return False
+
+    return True
 
 def resample_position_at_ms(samples, times_ms, target_ms):
     if target_ms <= times_ms[0]:
