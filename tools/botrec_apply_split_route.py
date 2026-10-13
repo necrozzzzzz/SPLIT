@@ -8,6 +8,7 @@ import sys
 
 BOTREC_PATH = Path("botrec_debug/decoded.bin")
 OUTPUT_PATH = Path("botrec_debug/decoded_modified.bin")
+DEBUG_WINDOW_PATH = Path("botrec_debug/route_window_debug.csv")
 
 HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
@@ -836,6 +837,20 @@ def route_button_mask(sample):
     return mask
 
 
+def route_sample_at_ms(samples, times_ms, target_ms):
+    if target_ms <= times_ms[0]:
+        return 0, samples[0]
+
+    if target_ms >= times_ms[-1]:
+        return len(samples) - 1, samples[-1]
+
+    index = max(
+        0,
+        bisect.bisect_right(times_ms, target_ms) - 1,
+    )
+    return index, samples[index]
+
+
 def route_button_mask_at_ms(samples, times_ms, target_ms):
     if target_ms <= times_ms[0]:
         return route_button_mask(samples[0])
@@ -1313,6 +1328,16 @@ def main():
     )
 
     preview_every = int(BOTREC_HZ)
+
+    debug_window_start_ms = 9000.0
+    debug_window_end_ms = 12500.0
+    debug_rows = [
+        "frame,t_ms,sample_index,sample_t_ms,pos_x,pos_y,pos_z,"
+        "vel_x,vel_y,vel_z,yaw,pitch,forward,left,"
+        "forward_key,back_key,left_key,right_key,jump,crouch,dash,"
+        "button_mask,changed_mask"
+    ]
+
     previous_button_mask = 0
     clear_changed_next = False
     button_transition_count = 0
@@ -1390,6 +1415,55 @@ def main():
         previous_button_mask = current_button_mask
 
         if (
+            debug_window_start_ms
+            <= target_ms
+            <= debug_window_end_ms
+        ):
+            source_index, source_sample = route_sample_at_ms(
+                samples,
+                times_ms,
+                target_ms,
+            )
+            source_buttons = source_sample.get("buttons", {})
+            source_position = source_sample.get(
+                "position",
+                [0.0, 0.0, 0.0],
+            )
+            source_velocity = source_sample.get(
+                "velocity",
+                [0.0, 0.0, 0.0],
+            )
+            debug_rows.append(
+                ",".join(
+                    [
+                        str(frame_index),
+                        f"{target_ms:.3f}",
+                        str(source_index),
+                        f"{times_ms[source_index]:.3f}",
+                        f"{float(source_position[0]):.4f}",
+                        f"{float(source_position[1]):.4f}",
+                        f"{float(source_position[2]):.4f}",
+                        f"{float(source_velocity[0]):.4f}",
+                        f"{float(source_velocity[1]):.4f}",
+                        f"{float(source_velocity[2]):.4f}",
+                        f"{route_yaw:.4f}",
+                        f"{route_pitch:.4f}",
+                        f"{forward:.3f}",
+                        f"{left:.3f}",
+                        str(int(bool(source_buttons.get("forward")))),
+                        str(int(bool(source_buttons.get("back")))),
+                        str(int(bool(source_buttons.get("left")))),
+                        str(int(bool(source_buttons.get("right")))),
+                        str(int(bool(source_buttons.get("jump")))),
+                        str(int(bool(source_buttons.get("crouch")))),
+                        str(int(bool(source_buttons.get("dash")))),
+                        f"0x{current_button_mask:X}",
+                        f"0x{changed_button_mask:X}",
+                    ]
+                )
+            )
+
+        if (
             frame_index % preview_every == 0
             or frame_index == route_frame_count - 1
         ):
@@ -1405,6 +1479,15 @@ def main():
 
     print(
         f"Transitions buttons : {button_transition_count}"
+    )
+
+    DEBUG_WINDOW_PATH.write_text(
+        "\n".join(debug_rows) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        "Debug 9.0-12.5s : "
+        f"{DEBUG_WINDOW_PATH}"
     )
 
     # -----------------------------
