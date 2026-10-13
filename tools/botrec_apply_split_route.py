@@ -564,8 +564,9 @@ def patch_frame_view_and_buttons(frame, pitch, yaw):
                             f"wire command {cmd_wire} non supporté"
                         )
 
-                # Reset buttons (field 3 / wire 7)
-                command_out += encode_varint((3 << 3) | 7)
+                # Do not reset buttons here. patch_frame_buttons() emits
+                # sparse button deltas; held state must persist between ticks.
+                # A field-3 clear on every frame would cancel that state.
 
                 # Replace viewangles (field 4 / wire 2)
                 view_payload = vec3_delta_payload(pitch, yaw, 0.0)
@@ -2090,8 +2091,8 @@ def main():
 
     preview_every = int(BOTREC_HZ)
 
-    debug_window_start_ms = 9000.0
-    debug_window_end_ms = 12500.0
+    debug_window_start_ms = 0.0
+    debug_window_end_ms = 2000.0
     debug_rows = [
         "frame,t_ms,sample_index,sample_t_ms,pos_x,pos_y,pos_z,"
         "vel_x,vel_y,vel_z,yaw,pitch,forward,left,"
@@ -2397,7 +2398,7 @@ def main():
         encoding="utf-8",
     )
     print(
-        "Debug 9.0-12.5s : "
+        "Debug 0.0-2.0s : "
         f"{DEBUG_WINDOW_PATH}"
     )
 
