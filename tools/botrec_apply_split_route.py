@@ -13,6 +13,8 @@ DEBUG_WINDOW_PATH = Path("botrec_debug/route_window_debug.csv")
 HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
 BOTREC_HZ = 64.0
+GROUND_POSITION_CHECKPOINT_MS = 250.0
+GROUND_POSITION_MAX_ABS_VZ = 8.0
 
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
@@ -1159,6 +1161,38 @@ def interpolate_angle_degrees(a, b, alpha):
     return a + delta * alpha
 
 
+def should_apply_ground_position_checkpoint(
+    samples,
+    times_ms,
+    target_ms,
+    last_checkpoint_ms,
+):
+    """
+    Position correction is deliberately conservative.
+
+    Per-frame XYZ updates were fighting Deadlock's wall-jump/mantle physics.
+    We only allow a correction when the recorded route is effectively
+    grounded (very small vertical velocity), and no more often than every
+    GROUND_POSITION_CHECKPOINT_MS.
+    """
+    if (
+        last_checkpoint_ms is not None
+        and target_ms - last_checkpoint_ms < GROUND_POSITION_CHECKPOINT_MS
+    ):
+        return False
+
+    _, sample = route_sample_at_ms(
+        samples,
+        times_ms,
+        target_ms,
+    )
+
+    velocity = sample.get("velocity", [0.0, 0.0, 0.0])
+    vz = float(velocity[2]) if len(velocity) >= 3 else 0.0
+
+    return abs(vz) <= GROUND_POSITION_MAX_ABS_VZ
+
+
 def resample_position_at_ms(samples, times_ms, target_ms):
     if target_ms <= times_ms[0]:
         position = samples[0].get("position", [0.0, 0.0, 0.0])
@@ -1441,7 +1475,11 @@ def main():
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
     print(f"Timing      : {timing_source}")
-    print("Position    : SPLIT XYZ only on native BOTREC position frames")
+    print(
+        "Position    : grounded checkpoints only "
+        f"(>= {GROUND_POSITION_CHECKPOINT_MS:.0f} ms apart, "
+        f"|vz| <= {GROUND_POSITION_MAX_ABS_VZ:.1f})"
+    )
     print(
         "Input timing: "
         + (
@@ -1592,6 +1630,7 @@ def main():
     previous_button_mask = 0
     clear_changed_next = False
     button_transition_count = 0
+    last_position_checkpoint_ms = None
 
     for frame_index in range(route_frame_count):
         target_ms = frame_index * (1000.0 / BOTREC_HZ)
@@ -1673,15 +1712,21 @@ def main():
             left,
         )
 
-        # Preserve the native BOTREC cadence for outer.field2 instead of
-        # forcing XYZ every frame. When the template naturally carries a
-        # position state on this frame, replace it with the SPLIT route's
-        # absolute XYZ. Otherwise leave the frame position-less and let
-        # Deadlock simulate normally.
-        if (
+        # Do not fight airborne/mantle physics with position state.
+        # Apply only occasional, grounded corrections, and only on frames
+        # where the native BOTREC template already carried outer.field2.
+        use_position_checkpoint = (
             frame_index < len(frames)
             and has_outer_position(frames[frame_index])
-        ):
+            and should_apply_ground_position_checkpoint(
+                samples,
+                times_ms,
+                target_ms,
+                last_position_checkpoint_ms,
+            )
+        )
+
+        if use_position_checkpoint:
             route_x, route_y, route_z = resample_position_at_ms(
                 samples,
                 times_ms,
@@ -1693,6 +1738,7 @@ def main():
                 route_y,
                 route_z,
             )
+            last_position_checkpoint_ms = target_ms
         else:
             modified_frames[frame_index] = strip_outer_position(
                 positioned_frame
