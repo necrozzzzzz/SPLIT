@@ -58,7 +58,7 @@ pub fn record_bot_replay_diagnostic(
                 good += 1;
             }
             Err(error) => {
-                let safe_error = error.replace([',', '\n', '\r'], " ");
+                let safe_error = error.replace(',', " ").replace('\n', " ").replace('\r', " ");
                 writeln!(out, "{elapsed:.3},{entity_index},,,,,,,,,,{safe_error}")
                     .map_err(|e| e.to_string())?;
                 failures += 1;
