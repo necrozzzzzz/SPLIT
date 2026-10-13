@@ -1,8 +1,8 @@
-// Probe a Deadlock .dem for actual SVC_USER_COMMANDS (read-only).
+// Read-only probe: parse only user-command messages, without entity state or string tables.
 // Usage: node tools/check_deadlock_demo_usercmd.mjs "C:\\path\\to\\split_test.dem"
 import { createReadStream, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { Parser, InterceptorStage, MessagePacketType } from "deadem";
+import { Parser, ParserConfiguration, InterceptorStage, MessagePacketType } from "deadem";
 
 const filename = process.argv[2];
 if (!filename) {
@@ -15,70 +15,26 @@ if (!existsSync(source)) {
   process.exit(2);
 }
 
-// Some locally recorded Deadlock demos update unrecognized tables such as
-// CombatLogNames without associated decoding instructions. Deadem 4.x throws
-// while reading them. Skip only that known failure so the message stream can
-// continue; this diagnostic does not need those string-table entries.
-const { default: StringTableHandler } = await import(
-  "../node_modules/@deademx/engine/src/handlers/StringTableHandler.js"
-);
-const originalHandleUpdate = StringTableHandler.prototype.handleUpdate;
-let skippedUnknownTableUpdates = 0;
-StringTableHandler.prototype.handleUpdate = function (...args) {
-  try {
-    return originalHandleUpdate.apply(this, args);
-  } catch (error) {
-    if (error instanceof TypeError &&
-        String(error.message).includes("userDataFixedSize")) {
-      skippedUnknownTableUpdates++;
-      if (skippedUnknownTableUpdates <= 5) {
-        console.warn("[SPLIT] Skipping unknown string-table update:", error.message);
-      }
-      return;
-    }
-    throw error;
-  }
-};
+// Deadem's default configuration builds full demo state, including string
+// tables and entities. Some local Deadlock demos contain records that the
+// current release cannot decode. We need neither of those for usercmd.
+const parser = new Parser(new ParserConfiguration({
+  messagePacketTypes: [MessagePacketType.SVC_USER_COMMANDS],
+}));
 
-// Local Deadlock demos may contain entity baseline updates that this
-// Deadem release intentionally rejects. User-command detection does not
-// depend on entity state, so skip only this unsupported baseline update.
-const { default: DemoMessageHandler } = await import(
-  "../node_modules/@deademx/engine/src/handlers/DemoMessageHandler.js"
-);
-const originalHandlePacketEntities = DemoMessageHandler.prototype.handleSvcPacketEntities;
-let skippedEntityBaselineUpdates = 0;
-DemoMessageHandler.prototype.handleSvcPacketEntities = function (...args) {
-  try {
-    return originalHandlePacketEntities.apply(this, args);
-  } catch (error) {
-    if (String(error?.message ?? error).includes("CSVCMsg_PacketEntities.updateBaseline === true")) {
-      skippedEntityBaselineUpdates++;
-      if (skippedEntityBaselineUpdates <= 5) {
-        console.warn("[SPLIT] Skipping unsupported entity baseline update");
-      }
-      return;
-    }
-    throw error;
-  }
-};
-
-const parser = new Parser();
+let messagePackets = 0;
 let userCmdPackets = 0;
 let userCmdEvents = 0;
-let messagePackets = 0;
 const perSlot = new Map();
 const examples = [];
 const errors = [];
 
-parser.registerPostInterceptor(InterceptorStage.MESSAGE_PACKET, (demoPacket, packet) => {
+parser.registerPreInterceptor(InterceptorStage.MESSAGE_PACKET, (_demoPacket, packet) => {
   messagePackets++;
-  if (packet.type === MessagePacketType.SVC_USER_COMMANDS) {
-    userCmdPackets++;
-  }
+  if (packet.type === MessagePacketType.SVC_USER_COMMANDS) userCmdPackets++;
 });
 
-parser.registerPostInterceptor(InterceptorStage.USER_COMMAND, (demoPacket, packet, events) => {
+parser.registerPostInterceptor(InterceptorStage.USER_COMMAND, (demoPacket, _packet, events) => {
   userCmdEvents += events.length;
   for (const event of events) {
     const cmd = event.userCommand;
@@ -109,16 +65,13 @@ try {
   try { await parser.dispose(); } catch {}
 }
 
-const json = JSON.stringify({
+console.log(JSON.stringify({
   file: source,
   messagePackets,
-  skippedUnknownTableUpdates,
-  skippedEntityBaselineUpdates,
   userCmdPackets,
   userCmdEvents,
   slots: Object.fromEntries([...perSlot].sort((a,b) => Number(a[0])-Number(b[0]))),
   examples,
   errors,
-}, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2);
-console.log(json);
+}, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2));
 if (errors.length) process.exitCode = 1;
