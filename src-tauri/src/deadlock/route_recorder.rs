@@ -15,12 +15,12 @@ use windows_sys::Win32::{
     System::Threading::GetCurrentThreadId,
     UI::{
         Input::KeyboardAndMouse::{
-            GetAsyncKeyState, KBDLLHOOKSTRUCT, VK_CONTROL, VK_SHIFT, VK_SPACE,
+            GetAsyncKeyState, VK_CONTROL, VK_SHIFT, VK_SPACE,
         },
         WindowsAndMessaging::{
             CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-            UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
-            WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+            UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
+            WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
         },
     },
 };
