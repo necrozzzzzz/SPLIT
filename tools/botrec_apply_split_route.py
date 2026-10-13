@@ -1253,6 +1253,64 @@ def should_apply_ground_position_checkpoint(
 
     return True
 
+def best_position_anchor_near_ms(
+    samples,
+    times_ms,
+    target_ms,
+    window_ms=80.0,
+):
+    """
+    Pick the least suspicious absolute-position sample near target_ms.
+
+    During wall-jump/mantle telemetry, m_vecAbsOrigin can transiently jump
+    between prediction/scene-node states even though velocity remains smooth.
+    Prefer the sample with the smallest positionVelocityResidual instead of
+    blindly interpolating across those discontinuities.
+    """
+    left = bisect.bisect_left(times_ms, target_ms - window_ms)
+    right = bisect.bisect_right(times_ms, target_ms + window_ms)
+
+    best = None
+    best_score = None
+
+    for index in range(left, right):
+        sample = samples[index]
+        position = sample.get("position", [0.0, 0.0, 0.0])
+        diagnostics = sample.get("diagnostics", {})
+        residual = diagnostics.get("positionVelocityResidual")
+
+        if not isinstance(position, list) or len(position) < 2:
+            continue
+
+        if isinstance(residual, list) and len(residual) >= 2:
+            score = math.hypot(
+                float(residual[0]),
+                float(residual[1]),
+            )
+        else:
+            score = abs(times_ms[index] - target_ms) + 1000.0
+
+        # Small timing penalty only breaks ties between equally coherent samples.
+        score += abs(times_ms[index] - target_ms) * 0.001
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best = (
+                float(position[0]),
+                float(position[1]),
+            )
+
+    if best is not None:
+        return best
+
+    x, y, _ = resample_position_at_ms(
+        samples,
+        times_ms,
+        target_ms,
+    )
+    return x, y
+
+
 def resample_position_at_ms(samples, times_ms, target_ms):
     if target_ms <= times_ms[0]:
         position = samples[0].get("position", [0.0, 0.0, 0.0])
@@ -1749,7 +1807,7 @@ def main():
             "Airborne XY : "
             f"{xy_guide_anchors[0] + (2.0 * 1000.0 / BOTREC_HZ):.1f} -> "
             f"{xy_guide_anchors[1]:.1f} ms "
-            "(absolute X/Y each BOTREC frame, Z left to native physics)"
+            "(velocity-integrated X/Y each BOTREC frame, Z left to native physics)"
         )
     print(f"Samples     : {len(samples)}")
     print(
@@ -1939,6 +1997,12 @@ def main():
     button_transition_count = 0
     last_position_checkpoint_ms = None
 
+    xy_guide_x = None
+    xy_guide_y = None
+    xy_guide_prev_ms = None
+    xy_guide_prev_vx = None
+    xy_guide_prev_vy = None
+
     for frame_index in range(route_frame_count):
         target_ms = frame_index * (1000.0 / BOTREC_HZ)
 
@@ -2037,17 +2101,55 @@ def main():
             )
 
         if xy_guide_active:
-            route_x, route_y, _ = resample_position_at_ms(
-                samples,
-                times_ms,
-                target_ms,
-            )
+            # IMPORTANT: do NOT use raw route X/Y every frame here.
+            # Around the wall-jump, recorded m_vecAbsOrigin contains large
+            # one-frame discontinuities even while velocity is continuous.
+            # Start from the cleanest nearby position sample, then integrate
+            # the recorded world velocity at BOTREC cadence.
+            if xy_guide_x is None or xy_guide_y is None:
+                xy_guide_x, xy_guide_y = best_position_anchor_near_ms(
+                    samples,
+                    times_ms,
+                    target_ms,
+                )
+                xy_guide_prev_ms = target_ms
+                xy_guide_prev_vx = vx
+                xy_guide_prev_vy = vy
+            else:
+                dt_seconds = (
+                    target_ms - xy_guide_prev_ms
+                ) / 1000.0
+
+                # Trapezoidal integration smooths normal velocity changes
+                # without copying the torn absolute-origin samples.
+                xy_guide_x += (
+                    (xy_guide_prev_vx + vx)
+                    * 0.5
+                    * dt_seconds
+                )
+                xy_guide_y += (
+                    (xy_guide_prev_vy + vy)
+                    * 0.5
+                    * dt_seconds
+                )
+
+                xy_guide_prev_ms = target_ms
+                xy_guide_prev_vx = vx
+                xy_guide_prev_vy = vy
+
             modified_frames[frame_index] = patch_outer_position_xy(
                 positioned_frame,
-                route_x,
-                route_y,
+                xy_guide_x,
+                xy_guide_y,
             )
         else:
+            # Reset integration state once the airborne guide window ends.
+            if xy_guide_prev_ms is not None:
+                xy_guide_x = None
+                xy_guide_y = None
+                xy_guide_prev_ms = None
+                xy_guide_prev_vx = None
+                xy_guide_prev_vy = None
             use_position_checkpoint = (
                 frame_index < len(frames)
                 and has_outer_position(frames[frame_index])
