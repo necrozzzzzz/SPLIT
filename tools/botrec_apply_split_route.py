@@ -1007,6 +1007,75 @@ def camera_at_ms(events, event_times_ms, target_ms):
     return yaw, pitch
 
 
+def command_view_at_ms(samples, times_ms, target_ms):
+    """
+    Interpolate diagnostics.viewAngles (pawn/user-command view), not
+    m_angClientCamera.
+
+    During wall-jump/mantle the client camera can diverge by 10-20+ degrees
+    from the command/pawn view. BOTREC field4 drives command view, so using
+    camera yaw here can rotate camera-relative movement into the wrong world
+    direction even when the recorded keys are correct.
+    """
+    valid = []
+
+    for index, sample in enumerate(samples):
+        diagnostics = sample.get("diagnostics", {})
+        view = diagnostics.get("viewAngles")
+
+        if (
+            isinstance(view, list)
+            and len(view) >= 2
+            and isinstance(view[0], (int, float))
+            and isinstance(view[1], (int, float))
+        ):
+            valid.append(
+                (
+                    times_ms[index],
+                    float(view[0]),
+                    float(view[1]),
+                )
+            )
+
+    if not valid:
+        return None
+
+    valid_times = [item[0] for item in valid]
+
+    if target_ms <= valid_times[0]:
+        _, pitch, yaw = valid[0]
+        return yaw, pitch
+
+    if target_ms >= valid_times[-1]:
+        _, pitch, yaw = valid[-1]
+        return yaw, pitch
+
+    right = bisect.bisect_right(valid_times, target_ms)
+    left_index = max(0, right - 1)
+    right_index = min(len(valid) - 1, right)
+
+    left_t, left_pitch, left_yaw = valid[left_index]
+    right_t, right_pitch, right_yaw = valid[right_index]
+
+    if right_t <= left_t:
+        alpha = 0.0
+    else:
+        alpha = (target_ms - left_t) / (right_t - left_t)
+
+    yaw = interpolate_angle_degrees(
+        left_yaw,
+        right_yaw,
+        alpha,
+    )
+    pitch = interpolate_angle_degrees(
+        left_pitch,
+        right_pitch,
+        alpha,
+    )
+
+    return yaw, pitch
+
+
 def input_event_at_ms(events, event_times_ms, target_ms):
     if not events:
         return None
@@ -1664,6 +1733,7 @@ def main():
     template_path = BOTREC_PATH
     warp_native_chain = False
     airborne_xy_guide = False
+    mechanics_command_view = False
 
     i = 1
     while i < len(args):
@@ -1683,6 +1753,11 @@ def main():
 
         if arg == "--airborne-xy-guide":
             airborne_xy_guide = True
+            i += 1
+            continue
+
+        if arg == "--mechanics-command-view":
+            mechanics_command_view = True
             i += 1
             continue
 
@@ -1727,12 +1802,20 @@ def main():
 
     detected_chain_anchors = (
         find_route_first_chain_anchors(route_meta)
-        if (warp_native_chain or airborne_xy_guide)
+        if (
+            warp_native_chain
+            or airborne_xy_guide
+            or mechanics_command_view
+        )
         else None
     )
 
     if (
-        (warp_native_chain or airborne_xy_guide)
+        (
+            warp_native_chain
+            or airborne_xy_guide
+            or mechanics_command_view
+        )
         and detected_chain_anchors is None
     ):
         raise RuntimeError(
@@ -1758,6 +1841,12 @@ def main():
     xy_guide_anchors = (
         detected_chain_anchors
         if airborne_xy_guide
+        else None
+    )
+
+    mechanics_view_anchors = (
+        detected_chain_anchors
+        if mechanics_command_view
         else None
     )
 
@@ -1808,6 +1897,13 @@ def main():
             f"{xy_guide_anchors[0] + (2.0 * 1000.0 / BOTREC_HZ):.1f} -> "
             f"{xy_guide_anchors[1]:.1f} ms "
             "(velocity-integrated X/Y each BOTREC frame, Z left to native physics)"
+        )
+    if mechanics_view_anchors is not None:
+        print(
+            "Mechanics view: diagnostics.viewAngles from "
+            f"{max(0.0, mechanics_view_anchors[0] - 100.0):.1f} -> "
+            f"{mechanics_view_anchors[2]:.1f} ms "
+            "(client camera ignored during wall-jump/mantle chain)"
         )
     print(f"Samples     : {len(samples)}")
     print(
@@ -2019,6 +2115,26 @@ def main():
         )
         if camera_state is not None:
             route_yaw, route_pitch = camera_state
+
+        if mechanics_view_anchors is not None:
+            wall_jump_ms, _, chain_end_ms = mechanics_view_anchors
+            mechanics_view_start_ms = max(
+                0.0,
+                wall_jump_ms - 100.0,
+            )
+
+            if (
+                mechanics_view_start_ms
+                <= target_ms
+                <= chain_end_ms
+            ):
+                command_view = command_view_at_ms(
+                    samples,
+                    times_ms,
+                    target_ms,
+                )
+                if command_view is not None:
+                    route_yaw, route_pitch = command_view
 
         movement_input = input_movement_at_ms(
             samples,
