@@ -392,6 +392,19 @@ fn resume_deadlock_presentation() -> Result<deadlock::DeadlockStatus, String> {
 }
 
 #[tauri::command]
+async fn record_bot_replay_diagnostic(
+    entity_index: u32,
+    duration_ms: u64,
+    output_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        deadlock::record_bot_replay_diagnostic(entity_index, duration_ms, output_path)
+    })
+    .await
+    .map_err(|e| format!("Bot replay diagnostic task failed: {e}"))?
+}
+
+#[tauri::command]
 async fn start_route_recording() -> Result<deadlock::RouteRecordingStatus, String> {
     tauri::async_runtime::spawn_blocking(deadlock::start_route_recording)
         .await
@@ -719,6 +732,7 @@ pub fn run() {
             retry_console_watcher,
             prepare_teleports_now,
             resume_deadlock_presentation,
+            record_bot_replay_diagnostic,
             start_route_recording,
             stop_route_recording,
             get_route_recording_status,
