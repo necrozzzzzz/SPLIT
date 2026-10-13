@@ -40,6 +40,29 @@ StringTableHandler.prototype.handleUpdate = function (...args) {
   }
 };
 
+// Local Deadlock demos may contain entity baseline updates that this
+// Deadem release intentionally rejects. User-command detection does not
+// depend on entity state, so skip only this unsupported baseline update.
+const { default: DemoMessageHandler } = await import(
+  "../node_modules/@deademx/engine/src/handlers/DemoMessageHandler.js"
+);
+const originalHandlePacketEntities = DemoMessageHandler.prototype.handleSvcPacketEntities;
+let skippedEntityBaselineUpdates = 0;
+DemoMessageHandler.prototype.handleSvcPacketEntities = function (...args) {
+  try {
+    return originalHandlePacketEntities.apply(this, args);
+  } catch (error) {
+    if (String(error?.message ?? error).includes("CSVCMsg_PacketEntities.updateBaseline === true")) {
+      skippedEntityBaselineUpdates++;
+      if (skippedEntityBaselineUpdates <= 5) {
+        console.warn("[SPLIT] Skipping unsupported entity baseline update");
+      }
+      return;
+    }
+    throw error;
+  }
+};
+
 const parser = new Parser();
 let userCmdPackets = 0;
 let userCmdEvents = 0;
@@ -90,6 +113,7 @@ const json = JSON.stringify({
   file: source,
   messagePackets,
   skippedUnknownTableUpdates,
+  skippedEntityBaselineUpdates,
   userCmdPackets,
   userCmdEvents,
   slots: Object.fromEntries([...perSlot].sort((a,b) => Number(a[0])-Number(b[0]))),
