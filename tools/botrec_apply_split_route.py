@@ -28,6 +28,12 @@ BUTTON_LEFT = 0x0000000000000200
 BUTTON_RIGHT = 0x0000000000000400
 BUTTON_DASH = 0x0000100000000000
 BUTTON_JUMP = 0x0101000000000000
+BUTTON_DIRECTION_MASK = (
+    BUTTON_FORWARD
+    | BUTTON_BACK
+    | BUTTON_LEFT
+    | BUTTON_RIGHT
+)
 
 # Internal BOTREC header layout inferred from native recordings:
 # 0x00 u32 hero id
@@ -974,6 +980,30 @@ def route_movement_at_ms(samples, times_ms, target_ms):
     return forward, left
 
 
+def strip_direction_bits_for_walljump_approach(
+    mask,
+    samples,
+    times_ms,
+    target_ms,
+):
+    """
+    Pendant l'approche d'un wall-jump, forwardmove/leftmove pilotent déjà
+    la direction à partir de la trajectoire enregistrée. On retire donc
+    uniquement les bits directionnels du message buttons pour éviter de
+    doubler l'intention de mouvement au contact du mur.
+
+    Jump / crouch / dash restent inchangés.
+    """
+    if approaching_airborne_jump(
+        samples,
+        times_ms,
+        target_ms,
+    ):
+        return mask & ~BUTTON_DIRECTION_MASK
+
+    return mask
+
+
 def approaching_airborne_jump(
     samples,
     times_ms,
@@ -1403,6 +1433,9 @@ def main():
         f"{WALLJUMP_APPROACH_WINDOW_MS:.0f} ms "
         "(recorded velocity direction)"
     )
+    print(
+        "Wall-jump buttons : directional bits stripped during approach"
+    )
     print(f"Timing      : {timing_source}")
     print("Position    : absolute XYZ on every BOTREC frame")
     print(f"Speed ref   : {speed_ref:.2f}")
@@ -1592,6 +1625,13 @@ def main():
             )
 
         current_button_mask = route_button_mask_with_walljump_lead(
+            samples,
+            times_ms,
+            target_ms,
+        )
+
+        current_button_mask = strip_direction_bits_for_walljump_approach(
+            current_button_mask,
             samples,
             times_ms,
             target_ms,
