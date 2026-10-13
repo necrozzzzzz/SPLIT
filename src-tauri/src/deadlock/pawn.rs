@@ -160,6 +160,24 @@ impl PawnTelemetryReader {
         Ok(reader)
     }
 
+    /// Very lean camera-only read path for high-rate route input capture.
+    /// Reads only m_angClientCamera (12 bytes) from the already resolved pawn.
+    pub(crate) fn read_camera_angles_fast(&self) -> Result<[f32; 2], String> {
+        let pawn = self.resolution.pawn;
+        let bytes = read_exact(
+            self.process.0,
+            checked_add(
+                pawn,
+                self.client_camera_angles_offset as u64,
+                "client camera angles",
+            )?,
+            12,
+            "client camera angles",
+        )?;
+        let angles = read_f32x3(&bytes, 0, "client camera angles")?;
+        Ok([angles[0], angles[1]])
+    }
+
     /// Lean route-recorder read path.
     ///
     /// Reuse the existing two-buffer snapshot layout, but take only ONE
