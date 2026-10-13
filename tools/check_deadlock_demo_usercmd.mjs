@@ -15,6 +15,31 @@ if (!existsSync(source)) {
   process.exit(2);
 }
 
+// Some locally recorded Deadlock demos update unrecognized tables such as
+// CombatLogNames without associated decoding instructions. Deadem 4.x throws
+// while reading them. Skip only that known failure so the message stream can
+// continue; this diagnostic does not need those string-table entries.
+const { default: StringTableHandler } = await import(
+  "../node_modules/@deademx/engine/src/handlers/StringTableHandler.js"
+);
+const originalHandleUpdate = StringTableHandler.prototype.handleUpdate;
+let skippedUnknownTableUpdates = 0;
+StringTableHandler.prototype.handleUpdate = function (...args) {
+  try {
+    return originalHandleUpdate.apply(this, args);
+  } catch (error) {
+    if (error instanceof TypeError &&
+        String(error.message).includes("userDataFixedSize")) {
+      skippedUnknownTableUpdates++;
+      if (skippedUnknownTableUpdates <= 5) {
+        console.warn("[SPLIT] Skipping unknown string-table update:", error.message);
+      }
+      return;
+    }
+    throw error;
+  }
+};
+
 const parser = new Parser();
 let userCmdPackets = 0;
 let userCmdEvents = 0;
@@ -64,6 +89,7 @@ try {
 const json = JSON.stringify({
   file: source,
   messagePackets,
+  skippedUnknownTableUpdates,
   userCmdPackets,
   userCmdEvents,
   slots: Object.fromEntries([...perSlot].sort((a,b) => Number(a[0])-Number(b[0]))),
