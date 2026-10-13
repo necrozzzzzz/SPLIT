@@ -344,6 +344,27 @@ def strip_outer_position(frame):
     return bytes(out)
 
 
+def patch_outer_position(frame, x, y, z):
+    """
+    Remplace outer.field2 par une position monde absolue XYZ.
+    Le BOTREC natif encode ces valeurs comme des états absolus par axe.
+    """
+    frame = strip_outer_position(frame)
+
+    payload = (
+        float_field(1, x)
+        + float_field(2, y)
+        + float_field(3, z)
+    )
+
+    out = bytearray(frame)
+    out += encode_varint((2 << 3) | 2)
+    out += encode_varint(len(payload))
+    out += payload
+    return bytes(out)
+
+
+
 def infer_tick_step(frames):
     ticks = []
 
@@ -965,6 +986,37 @@ def interpolate_angle_degrees(a, b, alpha):
     return a + delta * alpha
 
 
+def resample_position_at_ms(samples, times_ms, target_ms):
+    if target_ms <= times_ms[0]:
+        position = samples[0].get("position", [0.0, 0.0, 0.0])
+        return tuple(float(v) for v in position[:3])
+
+    if target_ms >= times_ms[-1]:
+        position = samples[-1].get("position", [0.0, 0.0, 0.0])
+        return tuple(float(v) for v in position[:3])
+
+    right = bisect.bisect_right(times_ms, target_ms)
+    left_index = max(0, right - 1)
+    right_index = min(len(samples) - 1, right)
+
+    left_t = times_ms[left_index]
+    right_t = times_ms[right_index]
+
+    if right_t <= left_t:
+        alpha = 0.0
+    else:
+        alpha = (target_ms - left_t) / (right_t - left_t)
+
+    left_pos = samples[left_index].get("position", [0.0, 0.0, 0.0])
+    right_pos = samples[right_index].get("position", left_pos)
+
+    return tuple(
+        float(left_pos[axis])
+        + (float(right_pos[axis]) - float(left_pos[axis])) * alpha
+        for axis in range(3)
+    )
+
+
 def resample_route_at_ms(samples, times_ms, target_ms):
     """
     Échantillonne la route SPLIT au temps demandé.
@@ -1207,6 +1259,7 @@ def main():
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
     print(f"Timing      : {timing_source}")
+    print("Position    : absolute XYZ on every BOTREC frame")
     print(f"Speed ref   : {speed_ref:.2f}")
     print(
         "Buttons     : "
@@ -1404,12 +1457,23 @@ def main():
             changed_button_mask,
         )
 
-        modified_frames[frame_index] = (
-            patch_frame_movement(
-                cleaned_frame,
-                forward,
-                left,
-            )
+        positioned_frame = patch_frame_movement(
+            cleaned_frame,
+            forward,
+            left,
+        )
+
+        route_x, route_y, route_z = resample_position_at_ms(
+            samples,
+            times_ms,
+            target_ms,
+        )
+
+        modified_frames[frame_index] = patch_outer_position(
+            positioned_frame,
+            route_x,
+            route_y,
+            route_z,
         )
 
         previous_button_mask = current_button_mask
