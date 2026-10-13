@@ -15,7 +15,8 @@ use windows_sys::Win32::{
     System::Threading::GetCurrentThreadId,
     UI::{
         Input::KeyboardAndMouse::{
-            GetAsyncKeyState, VK_CONTROL, VK_SHIFT, VK_SPACE,
+            GetAsyncKeyState, VK_CONTROL, VK_LCONTROL, VK_LSHIFT, VK_RCONTROL,
+            VK_RSHIFT, VK_SHIFT, VK_SPACE,
         },
         WindowsAndMessaging::{
             CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
@@ -166,7 +167,7 @@ struct KeyboardHookState {
 
 static KEYBOARD_HOOK_STATE: Mutex<Option<KeyboardHookState>> = Mutex::new(None);
 
-fn relevant_key_codes() -> [u16; 10] {
+fn relevant_key_codes() -> [u16; 13] {
     [
         b'Z' as u16,
         b'W' as u16,
@@ -175,9 +176,12 @@ fn relevant_key_codes() -> [u16; 10] {
         b'A' as u16,
         b'D' as u16,
         VK_SPACE,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LSHIFT,
+        VK_RSHIFT,
         VK_CONTROL,
         VK_SHIFT,
-        0,
     ]
 }
 
@@ -202,8 +206,12 @@ fn route_buttons_from_down_keys(down: &[bool; 256]) -> RouteButtons {
         left: down[b'Q' as usize] || down[b'A' as usize],
         right: down[b'D' as usize],
         jump: down[VK_SPACE as usize],
-        crouch: down[VK_CONTROL as usize],
-        dash: down[VK_SHIFT as usize],
+        crouch: down[VK_CONTROL as usize]
+            || down[VK_LCONTROL as usize]
+            || down[VK_RCONTROL as usize],
+        dash: down[VK_SHIFT as usize]
+            || down[VK_LSHIFT as usize]
+            || down[VK_RSHIFT as usize],
     }
 }
 
@@ -234,7 +242,11 @@ unsafe extern "system" fn route_keyboard_hook(
                                 || key == b'D' as u16
                                 || key == VK_SPACE
                                 || key == VK_CONTROL
+                                || key == VK_LCONTROL
+                                || key == VK_RCONTROL
                                 || key == VK_SHIFT
+                                || key == VK_LSHIFT
+                                || key == VK_RSHIFT
                         );
 
                         if tracked {
