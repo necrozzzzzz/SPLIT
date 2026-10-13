@@ -1734,6 +1734,7 @@ def main():
     warp_native_chain = False
     airborne_xy_guide = False
     mechanics_command_view = False
+    force_dash_left = False
 
     i = 1
     while i < len(args):
@@ -1758,6 +1759,11 @@ def main():
 
         if arg == "--mechanics-command-view":
             mechanics_command_view = True
+            i += 1
+            continue
+
+        if arg == "--force-dash-left":
+            force_dash_left = True
             i += 1
             continue
 
@@ -1904,6 +1910,11 @@ def main():
             f"{max(0.0, mechanics_view_anchors[0] - 100.0):.1f} -> "
             f"{mechanics_view_anchors[2]:.1f} ms "
             "(client camera ignored during wall-jump/mantle chain)"
+        )
+    if force_dash_left:
+        print(
+            "Dash lateral: force LEFT/Q while DASH is held "
+            "(RIGHT/D -> LEFT/Q)"
         )
     print(f"Samples     : {len(samples)}")
     print(
@@ -2161,6 +2172,23 @@ def main():
             input_event_times_ms,
             target_ms,
         )
+
+        # Diagnostic/fix for the final air-dash in this route.
+        # The recorded JSON itself contains RIGHT + DASH even though the
+        # intended physical input was Z+Q+Shift. Swap only the lateral
+        # component while dash is held; do not touch any wall-jump inputs.
+        if (
+            force_dash_left
+            and (current_button_mask & BUTTON_DASH)
+            and (current_button_mask & BUTTON_RIGHT)
+            and not (current_button_mask & BUTTON_LEFT)
+        ):
+            current_button_mask &= ~BUTTON_RIGHT
+            current_button_mask |= BUTTON_LEFT
+
+            if movement_input is not None:
+                # Preserve forward/back exactly; replace D (-1) with Q (+1).
+                left = 1.0
 
         changed_button_mask = (
             previous_button_mask ^ current_button_mask
