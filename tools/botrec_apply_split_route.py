@@ -13,12 +13,6 @@ DEBUG_WINDOW_PATH = Path("botrec_debug/route_window_debug.csv")
 HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
 BOTREC_HZ = 64.0
-# Experimental: a sampled airborne jump can be up to ~1 recorder sample late
-# relative to the exact wall-contact moment. Pre-arm that rising edge by one
-# native BOTREC tick so Deadlock sees jump while the pawn is still touching
-# the wall instead of consuming it as an air/double jump.
-AIRBORNE_JUMP_LEAD_MS = 1000.0 / BOTREC_HZ
-WALLJUMP_APPROACH_WINDOW_MS = 140.0
 
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
@@ -28,12 +22,6 @@ BUTTON_LEFT = 0x0000000000000200
 BUTTON_RIGHT = 0x0000000000000400
 BUTTON_DASH = 0x0000100000000000
 BUTTON_JUMP = 0x0101000000000000
-BUTTON_DIRECTION_MASK = (
-    BUTTON_FORWARD
-    | BUTTON_BACK
-    | BUTTON_LEFT
-    | BUTTON_RIGHT
-)
 
 # Internal BOTREC header layout inferred from native recordings:
 # 0x00 u32 hero id
@@ -884,47 +872,98 @@ def route_sample_at_ms(samples, times_ms, target_ms):
     return index, samples[index]
 
 
-def route_button_mask_with_walljump_lead(
+def prepare_input_events(route_meta):
+    raw_events = route_meta.get("inputEvents")
+
+    if not isinstance(raw_events, list) or not raw_events:
+        return None, None
+
+    events = [
+        event
+        for event in raw_events
+        if isinstance(event, dict)
+        and isinstance(event.get("buttons"), dict)
+        and isinstance(event.get("tMs"), (int, float))
+    ]
+
+    if not events:
+        return None, None
+
+    events.sort(key=lambda event: float(event["tMs"]))
+    event_zero = float(events[0]["tMs"])
+    event_times_ms = [
+        float(event["tMs"]) - event_zero
+        for event in events
+    ]
+
+    return events, event_times_ms
+
+
+def input_event_at_ms(events, event_times_ms, target_ms):
+    if not events:
+        return None
+
+    if target_ms <= event_times_ms[0]:
+        return events[0]
+
+    index = max(
+        0,
+        bisect.bisect_right(event_times_ms, target_ms) - 1,
+    )
+    return events[index]
+
+
+def input_button_mask_at_ms(
     samples,
     times_ms,
+    events,
+    event_times_ms,
     target_ms,
 ):
-    base_mask = route_button_mask_at_ms(
+    if events:
+        event = input_event_at_ms(
+            events,
+            event_times_ms,
+            target_ms,
+        )
+        return route_button_mask(event)
+
+    return route_button_mask_at_ms(
         samples,
         times_ms,
         target_ms,
     )
 
-    # Only pre-arm a jump that is NOT yet held on this frame.
-    if base_mask & BUTTON_JUMP:
-        return base_mask
 
-    lookahead_ms = min(
-        target_ms + AIRBORNE_JUMP_LEAD_MS,
-        times_ms[-1],
-    )
-    lookahead_index, lookahead_sample = route_sample_at_ms(
+def input_movement_at_ms(
+    samples,
+    times_ms,
+    events,
+    event_times_ms,
+    target_ms,
+):
+    if events:
+        event = input_event_at_ms(
+            events,
+            event_times_ms,
+            target_ms,
+        )
+        buttons = event.get("buttons", {})
+        forward = (
+            (1.0 if buttons.get("forward") else 0.0)
+            - (1.0 if buttons.get("back") else 0.0)
+        )
+        left = (
+            (1.0 if buttons.get("left") else 0.0)
+            - (1.0 if buttons.get("right") else 0.0)
+        )
+        return forward, left
+
+    return route_movement_at_ms(
         samples,
         times_ms,
-        lookahead_ms,
+        target_ms,
     )
-    lookahead_mask = route_button_mask(lookahead_sample)
-
-    if not (lookahead_mask & BUTTON_JUMP):
-        return base_mask
-
-    velocity = lookahead_sample.get(
-        "velocity",
-        [0.0, 0.0, 0.0],
-    )
-    vz = float(velocity[2]) if len(velocity) >= 3 else 0.0
-
-    # A grounded normal jump is left untouched. The problematic wall-jump
-    # sample is captured while already falling toward/sliding along the wall.
-    if vz < -20.0:
-        return base_mask | BUTTON_JUMP
-
-    return base_mask
 
 
 def route_button_mask_at_ms(samples, times_ms, target_ms):
@@ -978,116 +1017,6 @@ def route_movement_at_ms(samples, times_ms, target_ms):
     )
 
     return forward, left
-
-
-def strip_direction_bits_for_walljump_approach(
-    mask,
-    samples,
-    times_ms,
-    target_ms,
-):
-    """
-    Pendant l'approche d'un wall-jump, forwardmove/leftmove pilotent déjà
-    la direction à partir de la trajectoire enregistrée. On retire donc
-    uniquement les bits directionnels du message buttons pour éviter de
-    doubler l'intention de mouvement au contact du mur.
-
-    Jump / crouch / dash restent inchangés.
-    """
-    if approaching_airborne_jump(
-        samples,
-        times_ms,
-        target_ms,
-    ):
-        return mask & ~BUTTON_DIRECTION_MASK
-
-    return mask
-
-
-def approaching_airborne_jump(
-    samples,
-    times_ms,
-    target_ms,
-):
-    """
-    Détecte un front montant de jump imminent pendant une phase aérienne /
-    descendante. Sert uniquement à stabiliser l'approche d'un wall-jump.
-    """
-    start_index, _ = route_sample_at_ms(
-        samples,
-        times_ms,
-        target_ms,
-    )
-
-    end_ms = min(
-        target_ms + WALLJUMP_APPROACH_WINDOW_MS,
-        times_ms[-1],
-    )
-    end_index, _ = route_sample_at_ms(
-        samples,
-        times_ms,
-        end_ms,
-    )
-
-    for index in range(max(1, start_index), end_index + 1):
-        current_buttons = samples[index].get("buttons", {})
-        previous_buttons = samples[index - 1].get("buttons", {})
-
-        jump_now = bool(current_buttons.get("jump"))
-        jump_before = bool(previous_buttons.get("jump"))
-
-        if not jump_now or jump_before:
-            continue
-
-        previous_velocity = samples[index - 1].get(
-            "velocity",
-            [0.0, 0.0, 0.0],
-        )
-        previous_vz = (
-            float(previous_velocity[2])
-            if len(previous_velocity) >= 3
-            else 0.0
-        )
-
-        if previous_vz < -20.0:
-            return True
-
-    return False
-
-
-def movement_from_recorded_velocity_direction(
-    sample,
-    yaw_degrees,
-):
-    """
-    Direction de déplacement réellement observée, normalisée à pleine
-    amplitude. Contrairement aux touches digitales +/-1, cela conserve
-    l'angle réel d'approche résultant de l'inertie juste avant un wall-jump.
-    """
-    velocity = sample.get("velocity", [0.0, 0.0, 0.0])
-    vx = float(velocity[0])
-    vy = float(velocity[1])
-
-    speed = math.hypot(vx, vy)
-    if speed <= DEADZONE_SPEED:
-        return None
-
-    nx = vx / speed
-    ny = vy / speed
-
-    yaw = math.radians(yaw_degrees)
-    forward_x = math.cos(yaw)
-    forward_y = math.sin(yaw)
-    left_x = -math.sin(yaw)
-    left_y = math.cos(yaw)
-
-    forward = nx * forward_x + ny * forward_y
-    left = nx * left_x + ny * left_y
-
-    return (
-        max(-1.0, min(1.0, forward)),
-        max(-1.0, min(1.0, left)),
-    )
 
 
 def horizontal_speed(sample):
@@ -1386,12 +1315,16 @@ def main():
     route_duration_ms = times_ms[-1]
     timing_source = "tMs"
 
+    input_events, input_event_times_ms = prepare_input_events(
+        route_meta
+    )
+
     speed_ref = choose_reference_speed(samples)
-    has_button_data = any(
+    has_button_data = bool(input_events) or any(
         isinstance(sample.get("buttons"), dict)
         for sample in samples
     )
-    has_movement_input_data = any(
+    has_movement_input_data = bool(input_events) or any(
         isinstance(sample.get("buttons"), dict)
         and any(
             key in sample["buttons"]
@@ -1423,21 +1356,16 @@ def main():
     )
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
-    print(
-        "Wall-jump lead: "
-        f"{AIRBORNE_JUMP_LEAD_MS:.3f} ms "
-        "(1 BOTREC frame, airborne press only)"
-    )
-    print(
-        "Wall-jump approach: "
-        f"{WALLJUMP_APPROACH_WINDOW_MS:.0f} ms "
-        "(recorded velocity direction)"
-    )
-    print(
-        "Wall-jump buttons : directional bits stripped during approach"
-    )
     print(f"Timing      : {timing_source}")
     print("Position    : absolute XYZ on every BOTREC frame")
+    print(
+        "Input timing: "
+        + (
+            f"high-rate events ({len(input_events)} transitions)"
+            if input_events
+            else "legacy telemetry-sample states"
+        )
+    )
     print(f"Speed ref   : {speed_ref:.2f}")
     print(
         "Buttons     : "
@@ -1582,40 +1510,16 @@ def main():
             target_ms,
         )
 
-        movement_input = route_movement_at_ms(
+        movement_input = input_movement_at_ms(
             samples,
             times_ms,
+            input_events,
+            input_event_times_ms,
             target_ms,
         )
 
-        if (
-            movement_input is not None
-            and approaching_airborne_jump(
-                samples,
-                times_ms,
-                target_ms,
-            )
-        ):
-            _, source_sample = route_sample_at_ms(
-                samples,
-                times_ms,
-                target_ms,
-            )
-            walljump_direction = (
-                movement_from_recorded_velocity_direction(
-                    source_sample,
-                    route_yaw,
-                )
-            )
-
-            if walljump_direction is not None:
-                forward, left = walljump_direction
-            else:
-                forward, left = movement_input
-
-        elif movement_input is not None:
+        if movement_input is not None:
             forward, left = movement_input
-
         else:
             forward, left = movement_from_velocity(
                 vx,
@@ -1624,16 +1528,11 @@ def main():
                 speed_ref,
             )
 
-        current_button_mask = route_button_mask_with_walljump_lead(
+        current_button_mask = input_button_mask_at_ms(
             samples,
             times_ms,
-            target_ms,
-        )
-
-        current_button_mask = strip_direction_bits_for_walljump_approach(
-            current_button_mask,
-            samples,
-            times_ms,
+            input_events,
+            input_event_times_ms,
             target_ms,
         )
 
