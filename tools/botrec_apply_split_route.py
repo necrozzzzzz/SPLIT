@@ -13,6 +13,11 @@ DEBUG_WINDOW_PATH = Path("botrec_debug/route_window_debug.csv")
 HEADER_SIZE = 32
 DEADZONE_SPEED = 10.0
 BOTREC_HZ = 64.0
+# Experimental: a sampled airborne jump can be up to ~1 recorder sample late
+# relative to the exact wall-contact moment. Pre-arm that rising edge by one
+# native BOTREC tick so Deadlock sees jump while the pawn is still touching
+# the wall instead of consuming it as an air/double jump.
+AIRBORNE_JUMP_LEAD_MS = 1000.0 / BOTREC_HZ
 
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
@@ -872,6 +877,49 @@ def route_sample_at_ms(samples, times_ms, target_ms):
     return index, samples[index]
 
 
+def route_button_mask_with_walljump_lead(
+    samples,
+    times_ms,
+    target_ms,
+):
+    base_mask = route_button_mask_at_ms(
+        samples,
+        times_ms,
+        target_ms,
+    )
+
+    # Only pre-arm a jump that is NOT yet held on this frame.
+    if base_mask & BUTTON_JUMP:
+        return base_mask
+
+    lookahead_ms = min(
+        target_ms + AIRBORNE_JUMP_LEAD_MS,
+        times_ms[-1],
+    )
+    lookahead_index, lookahead_sample = route_sample_at_ms(
+        samples,
+        times_ms,
+        lookahead_ms,
+    )
+    lookahead_mask = route_button_mask(lookahead_sample)
+
+    if not (lookahead_mask & BUTTON_JUMP):
+        return base_mask
+
+    velocity = lookahead_sample.get(
+        "velocity",
+        [0.0, 0.0, 0.0],
+    )
+    vz = float(velocity[2]) if len(velocity) >= 3 else 0.0
+
+    # A grounded normal jump is left untouched. The problematic wall-jump
+    # sample is captured while already falling toward/sliding along the wall.
+    if vz < -20.0:
+        return base_mask | BUTTON_JUMP
+
+    return base_mask
+
+
 def route_button_mask_at_ms(samples, times_ms, target_ms):
     if target_ms <= times_ms[0]:
         return route_button_mask(samples[0])
@@ -1258,6 +1306,11 @@ def main():
     )
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
+    print(
+        "Wall-jump lead: "
+        f"{AIRBORNE_JUMP_LEAD_MS:.3f} ms "
+        "(1 BOTREC frame, airborne press only)"
+    )
     print(f"Timing      : {timing_source}")
     print("Position    : absolute XYZ on every BOTREC frame")
     print(f"Speed ref   : {speed_ref:.2f}")
@@ -1420,7 +1473,7 @@ def main():
                 speed_ref,
             )
 
-        current_button_mask = route_button_mask_at_ms(
+        current_button_mask = route_button_mask_with_walljump_lead(
             samples,
             times_ms,
             target_ms,
