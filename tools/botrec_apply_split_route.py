@@ -1390,24 +1390,41 @@ def patch_header_spawn(header, sample):
 # ---------------------------------------------------------
 
 def main():
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+
+    if not args:
         print(
             "Usage :\n"
             "py tools\\botrec_apply_split_route.py "
-            "\"chemin\\route.json\""
+            "\"chemin\\route.json\" "
+            "[--template chemin\\decoded.bin]"
         )
         raise SystemExit(1)
 
-    route_path = Path(sys.argv[1])
+    route_path = Path(args[0])
+    template_path = BOTREC_PATH
+
+    i = 1
+    while i < len(args):
+        arg = args[i]
+
+        if arg == "--template":
+            if i + 1 >= len(args):
+                raise SystemExit("--template attend un decoded.bin")
+            template_path = Path(args[i + 1])
+            i += 2
+            continue
+
+        raise SystemExit(f"Argument inconnu : {arg}")
 
     if not route_path.exists():
         raise RuntimeError(
             f"Route introuvable : {route_path}"
         )
 
-    if not BOTREC_PATH.exists():
+    if not template_path.exists():
         raise RuntimeError(
-            f"BOTREC décodé introuvable : {BOTREC_PATH}"
+            f"BOTREC décodé introuvable : {template_path}"
         )
 
     # -----------------------------
@@ -1455,7 +1472,7 @@ def main():
     # Charge template BOTREC
     # -----------------------------
 
-    original = BOTREC_PATH.read_bytes()
+    original = template_path.read_bytes()
 
     header, frames = load_frames(original)
 
@@ -1467,6 +1484,7 @@ def main():
     print("=== SPLIT -> BOTREC ===")
     print()
     print(f"Route       : {route_path}")
+    print(f"Template    : {template_path}")
     print(f"Samples     : {len(samples)}")
     print(
         f"Sample rate : "
