@@ -664,6 +664,55 @@ pub(crate) fn read_current_pawn_handle(
     )
 }
 
+/// Read-only motion sample for an explicitly selected non-local pawn.
+/// Returns (origin, velocity, simulation_tick, simulation_time).
+pub(crate) fn read_pawn_motion_at_index(
+    pid: u32,
+    entity_index: u32,
+    route_schema: super::schema::RouteSchema,
+) -> Result<([f32; 3], [f32; 3], u32, f32), String> {
+    let pawn = resolve_entity_by_index(pid, entity_index, route_schema.identity_size)?;
+    let process = open_process_read_only(pid)?;
+    let (client_base, client_size) = camera::find_module(pid, "client.dll")?;
+    validate_object_vtable(
+        process.0,
+        pawn,
+        Some("C_CitadelPlayerPawn"),
+        (client_base as u64, client_size as u64),
+        "diagnostic target pawn",
+    )?;
+
+    let scene_node = read_remote_u64(
+        process.0,
+        checked_add(pawn, route_schema.game_scene_node_offset as u64, "scene node")?,
+        "diagnostic scene node",
+    )?;
+    if scene_node == 0 {
+        return Err("Diagnostic target has no scene node".to_string());
+    }
+    let position = read_remote_f32x3(
+        process.0,
+        checked_add(scene_node, route_schema.absolute_origin_offset as u64, "origin")?,
+        "diagnostic absolute origin",
+    )?;
+    let velocity = read_remote_f32x3(
+        process.0,
+        checked_add(pawn, route_schema.absolute_velocity_offset as u64, "velocity")?,
+        "diagnostic absolute velocity",
+    )?;
+    let tick = read_remote_u32(
+        process.0,
+        checked_add(pawn, route_schema.simulation_tick_offset as u64, "simulation tick")?,
+        "diagnostic simulation tick",
+    )?;
+    let simulation_time = read_remote_f32(
+        process.0,
+        checked_add(pawn, route_schema.simulation_time_offset as u64, "simulation time")?,
+        "diagnostic simulation time",
+    )?;
+    Ok((position, velocity, tick, simulation_time))
+}
+
 pub(crate) fn debug_bot_movement(
     pid: u32,
     entity_index: u32,
