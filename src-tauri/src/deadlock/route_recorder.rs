@@ -3,7 +3,7 @@ use std::{
     io::Write,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -11,8 +11,18 @@ use std::{
 };
 
 use serde::Serialize;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, VK_CONTROL, VK_SHIFT, VK_SPACE,
+use windows_sys::Win32::{
+    System::Threading::GetCurrentThreadId,
+    UI::{
+        Input::KeyboardAndMouse::{
+            GetAsyncKeyState, KBDLLHOOKSTRUCT, VK_CONTROL, VK_SHIFT, VK_SPACE,
+        },
+        WindowsAndMessaging::{
+            CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
+            UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
+            WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        },
+    },
 };
 
 use super::{match_safety, pawn, process, schema};
@@ -144,6 +154,147 @@ struct ActiveRecording {
 enum RecorderState {
     Idle { last: Option<RouteRecording> },
     Recording(ActiveRecording),
+}
+
+
+struct KeyboardHookState {
+    started_at: Instant,
+    events: Arc<Mutex<Vec<RouteInputEvent>>>,
+    down_keys: [bool; 256],
+    buttons: RouteButtons,
+}
+
+static KEYBOARD_HOOK_STATE: Mutex<Option<KeyboardHookState>> = Mutex::new(None);
+
+fn relevant_key_codes() -> [u16; 10] {
+    [
+        b'Z' as u16,
+        b'W' as u16,
+        b'S' as u16,
+        b'Q' as u16,
+        b'A' as u16,
+        b'D' as u16,
+        VK_SPACE,
+        VK_CONTROL,
+        VK_SHIFT,
+        0,
+    ]
+}
+
+fn initial_hook_key_state() -> [bool; 256] {
+    let mut down = [false; 256];
+
+    for virtual_key in relevant_key_codes() {
+        if virtual_key == 0 {
+            continue;
+        }
+
+        down[virtual_key as usize] = key_is_down(virtual_key);
+    }
+
+    down
+}
+
+fn route_buttons_from_down_keys(down: &[bool; 256]) -> RouteButtons {
+    RouteButtons {
+        forward: down[b'Z' as usize] || down[b'W' as usize],
+        back: down[b'S' as usize],
+        left: down[b'Q' as usize] || down[b'A' as usize],
+        right: down[b'D' as usize],
+        jump: down[VK_SPACE as usize],
+        crouch: down[VK_CONTROL as usize],
+        dash: down[VK_SHIFT as usize],
+    }
+}
+
+unsafe extern "system" fn route_keyboard_hook(
+    code: i32,
+    w_param: usize,
+    l_param: isize,
+) -> isize {
+    if code >= 0 && l_param != 0 {
+        let message = w_param as u32;
+        let is_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+        let is_up = message == WM_KEYUP || message == WM_SYSKEYUP;
+
+        if is_down || is_up {
+            let hook = &*(l_param as *const KBDLLHOOKSTRUCT);
+            let virtual_key = hook.vkCode as usize;
+
+            if virtual_key < 256 {
+                if let Ok(mut state_guard) = KEYBOARD_HOOK_STATE.lock() {
+                    if let Some(state) = state_guard.as_mut() {
+                        let tracked = matches!(
+                            virtual_key as u16,
+                            key if key == b'Z' as u16
+                                || key == b'W' as u16
+                                || key == b'S' as u16
+                                || key == b'Q' as u16
+                                || key == b'A' as u16
+                                || key == b'D' as u16
+                                || key == VK_SPACE
+                                || key == VK_CONTROL
+                                || key == VK_SHIFT
+                        );
+
+                        if tracked {
+                            state.down_keys[virtual_key] = is_down;
+                            let buttons =
+                                route_buttons_from_down_keys(&state.down_keys);
+
+                            if buttons != state.buttons {
+                                state.buttons = buttons;
+
+                                if let Ok(mut events) = state.events.lock() {
+                                    events.push(RouteInputEvent {
+                                        t_ms: state
+                                            .started_at
+                                            .elapsed()
+                                            .as_secs_f64()
+                                            * 1_000.0,
+                                        buttons,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    CallNextHookEx(std::ptr::null_mut(), code, w_param, l_param)
+}
+
+fn run_polling_input_fallback(
+    input_running: &AtomicBool,
+    input_events: &Arc<Mutex<Vec<RouteInputEvent>>>,
+    started_at: Instant,
+) {
+    let mut previous = capture_route_buttons();
+
+    if let Ok(mut events) = input_events.lock() {
+        events.push(RouteInputEvent {
+            t_ms: started_at.elapsed().as_secs_f64() * 1_000.0,
+            buttons: previous,
+        });
+    }
+
+    while input_running.load(Ordering::Acquire) {
+        let buttons = capture_route_buttons();
+
+        if buttons != previous {
+            if let Ok(mut events) = input_events.lock() {
+                events.push(RouteInputEvent {
+                    t_ms: started_at.elapsed().as_secs_f64() * 1_000.0,
+                    buttons,
+                });
+            }
+            previous = buttons;
+        }
+
+        thread::sleep(Duration::from_millis(1));
+    }
 }
 
 static RECORDER: Mutex<RecorderState> = Mutex::new(RecorderState::Idle { last: None });
@@ -399,48 +550,101 @@ fn run_worker(
     let mut stop_reason = None;
     let mut missed_deadlines = 0_u64;
 
-    // Input transitions are captured independently from telemetry. The old
-    // ~60 Hz telemetry loop could observe a key only after Deadlock had
-    // already consumed it (especially buffered jump/crouch during mantle).
+    // Input transitions are captured independently from telemetry using a
+    // low-level Windows keyboard hook. Unlike the old ~1 ms GetAsyncKeyState
+    // polling loop, this records the actual keydown/keyup transition order.
     let input_events: Arc<Mutex<Vec<RouteInputEvent>>> =
         Arc::new(Mutex::new(Vec::new()));
     let input_running = Arc::new(AtomicBool::new(true));
-
-    {
-        let initial_buttons = capture_route_buttons();
-        if let Ok(mut events) = input_events.lock() {
-            events.push(RouteInputEvent {
-                t_ms: started_at.elapsed().as_secs_f64() * 1_000.0,
-                buttons: initial_buttons,
-            });
-        }
-    }
+    let input_thread_id = Arc::new(AtomicU32::new(0));
 
     let input_events_worker = input_events.clone();
     let input_running_worker = input_running.clone();
+    let input_thread_id_worker = input_thread_id.clone();
     let input_started_at = started_at;
+
     let input_thread = thread::Builder::new()
         .name("split-route-input-recorder".to_string())
         .spawn(move || {
-            let mut previous = capture_route_buttons();
+            let thread_id = unsafe { GetCurrentThreadId() };
+            input_thread_id_worker.store(thread_id, Ordering::Release);
 
-            while input_running_worker.load(Ordering::Acquire) {
-                let buttons = capture_route_buttons();
+            if !input_running_worker.load(Ordering::Acquire) {
+                return;
+            }
 
-                if buttons != previous {
-                    if let Ok(mut events) = input_events_worker.lock() {
-                        events.push(RouteInputEvent {
-                            t_ms: input_started_at.elapsed().as_secs_f64() * 1_000.0,
-                            buttons,
-                        });
-                    }
-                    previous = buttons;
+            let down_keys = initial_hook_key_state();
+            let initial_buttons = route_buttons_from_down_keys(&down_keys);
+
+            if let Ok(mut events) = input_events_worker.lock() {
+                events.push(RouteInputEvent {
+                    t_ms: input_started_at.elapsed().as_secs_f64() * 1_000.0,
+                    buttons: initial_buttons,
+                });
+            }
+
+            if let Ok(mut state) = KEYBOARD_HOOK_STATE.lock() {
+                *state = Some(KeyboardHookState {
+                    started_at: input_started_at,
+                    events: input_events_worker.clone(),
+                    down_keys,
+                    buttons: initial_buttons,
+                });
+            }
+
+            let hook = unsafe {
+                SetWindowsHookExW(
+                    WH_KEYBOARD_LL,
+                    Some(route_keyboard_hook),
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
+
+            if hook.is_null() {
+                if let Ok(mut state) = KEYBOARD_HOOK_STATE.lock() {
+                    *state = None;
                 }
 
-                thread::sleep(Duration::from_millis(1));
+                eprintln!(
+                    "[SPLIT][RouteRecorder] keyboard hook unavailable; "
+                );
+
+                run_polling_input_fallback(
+                    &input_running_worker,
+                    &input_events_worker,
+                    input_started_at,
+                );
+                return;
+            }
+
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+
+            while input_running_worker.load(Ordering::Acquire) {
+                let result = unsafe {
+                    GetMessageW(
+                        &mut message,
+                        std::ptr::null_mut(),
+                        0,
+                        0,
+                    )
+                };
+
+                if result <= 0 {
+                    break;
+                }
+            }
+
+            unsafe {
+                UnhookWindowsHookEx(hook);
+            }
+
+            if let Ok(mut state) = KEYBOARD_HOOK_STATE.lock() {
+                *state = None;
             }
         })
         .ok();
+
     let camera_events: Arc<Mutex<Vec<RouteCameraEvent>>> =
         Arc::new(Mutex::new(Vec::new()));
     let camera_running = Arc::new(AtomicBool::new(true));
@@ -541,6 +745,17 @@ fn run_worker(
     }
 
     input_running.store(false, Ordering::Release);
+    let input_tid = input_thread_id.load(Ordering::Acquire);
+    if input_tid != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(
+                input_tid,
+                WM_QUIT,
+                0,
+                0,
+            );
+        }
+    }
     if let Some(handle) = input_thread {
         let _ = handle.join();
     }
@@ -722,7 +937,7 @@ fn finish_recording(
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 5,
+        version: 6,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -731,7 +946,7 @@ fn finish_recording(
         velocity_source: "C_BaseEntity::m_vecAbsVelocity",
         view_angles_source: "C_CitadelPlayerPawn::m_angClientCamera",
         buttons_source: "Telemetry samples keep a compatibility snapshot of Win32 GetAsyncKeyState buttons",
-        input_event_source: "Dedicated ~1 ms GetAsyncKeyState transition recorder: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
+        input_event_source: "Low-level Windows WH_KEYBOARD_LL keydown/keyup transition recorder: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
         input_event_count: input_events.len(),
         input_events,
         camera_event_source: "Dedicated ~2 ms m_angClientCamera transition recorder",
