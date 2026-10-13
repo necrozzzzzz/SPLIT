@@ -884,7 +884,7 @@ def route_sample_at_ms(samples, times_ms, target_ms):
     return index, samples[index]
 
 
-def prepare_input_events(route_meta):
+def prepare_input_events(route_meta, route_time_zero):
     raw_events = route_meta.get("inputEvents")
 
     if not isinstance(raw_events, list) or not raw_events:
@@ -902,13 +902,80 @@ def prepare_input_events(route_meta):
         return None, None
 
     events.sort(key=lambda event: float(event["tMs"]))
-    event_zero = float(events[0]["tMs"])
     event_times_ms = [
-        float(event["tMs"]) - event_zero
+        float(event["tMs"]) - route_time_zero
         for event in events
     ]
 
     return events, event_times_ms
+
+
+def prepare_camera_events(route_meta, route_time_zero):
+    raw_events = route_meta.get("cameraEvents")
+
+    if not isinstance(raw_events, list) or not raw_events:
+        return None, None
+
+    events = [
+        event
+        for event in raw_events
+        if isinstance(event, dict)
+        and isinstance(event.get("tMs"), (int, float))
+        and isinstance(event.get("yaw"), (int, float))
+        and isinstance(event.get("pitch"), (int, float))
+    ]
+
+    if not events:
+        return None, None
+
+    events.sort(key=lambda event: float(event["tMs"]))
+    event_times_ms = [
+        float(event["tMs"]) - route_time_zero
+        for event in events
+    ]
+
+    return events, event_times_ms
+
+
+def camera_at_ms(events, event_times_ms, target_ms):
+    if not events:
+        return None
+
+    if target_ms <= event_times_ms[0]:
+        event = events[0]
+        return float(event["yaw"]), float(event["pitch"])
+
+    if target_ms >= event_times_ms[-1]:
+        event = events[-1]
+        return float(event["yaw"]), float(event["pitch"])
+
+    right = bisect.bisect_right(event_times_ms, target_ms)
+    left_index = max(0, right - 1)
+    right_index = min(len(events) - 1, right)
+
+    left_t = event_times_ms[left_index]
+    right_t = event_times_ms[right_index]
+
+    if right_t <= left_t:
+        alpha = 0.0
+    else:
+        alpha = (target_ms - left_t) / (right_t - left_t)
+
+    left_event = events[left_index]
+    right_event = events[right_index]
+
+    yaw = interpolate_angle_degrees(
+        float(left_event["yaw"]),
+        float(right_event["yaw"]),
+        alpha,
+    )
+    pitch = interpolate_angle_degrees(
+        float(left_event["pitch"]),
+        float(right_event["pitch"]),
+        alpha,
+    )
+
+    return yaw, pitch
 
 
 def input_event_at_ms(events, event_times_ms, target_ms):
@@ -1328,7 +1395,12 @@ def main():
     timing_source = "tMs"
 
     input_events, input_event_times_ms = prepare_input_events(
-        route_meta
+        route_meta,
+        route_time_zero,
+    )
+    camera_events, camera_event_times_ms = prepare_camera_events(
+        route_meta,
+        route_time_zero,
     )
 
     speed_ref = choose_reference_speed(samples)
@@ -1376,6 +1448,14 @@ def main():
             f"high-rate events ({len(input_events)} transitions)"
             if input_events
             else "legacy telemetry-sample states"
+        )
+    )
+    print(
+        "Camera timing: "
+        + (
+            f"high-rate events ({len(camera_events)} transitions)"
+            if camera_events
+            else "legacy telemetry samples"
         )
     )
     print(f"Speed ref   : {speed_ref:.2f}")
@@ -1521,6 +1601,14 @@ def main():
             times_ms,
             target_ms,
         )
+
+        camera_state = camera_at_ms(
+            camera_events,
+            camera_event_times_ms,
+            target_ms,
+        )
+        if camera_state is not None:
+            route_yaw, route_pitch = camera_state
 
         movement_input = input_movement_at_ms(
             samples,
