@@ -292,12 +292,33 @@ def extract_position(frame: bytes):
 def find_route_chain(route_path: Path):
     route = json.loads(route_path.read_text(encoding="utf-8"))
     events = route.get("inputEvents")
+    samples = route.get("samples")
 
-    if not isinstance(events, list):
-        raise RuntimeError("inputEvents manquant dans la route")
+    if not isinstance(events, list) or not isinstance(samples, list):
+        raise RuntimeError("inputEvents/samples manquants dans la route")
 
-    first_sample = route.get("samples", [{}])[0]
+    first_sample = samples[0] if samples else {}
     route_zero = float(first_sample.get("tMs", 0.0))
+
+    sample_times = [
+        float(sample.get("tMs", 0.0))
+        for sample in samples
+    ]
+
+    def prior_vertical_speed(t_ms):
+        if not sample_times:
+            return 0.0
+
+        import bisect
+        index = max(
+            0,
+            bisect.bisect_right(sample_times, t_ms) - 1,
+        )
+        velocity = samples[index].get(
+            "velocity",
+            [0.0, 0.0, 0.0],
+        )
+        return float(velocity[2]) if len(velocity) >= 3 else 0.0
 
     previous_jump = False
     previous_crouch = False
@@ -307,13 +328,15 @@ def find_route_chain(route_path: Path):
 
     for event in events:
         buttons = event.get("buttons") or {}
-        t_ms = float(event.get("tMs", 0.0)) - route_zero
+        raw_t_ms = float(event.get("tMs", 0.0))
+        t_ms = raw_t_ms - route_zero
 
         jump = bool(buttons.get("jump"))
         crouch = bool(buttons.get("crouch"))
 
         if jump_ms is None and jump and not previous_jump:
-            jump_ms = t_ms
+            if abs(prior_vertical_speed(raw_t_ms)) >= 50.0:
+                jump_ms = t_ms
 
         if (
             jump_ms is not None
@@ -339,7 +362,7 @@ def find_route_chain(route_path: Path):
 
     if jump_ms is None or crouch_ms is None or end_ms is None:
         raise RuntimeError(
-            "Impossible de détecter jump -> crouch -> crouch release"
+            "Impossible de détecter wall-jump airborne -> crouch -> release"
         )
 
     return jump_ms, crouch_ms, end_ms
