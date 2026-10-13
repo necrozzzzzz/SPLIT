@@ -1357,7 +1357,7 @@ def main():
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
     print(f"Timing      : {timing_source}")
-    print("Position    : absolute XYZ on every BOTREC frame")
+    print("Position    : no per-frame XYZ injection (native physics)")
     print(
         "Input timing: "
         + (
@@ -1573,17 +1573,13 @@ def main():
             left,
         )
 
-        route_x, route_y, route_z = resample_position_at_ms(
-            samples,
-            times_ms,
-            target_ms,
-        )
-
-        modified_frames[frame_index] = patch_outer_position(
-            positioned_frame,
-            route_x,
-            route_y,
-            route_z,
+        # Do not inject an absolute outer.field2 on every frame.
+        # Native BOTREC position messages are sparse/stateful, and forcing
+        # SPLIT XYZ every 15.625 ms can fight the game's movement/collision
+        # simulation after mantle/slide transitions. The spawn header still
+        # anchors playback; the route itself is driven by usercmd inputs.
+        modified_frames[frame_index] = strip_outer_position(
+            positioned_frame
         )
 
         previous_button_mask = current_button_mask
