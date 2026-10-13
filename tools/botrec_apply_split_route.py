@@ -1393,17 +1393,37 @@ def patch_header_spawn(header, sample):
 
 def find_route_first_chain_anchors(route_meta):
     """
-    Detect the first wall-jump -> buffered crouch -> crouch-release chain
-    from high-rate inputEvents.
+    Detect the first AIRBORNE jump (our wall-jump candidate), then the
+    first crouch press and crouch release after it.
 
-    We deliberately use input edges rather than telemetry timing:
-    - first jump rising edge,
-    - first crouch rising edge after that jump,
-    - first crouch falling edge after the crouch press.
+    Previous code incorrectly anchored the donor chain to the first jump
+    of the route, which is usually the take-off jump before the wall jump.
     """
     raw_events = route_meta.get("inputEvents")
-    if not isinstance(raw_events, list):
+    samples = route_meta.get("samples")
+
+    if not isinstance(raw_events, list) or not isinstance(samples, list):
         return None
+
+    sample_times = [
+        float(sample.get("tMs", 0.0))
+        for sample in samples
+        if isinstance(sample, dict)
+    ]
+
+    def prior_vertical_speed(t_ms):
+        if not sample_times:
+            return 0.0
+
+        index = max(
+            0,
+            bisect.bisect_right(sample_times, t_ms) - 1,
+        )
+        sample = samples[index]
+        velocity = sample.get("velocity", [0.0, 0.0, 0.0])
+        if not isinstance(velocity, list) or len(velocity) < 3:
+            return 0.0
+        return float(velocity[2])
 
     jump_ms = None
     crouch_ms = None
@@ -1416,6 +1436,7 @@ def find_route_first_chain_anchors(route_meta):
     for event in raw_events:
         if not isinstance(event, dict):
             continue
+
         buttons = event.get("buttons")
         if not isinstance(buttons, dict):
             continue
@@ -1424,8 +1445,13 @@ def find_route_first_chain_anchors(route_meta):
         jump = bool(buttons.get("jump"))
         crouch = bool(buttons.get("crouch"))
 
-        if jump_ms is None and jump and not previous["jump"]:
-            jump_ms = t_ms
+        if jump and not previous["jump"] and jump_ms is None:
+            vz_before = prior_vertical_speed(t_ms)
+
+            # A wall jump is an airborne jump edge. Ignore the initial
+            # ground take-off jump that previously confused the donor warp.
+            if abs(vz_before) >= 50.0:
+                jump_ms = t_ms
 
         if (
             jump_ms is not None
