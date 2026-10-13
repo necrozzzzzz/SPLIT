@@ -364,6 +364,27 @@ def strip_outer_position(frame):
     return bytes(out)
 
 
+def patch_outer_position_xy(frame, x, y):
+    """
+    Write only absolute X/Y state and deliberately omit Z.
+
+    This lets BOTREC keep Deadlock's vertical wall-jump/mantle physics while
+    constraining the horizontal path to the recorded SPLIT route.
+    """
+    frame = strip_outer_position(frame)
+
+    payload = (
+        float_field(1, x)
+        + float_field(2, y)
+    )
+
+    out = bytearray(frame)
+    out += encode_varint((2 << 3) | 2)
+    out += encode_varint(len(payload))
+    out += payload
+    return bytes(out)
+
+
 def patch_outer_position(frame, x, y, z):
     """
     Remplace outer.field2 par une position monde absolue XYZ.
@@ -1584,6 +1605,7 @@ def main():
     route_path = Path(args[0])
     template_path = BOTREC_PATH
     warp_native_chain = False
+    airborne_xy_guide = False
 
     i = 1
     while i < len(args):
@@ -1598,6 +1620,11 @@ def main():
 
         if arg == "--warp-native-chain":
             warp_native_chain = True
+            i += 1
+            continue
+
+        if arg == "--airborne-xy-guide":
+            airborne_xy_guide = True
             i += 1
             continue
 
@@ -1640,20 +1667,41 @@ def main():
         route_time_zero,
     )
 
-    route_chain_anchors = (
+    detected_chain_anchors = (
         find_route_first_chain_anchors(route_meta)
+        if (warp_native_chain or airborne_xy_guide)
+        else None
+    )
+
+    if (
+        (warp_native_chain or airborne_xy_guide)
+        and detected_chain_anchors is None
+    ):
+        raise RuntimeError(
+            "Impossible de détecter wall-jump -> crouch -> release "
+            "dans inputEvents"
+        )
+
+    detected_chain_anchors = (
+        tuple(
+            value - route_time_zero
+            for value in detected_chain_anchors
+        )
+        if detected_chain_anchors is not None
+        else None
+    )
+
+    route_chain_anchors = (
+        detected_chain_anchors
         if warp_native_chain
         else None
     )
-    if warp_native_chain and route_chain_anchors is None:
-        raise RuntimeError(
-            "Impossible de détecter jump -> crouch -> release dans inputEvents"
-        )
-    if route_chain_anchors is not None:
-        route_chain_anchors = tuple(
-            value - route_time_zero
-            for value in route_chain_anchors
-        )
+
+    xy_guide_anchors = (
+        detected_chain_anchors
+        if airborne_xy_guide
+        else None
+    )
 
     speed_ref = choose_reference_speed(samples)
     has_button_data = bool(input_events) or any(
@@ -1695,6 +1743,13 @@ def main():
             f"donor {DONOR_CHAIN_JUMP_MS:.1f}/"
             f"{DONOR_CHAIN_CROUCH_MS:.1f}/"
             f"{DONOR_CHAIN_END_MS:.1f} ms"
+        )
+    if xy_guide_anchors is not None:
+        print(
+            "Airborne XY : "
+            f"{xy_guide_anchors[0] + (2.0 * 1000.0 / BOTREC_HZ):.1f} -> "
+            f"{xy_guide_anchors[1]:.1f} ms "
+            "(absolute X/Y each BOTREC frame, Z left to native physics)"
         )
     print(f"Samples     : {len(samples)}")
     print(
@@ -1964,37 +2019,63 @@ def main():
             left,
         )
 
-        # Do not fight airborne/mantle physics with position state.
-        # Apply only occasional, grounded corrections, and only on frames
-        # where the native BOTREC template already carried outer.field2.
-        use_position_checkpoint = (
-            frame_index < len(frames)
-            and has_outer_position(frames[frame_index])
-            and should_apply_ground_position_checkpoint(
-                samples,
-                times_ms,
-                target_ms,
-                last_position_checkpoint_ms,
-            )
-        )
+        # Hybrid guidance:
+        # - preserve native Z physics for wall-jump / mantle;
+        # - after the wall-jump has had two BOTREC ticks to establish contact
+        #   and impulse, constrain only X/Y to the recorded route until the
+        #   buffered crouch begins;
+        # - otherwise use only conservative stable-ground XYZ checkpoints.
+        xy_guide_active = False
 
-        if use_position_checkpoint:
-            route_x, route_y, route_z = resample_position_at_ms(
+        if xy_guide_anchors is not None:
+            wall_jump_ms, crouch_ms, _ = xy_guide_anchors
+            guide_start_ms = wall_jump_ms + (
+                2.0 * 1000.0 / BOTREC_HZ
+            )
+            xy_guide_active = (
+                guide_start_ms <= target_ms < crouch_ms
+            )
+
+        if xy_guide_active:
+            route_x, route_y, _ = resample_position_at_ms(
                 samples,
                 times_ms,
                 target_ms,
             )
-            modified_frames[frame_index] = patch_outer_position(
+            modified_frames[frame_index] = patch_outer_position_xy(
                 positioned_frame,
                 route_x,
                 route_y,
-                route_z,
             )
-            last_position_checkpoint_ms = target_ms
         else:
-            modified_frames[frame_index] = strip_outer_position(
-                positioned_frame
+            use_position_checkpoint = (
+                frame_index < len(frames)
+                and has_outer_position(frames[frame_index])
+                and should_apply_ground_position_checkpoint(
+                    samples,
+                    times_ms,
+                    target_ms,
+                    last_position_checkpoint_ms,
+                )
             )
+
+            if use_position_checkpoint:
+                route_x, route_y, route_z = resample_position_at_ms(
+                    samples,
+                    times_ms,
+                    target_ms,
+                )
+                modified_frames[frame_index] = patch_outer_position(
+                    positioned_frame,
+                    route_x,
+                    route_y,
+                    route_z,
+                )
+                last_position_checkpoint_ms = target_ms
+            else:
+                modified_frames[frame_index] = strip_outer_position(
+                    positioned_frame
+                )
 
         previous_button_mask = current_button_mask
 
