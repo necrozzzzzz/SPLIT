@@ -3,8 +3,8 @@ use std::{
     io::Write,
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
-        mpsc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -44,6 +44,13 @@ struct RouteButtons {
     jump: bool,
     crouch: bool,
     dash: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct RouteInputEvent {
+    t_ms: f64,
+    buttons: RouteButtons,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -92,6 +99,9 @@ pub struct RouteRecording {
     velocity_source: &'static str,
     view_angles_source: &'static str,
     buttons_source: &'static str,
+    input_event_source: &'static str,
+    input_event_count: usize,
+    input_events: Vec<RouteInputEvent>,
     sampling_stats: SamplingStats,
     #[serde(skip_serializing_if = "Option::is_none")]
     stop_reason: Option<String>,
@@ -212,6 +222,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
                         started_at_text,
                         started_at.elapsed().as_secs_f64() * 1_000.0,
                         vec![first],
+                        Vec::new(),
                         Some(error.clone()),
                         0,
                     );
@@ -372,6 +383,49 @@ fn run_worker(
     let mut stop_reason = None;
     let mut missed_deadlines = 0_u64;
 
+    // Input transitions are captured independently from telemetry. The old
+    // ~60 Hz telemetry loop could observe a key only after Deadlock had
+    // already consumed it (especially buffered jump/crouch during mantle).
+    let input_events: Arc<Mutex<Vec<RouteInputEvent>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let input_running = Arc::new(AtomicBool::new(true));
+
+    {
+        let initial_buttons = capture_route_buttons();
+        if let Ok(mut events) = input_events.lock() {
+            events.push(RouteInputEvent {
+                t_ms: started_at.elapsed().as_secs_f64() * 1_000.0,
+                buttons: initial_buttons,
+            });
+        }
+    }
+
+    let input_events_worker = input_events.clone();
+    let input_running_worker = input_running.clone();
+    let input_started_at = started_at;
+    let input_thread = thread::Builder::new()
+        .name("split-route-input-recorder".to_string())
+        .spawn(move || {
+            let mut previous = capture_route_buttons();
+
+            while input_running_worker.load(Ordering::Acquire) {
+                let buttons = capture_route_buttons();
+
+                if buttons != previous {
+                    if let Ok(mut events) = input_events_worker.lock() {
+                        events.push(RouteInputEvent {
+                            t_ms: input_started_at.elapsed().as_secs_f64() * 1_000.0,
+                            buttons,
+                        });
+                    }
+                    previous = buttons;
+                }
+
+                thread::sleep(Duration::from_millis(1));
+            }
+        })
+        .ok();
+
     loop {
         let now = Instant::now();
         if now < next_sample {
@@ -416,11 +470,21 @@ fn run_worker(
         missed_deadlines += advance_deadline(&mut next_sample, Instant::now());
     }
 
+    input_running.store(false, Ordering::Release);
+    if let Some(handle) = input_thread {
+        let _ = handle.join();
+    }
+    let captured_input_events = input_events
+        .lock()
+        .map(|events| events.clone())
+        .unwrap_or_default();
+
     let duration_ms = started_at.elapsed().as_secs_f64() * 1_000.0;
     let recording = finish_recording(
         started_at_text,
         duration_ms,
         samples,
+        captured_input_events,
         stop_reason.clone(),
         missed_deadlines,
     );
@@ -570,13 +634,14 @@ fn finish_recording(
     started_at: String,
     duration_ms: f64,
     samples: Vec<RouteSample>,
+    input_events: Vec<RouteInputEvent>,
     stop_reason: Option<String>,
     missed_deadlines: u64,
 ) -> RouteRecording {
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 3,
+        version: 4,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -584,7 +649,10 @@ fn finish_recording(
         position_source: "CGameSceneNode::m_vecAbsOrigin",
         velocity_source: "C_BaseEntity::m_vecAbsVelocity",
         view_angles_source: "C_CitadelPlayerPawn::m_angClientCamera",
-        buttons_source: "Win32 GetAsyncKeyState: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
+        buttons_source: "Telemetry samples keep a compatibility snapshot of Win32 GetAsyncKeyState buttons",
+        input_event_source: "Dedicated ~1 ms GetAsyncKeyState transition recorder: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
+        input_event_count: input_events.len(),
+        input_events,
         sampling_stats,
         stop_reason,
         samples,
@@ -780,6 +848,7 @@ mod tests {
             "2026-10-06T12:00:00.000Z".to_string(),
             40.0,
             samples,
+            Vec::new(),
             None,
             2,
         );
@@ -797,6 +866,7 @@ mod tests {
             "2026-10-06T12:00:00.000Z".to_string(),
             25.5,
             vec![valid_sample(0.0), valid_sample(17.0)],
+            Vec::new(),
             None,
             0,
         );
