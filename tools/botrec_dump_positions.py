@@ -85,30 +85,30 @@ def extract_command_tick(frame):
     return None
 
 
-def extract_position_delta(frame):
+def extract_position_state(frame):
     """
-    outer.field2 = delta de position natif.
+    outer.field2 = état de position natif.
     Sous-champs float32:
-      field1 = X
-      field2 = Y
-      field3 = Z
+      field1 = X absolu
+      field2 = Y absolu
+      field3 = Z absolu
 
-    Un axe absent reste inchangé.
+    Un axe absent conserve sa dernière valeur.
     """
     for field, wire, start, end in parse_fields(frame):
         if field != 2 or wire != 2:
             continue
 
         payload = frame[start:end]
-        delta = [0.0, 0.0, 0.0]
+        values = [0.0, 0.0, 0.0]
         present = [False, False, False]
 
         for pf, pw, ps, pe in parse_fields(payload):
             if pw == 5 and pf in (1, 2, 3):
-                delta[pf - 1] = struct.unpack_from("<f", payload, ps)[0]
+                values[pf - 1] = struct.unpack_from("<f", payload, ps)[0]
                 present[pf - 1] = True
 
-        return tuple(delta), tuple(present), payload.hex(" ")
+        return tuple(values), tuple(present), payload.hex(" ")
 
     return None, (False, False, False), ""
 
@@ -140,17 +140,17 @@ def main():
 
     for frame_index, frame in enumerate(frames):
         tick = extract_command_tick(frame)
-        delta, present, raw_hex = extract_position_delta(frame)
-        has_position = delta is not None
+        values, present, raw_hex = extract_position_state(frame)
+        has_position = values is not None
 
         if has_position:
             correction_count += 1
-            if any(abs(v) > 1e-8 for v in delta):
+            if any(present):
                 nonzero_count += 1
 
             for axis in range(3):
                 if present[axis]:
-                    current[axis] += delta[axis]
+                    current[axis] = values[axis]
 
         rows.append({
             "frame": frame_index,
@@ -160,9 +160,9 @@ def main():
             "has_x": int(present[0]),
             "has_y": int(present[1]),
             "has_z": int(present[2]),
-            "delta_x": "" if not has_position else f"{delta[0]:.6f}",
-            "delta_y": "" if not has_position else f"{delta[1]:.6f}",
-            "delta_z": "" if not has_position else f"{delta[2]:.6f}",
+            "value_x": "" if not has_position else f"{values[0]:.6f}",
+            "value_y": "" if not has_position else f"{values[1]:.6f}",
+            "value_z": "" if not has_position else f"{values[2]:.6f}",
             "reconstructed_x": f"{current[0]:.6f}",
             "reconstructed_y": f"{current[1]:.6f}",
             "reconstructed_z": f"{current[2]:.6f}",
@@ -174,7 +174,7 @@ def main():
     fieldnames = [
         "frame", "t_ms", "tick",
         "has_position", "has_x", "has_y", "has_z",
-        "delta_x", "delta_y", "delta_z",
+        "value_x", "value_y", "value_z",
         "reconstructed_x", "reconstructed_y", "reconstructed_z",
         "raw_position_payload_hex",
     ]
@@ -199,8 +199,8 @@ def main():
     print(f"CSV          : {OUTPUT_PATH}")
     print()
     print(
-        "Le CSV cumule les deltas outer.field2 "
-        "depuis la position de spawn du header."
+        "Le CSV traite outer.field2 comme un état ABSOLU par axe. "
+        "Un axe absent conserve sa dernière valeur."
     )
 
 
