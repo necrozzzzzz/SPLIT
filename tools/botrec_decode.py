@@ -69,8 +69,32 @@ def hex_dump(data: bytes, width=16):
 
 
 def main():
-    if len(sys.argv) > 1:
-        code = Path(sys.argv[1]).read_text(
+    args = sys.argv[1:]
+    out_dir = Path("botrec_debug")
+    input_path = None
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+
+        if arg == "--out-dir":
+            if i + 1 >= len(args):
+                raise SystemExit("--out-dir attend un dossier")
+            out_dir = Path(args[i + 1])
+            i += 2
+            continue
+
+        if input_path is not None:
+            raise SystemExit(
+                "Usage: py tools\\botrec_decode.py "
+                "[BOTREC.txt] [--out-dir dossier]"
+            )
+
+        input_path = Path(arg)
+        i += 1
+
+    if input_path is not None:
+        code = input_path.read_text(
             encoding="utf-8"
         ).strip()
     else:
@@ -78,8 +102,7 @@ def main():
 
     header, packed, decompressed = decode_botrec(code)
 
-    out_dir = Path("botrec_debug")
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     (out_dir / "packed.bin").write_bytes(packed)
     (out_dir / "decoded.bin").write_bytes(decompressed)
@@ -96,9 +119,9 @@ def main():
     print(f"[BOTREC] decompressed = {len(decompressed)} bytes")
     print()
     print("Créé :")
-    print("  botrec_debug\\packed.bin")
-    print("  botrec_debug\\decoded.bin")
-    print("  botrec_debug\\decoded_hex.txt")
+    print(f"  {out_dir}\\packed.bin")
+    print(f"  {out_dir}\\decoded.bin")
+    print(f"  {out_dir}\\decoded_hex.txt")
 
 
 if __name__ == "__main__":
