@@ -19,6 +19,8 @@ BOTREC_HZ = 64.0
 # the wall instead of consuming it as an air/double jump.
 AIRBORNE_JUMP_LEAD_MS = 1000.0 / BOTREC_HZ
 WALLJUMP_APPROACH_WINDOW_MS = 140.0
+WALLJUMP_CONTACT_HOLD_MS = 70.0
+WALLJUMP_CONTACT_LOOKBACK_MS = 140.0
 
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
@@ -1055,6 +1057,109 @@ def approaching_airborne_jump(
     return False
 
 
+def walljump_contact_hold_movement(
+    samples,
+    times_ms,
+    target_ms,
+):
+    """
+    Juste avant un wall-jump, conserve la dernière direction latérale
+    univoque utilisée pour ENTRER dans le mur.
+
+    Dans le test A/B:
+    - wall-jump qui marche: RIGHT reste seul jusqu'au jump;
+    - wall-jump qui rate: RIGHT devient LEFT+RIGHT ~50 ms avant le jump,
+      puis RIGHT est relâché exactement au jump.
+
+    Ce changement peut laisser le pawn se décoller du mur avant que le
+    jump ne soit traité. On maintient donc la dernière direction latérale
+    stable jusqu'à la frame du jump, puis on rend la main aux inputs réels.
+    """
+    start_index, _ = route_sample_at_ms(
+        samples,
+        times_ms,
+        target_ms,
+    )
+
+    end_ms = min(
+        target_ms + WALLJUMP_APPROACH_WINDOW_MS,
+        times_ms[-1],
+    )
+    end_index, _ = route_sample_at_ms(
+        samples,
+        times_ms,
+        end_ms,
+    )
+
+    jump_index = None
+
+    for index in range(max(1, start_index), end_index + 1):
+        current_buttons = samples[index].get("buttons", {})
+        previous_buttons = samples[index - 1].get("buttons", {})
+
+        if (
+            bool(current_buttons.get("jump"))
+            and not bool(previous_buttons.get("jump"))
+        ):
+            previous_velocity = samples[index - 1].get(
+                "velocity",
+                [0.0, 0.0, 0.0],
+            )
+            previous_vz = (
+                float(previous_velocity[2])
+                if len(previous_velocity) >= 3
+                else 0.0
+            )
+
+            if previous_vz < -20.0:
+                jump_index = index
+                break
+
+    if jump_index is None:
+        return None
+
+    jump_time = times_ms[jump_index]
+
+    if target_ms < jump_time - WALLJUMP_CONTACT_HOLD_MS:
+        return None
+
+    # Do not extend the held direction after the jump edge.
+    if target_ms > jump_time:
+        return None
+
+    lookback_time = max(
+        times_ms[0],
+        jump_time - WALLJUMP_CONTACT_LOOKBACK_MS,
+    )
+    lookback_index, _ = route_sample_at_ms(
+        samples,
+        times_ms,
+        lookback_time,
+    )
+
+    # Search backwards for the last sample with exactly one lateral key.
+    for index in range(jump_index - 1, lookback_index - 1, -1):
+        buttons = samples[index].get("buttons", {})
+        left_down = bool(buttons.get("left"))
+        right_down = bool(buttons.get("right"))
+
+        if left_down == right_down:
+            continue
+
+        forward = (
+            (1.0 if buttons.get("forward") else 0.0)
+            - (1.0 if buttons.get("back") else 0.0)
+        )
+        left = (
+            (1.0 if left_down else 0.0)
+            - (1.0 if right_down else 0.0)
+        )
+
+        return forward, left
+
+    return None
+
+
 def movement_from_recorded_velocity_direction(
     sample,
     yaw_degrees,
@@ -1434,6 +1539,10 @@ def main():
         "(recorded velocity direction)"
     )
     print(
+        "Wall-jump contact: hold last single lateral input "
+        f"for {WALLJUMP_CONTACT_HOLD_MS:.0f} ms through jump edge"
+    )
+    print(
         "Wall-jump buttons : directional bits stripped during approach"
     )
     print(f"Timing      : {timing_source}")
@@ -1588,7 +1697,16 @@ def main():
             target_ms,
         )
 
-        if (
+        contact_hold = walljump_contact_hold_movement(
+            samples,
+            times_ms,
+            target_ms,
+        )
+
+        if contact_hold is not None:
+            forward, left = contact_hold
+
+        elif (
             movement_input is not None
             and approaching_airborne_jump(
                 samples,
