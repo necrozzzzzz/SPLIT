@@ -300,6 +300,18 @@ def patch_frame_tick(frame, tick):
     return bytes(out)
 
 
+def has_outer_position(frame):
+    """
+    True when the native BOTREC frame contains outer.field2 position state.
+    Native recordings use this field sparsely/statefully rather than on
+    every single frame.
+    """
+    for field, wire, start, end in parse_fields(frame):
+        if field == 2 and wire == 2:
+            return True
+    return False
+
+
 def strip_outer_position(frame):
     """
     Supprime outer.field2 (position optionnelle) d'une frame synthétique.
@@ -1357,7 +1369,7 @@ def main():
     print(f"Durée route : {route_duration_ms / 1000.0:.3f} s")
     print(f"BOTREC Hz   : {BOTREC_HZ:.1f}")
     print(f"Timing      : {timing_source}")
-    print("Position    : no per-frame XYZ injection (native physics)")
+    print("Position    : SPLIT XYZ only on native BOTREC position frames")
     print(
         "Input timing: "
         + (
@@ -1573,14 +1585,30 @@ def main():
             left,
         )
 
-        # Do not inject an absolute outer.field2 on every frame.
-        # Native BOTREC position messages are sparse/stateful, and forcing
-        # SPLIT XYZ every 15.625 ms can fight the game's movement/collision
-        # simulation after mantle/slide transitions. The spawn header still
-        # anchors playback; the route itself is driven by usercmd inputs.
-        modified_frames[frame_index] = strip_outer_position(
-            positioned_frame
-        )
+        # Preserve the native BOTREC cadence for outer.field2 instead of
+        # forcing XYZ every frame. When the template naturally carries a
+        # position state on this frame, replace it with the SPLIT route's
+        # absolute XYZ. Otherwise leave the frame position-less and let
+        # Deadlock simulate normally.
+        if (
+            frame_index < len(frames)
+            and has_outer_position(frames[frame_index])
+        ):
+            route_x, route_y, route_z = resample_position_at_ms(
+                samples,
+                times_ms,
+                target_ms,
+            )
+            modified_frames[frame_index] = patch_outer_position(
+                positioned_frame,
+                route_x,
+                route_y,
+                route_z,
+            )
+        else:
+            modified_frames[frame_index] = strip_outer_position(
+                positioned_frame
+            )
 
         previous_button_mask = current_button_mask
 
