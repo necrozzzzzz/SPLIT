@@ -18,6 +18,7 @@ BOTREC_HZ = 64.0
 # native BOTREC tick so Deadlock sees jump while the pawn is still touching
 # the wall instead of consuming it as an air/double jump.
 AIRBORNE_JUMP_LEAD_MS = 1000.0 / BOTREC_HZ
+WALLJUMP_APPROACH_WINDOW_MS = 140.0
 
 # Button masks validated from native Deadlock BOTREC recordings.
 BUTTON_CROUCH = 0x0000000000000004
@@ -973,6 +974,92 @@ def route_movement_at_ms(samples, times_ms, target_ms):
     return forward, left
 
 
+def approaching_airborne_jump(
+    samples,
+    times_ms,
+    target_ms,
+):
+    """
+    Détecte un front montant de jump imminent pendant une phase aérienne /
+    descendante. Sert uniquement à stabiliser l'approche d'un wall-jump.
+    """
+    start_index, _ = route_sample_at_ms(
+        samples,
+        times_ms,
+        target_ms,
+    )
+
+    end_ms = min(
+        target_ms + WALLJUMP_APPROACH_WINDOW_MS,
+        times_ms[-1],
+    )
+    end_index, _ = route_sample_at_ms(
+        samples,
+        times_ms,
+        end_ms,
+    )
+
+    for index in range(max(1, start_index), end_index + 1):
+        current_buttons = samples[index].get("buttons", {})
+        previous_buttons = samples[index - 1].get("buttons", {})
+
+        jump_now = bool(current_buttons.get("jump"))
+        jump_before = bool(previous_buttons.get("jump"))
+
+        if not jump_now or jump_before:
+            continue
+
+        previous_velocity = samples[index - 1].get(
+            "velocity",
+            [0.0, 0.0, 0.0],
+        )
+        previous_vz = (
+            float(previous_velocity[2])
+            if len(previous_velocity) >= 3
+            else 0.0
+        )
+
+        if previous_vz < -20.0:
+            return True
+
+    return False
+
+
+def movement_from_recorded_velocity_direction(
+    sample,
+    yaw_degrees,
+):
+    """
+    Direction de déplacement réellement observée, normalisée à pleine
+    amplitude. Contrairement aux touches digitales +/-1, cela conserve
+    l'angle réel d'approche résultant de l'inertie juste avant un wall-jump.
+    """
+    velocity = sample.get("velocity", [0.0, 0.0, 0.0])
+    vx = float(velocity[0])
+    vy = float(velocity[1])
+
+    speed = math.hypot(vx, vy)
+    if speed <= DEADZONE_SPEED:
+        return None
+
+    nx = vx / speed
+    ny = vy / speed
+
+    yaw = math.radians(yaw_degrees)
+    forward_x = math.cos(yaw)
+    forward_y = math.sin(yaw)
+    left_x = -math.sin(yaw)
+    left_y = math.cos(yaw)
+
+    forward = nx * forward_x + ny * forward_y
+    left = nx * left_x + ny * left_y
+
+    return (
+        max(-1.0, min(1.0, forward)),
+        max(-1.0, min(1.0, left)),
+    )
+
+
 def horizontal_speed(sample):
     vel = sample.get("velocity")
 
@@ -1311,6 +1398,11 @@ def main():
         f"{AIRBORNE_JUMP_LEAD_MS:.3f} ms "
         "(1 BOTREC frame, airborne press only)"
     )
+    print(
+        "Wall-jump approach: "
+        f"{WALLJUMP_APPROACH_WINDOW_MS:.0f} ms "
+        "(recorded velocity direction)"
+    )
     print(f"Timing      : {timing_source}")
     print("Position    : absolute XYZ on every BOTREC frame")
     print(f"Speed ref   : {speed_ref:.2f}")
@@ -1463,8 +1555,34 @@ def main():
             target_ms,
         )
 
-        if movement_input is not None:
+        if (
+            movement_input is not None
+            and approaching_airborne_jump(
+                samples,
+                times_ms,
+                target_ms,
+            )
+        ):
+            _, source_sample = route_sample_at_ms(
+                samples,
+                times_ms,
+                target_ms,
+            )
+            walljump_direction = (
+                movement_from_recorded_velocity_direction(
+                    source_sample,
+                    route_yaw,
+                )
+            )
+
+            if walljump_direction is not None:
+                forward, left = walljump_direction
+            else:
+                forward, left = movement_input
+
+        elif movement_input is not None:
             forward, left = movement_input
+
         else:
             forward, left = movement_from_velocity(
                 vx,
