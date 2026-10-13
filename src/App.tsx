@@ -1216,6 +1216,9 @@ function App() {
 
   const [ghostPlaybackStatus, setGhostPlaybackStatus] =
     useState<GhostPlaybackStatus>(EMPTY_GHOST_PLAYBACK_STATUS);
+  const [botDiagnosticIndex, setBotDiagnosticIndex] = useState("");
+  const [botDiagnosticBusy, setBotDiagnosticBusy] = useState(false);
+  const [botDiagnosticResult, setBotDiagnosticResult] = useState<string | null>(null);
   const [ghostPlaybackBusy, setGhostPlaybackBusy] = useState(false);
   const [ghostLoop, setGhostLoop] = useState(false);
 
@@ -1325,6 +1328,34 @@ function App() {
       setRouteRecorderBusy(false);
     }
   }, []);
+
+  const recordBotDiagnostic = useCallback(async () => {
+    const entityIndex = Number(botDiagnosticIndex);
+    if (!Number.isInteger(entityIndex) || entityIndex < 1 || entityIndex > 32767) {
+      setError("Enter the bot pawn entity index (1–32767), not your own entity.");
+      return;
+    }
+    const filePath = await save({
+      defaultPath: "split-bot-replay-diagnostic.csv",
+      filters: [{ name: "BOTREC bot motion trace", extensions: ["csv"] }],
+    });
+    if (filePath === null) return;
+    setBotDiagnosticBusy(true);
+    setBotDiagnosticResult(null);
+    setError(null);
+    try {
+      const summary = await invoke<string>("record_bot_replay_diagnostic", {
+        entityIndex,
+        durationMs: 15000,
+        outputPath: filePath,
+      });
+      setBotDiagnosticResult(summary);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBotDiagnosticBusy(false);
+    }
+  }, [botDiagnosticIndex]);
 
   const loadGhostRoute = useCallback(async () => {
     setGhostPlaybackBusy(true);
@@ -8267,6 +8298,44 @@ function App() {
                 )}
               </div>
             </>
+          )}
+        </div>
+
+        <div className="route-recorder-card">
+          <div className="route-recorder-heading">
+            <div>
+              <p className="label">DIAGNOSTIC / PRACTICE ONLY</p>
+              <h3>BOTREC Bot Motion Trace</h3>
+            </div>
+            <span>Read-only, 15 s</span>
+          </div>
+          <p className="route-recorder-status">
+            Supply the entity index of the BOTREC bot (not your player).
+            Start tracing immediately before the bot replay; this does not
+            start or synchronize BOTREC automatically.
+          </p>
+          <div className="route-recorder-actions">
+            <input
+              type="number"
+              min={1}
+              max={32767}
+              placeholder="Bot pawn entity index"
+              aria-label="Bot pawn entity index"
+              value={botDiagnosticIndex}
+              onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
+              disabled={botDiagnosticBusy}
+            />
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={() => void recordBotDiagnostic()}
+              disabled={botDiagnosticBusy || !status.deadlockRunning || status.matchSafetyLocked}
+            >
+              {botDiagnosticBusy ? "Tracing bot..." : "Record bot trace (15 s)"}
+            </button>
+          </div>
+          {botDiagnosticResult && (
+            <p className="route-recorder-status">{botDiagnosticResult}</p>
           )}
         </div>
 
