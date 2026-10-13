@@ -1736,6 +1736,7 @@ def main():
     airborne_xy_guide = False
     mechanics_command_view = False
     force_dash_left = False
+    delay_first_crouch_ms = 0.0
 
     i = 1
     while i < len(args):
@@ -1761,6 +1762,15 @@ def main():
         if arg == "--mechanics-command-view":
             mechanics_command_view = True
             i += 1
+            continue
+
+        if arg == "--delay-first-crouch-ms":
+            if i + 1 >= len(args):
+                raise SystemExit("--delay-first-crouch-ms attend un nombre de ms")
+            delay_first_crouch_ms = float(args[i + 1])
+            if not math.isfinite(delay_first_crouch_ms) or delay_first_crouch_ms < 0:
+                raise SystemExit("Délai crouch invalide")
+            i += 2
             continue
 
         if arg == "--force-dash-left":
@@ -1806,6 +1816,26 @@ def main():
         route_meta,
         route_time_zero,
     )
+
+    first_crouch_start_ms = None
+    first_crouch_release_ms = None
+    if delay_first_crouch_ms:
+        if not input_events:
+            raise RuntimeError("Le test exige des inputEvents.")
+        was_crouching = False
+        for event, event_ms in zip(input_events, input_event_times_ms):
+            crouching = bool(route_button_mask(event) & BUTTON_CROUCH)
+            if first_crouch_start_ms is None and crouching and not was_crouching:
+                first_crouch_start_ms = event_ms
+            elif first_crouch_start_ms is not None and was_crouching and not crouching:
+                first_crouch_release_ms = event_ms
+                break
+            was_crouching = crouching
+        if first_crouch_start_ms is None or first_crouch_release_ms is None:
+            raise RuntimeError("Premier appui/relâchement Ctrl introuvable.")
+        if first_crouch_start_ms + delay_first_crouch_ms >= first_crouch_release_ms:
+            raise RuntimeError("Le délai dépasse la durée du premier Ctrl.")
+
 
     detected_chain_anchors = (
         find_route_first_chain_anchors(route_meta)
@@ -1916,6 +1946,12 @@ def main():
         print(
             "Dash lateral: force LEFT/Q while DASH is held "
             "(RIGHT/D -> LEFT/Q)"
+        )
+    if delay_first_crouch_ms:
+        print(
+            f"TEST first Ctrl: {first_crouch_start_ms:.1f} -> "
+            f"{first_crouch_start_ms + delay_first_crouch_ms:.1f} ms "
+            f"(release unchanged at {first_crouch_release_ms:.1f} ms)"
         )
     print(f"Samples     : {len(samples)}")
     print(
@@ -2173,6 +2209,14 @@ def main():
             input_event_times_ms,
             target_ms,
         )
+
+        # Isolated timing experiment: postpone only the first Ctrl press.
+        if (
+            delay_first_crouch_ms
+            and first_crouch_start_ms <= target_ms
+            < first_crouch_start_ms + delay_first_crouch_ms
+        ):
+            current_button_mask &= ~BUTTON_CROUCH
 
         # Diagnostic/fix for the final air-dash in this route.
         # The recorded JSON itself contains RIGHT + DASH even though the
