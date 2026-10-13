@@ -18,6 +18,18 @@ if (!existsSync(source)) {
 // Deadem's default configuration builds full demo state, including string
 // tables and entities. Some local Deadlock demos contain records that the
 // current release cannot decode. We need neither of those for usercmd.
+// Deadem always processes string-table updates even with an allowlist.
+// For this usercmd-only probe, their state is irrelevant. Bypass the
+// unsupported CombatLogNames update path entirely, rather than catching a
+// half-applied update and corrupting the entity decoder.
+const { default: StringTableHandler } = await import(
+  "../node_modules/@deademx/engine/src/handlers/StringTableHandler.js"
+);
+let skippedStringTableUpdates = 0;
+StringTableHandler.prototype.handleUpdate = function () {
+  skippedStringTableUpdates++;
+};
+
 const parser = new Parser(new ParserConfiguration({
   messagePacketTypes: [MessagePacketType.SVC_USER_COMMANDS],
 }));
@@ -68,6 +80,7 @@ try {
 console.log(JSON.stringify({
   file: source,
   messagePackets,
+  skippedStringTableUpdates,
   userCmdPackets,
   userCmdEvents,
   slots: Object.fromEntries([...perSlot].sort((a,b) => Number(a[0])-Number(b[0]))),
