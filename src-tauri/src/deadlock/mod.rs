@@ -6,6 +6,7 @@ pub(crate) mod deadlock_state;
 pub(crate) mod district;
 mod history;
 mod ghost_playback;
+mod bot_replay_diagnostic;
 mod hotkeys;
 mod interfaces;
 pub(crate) mod match_safety;
@@ -1692,6 +1693,14 @@ pub fn shutdown_background_services() {
     if let Err(error) = watcher::stop() {
         eprintln!("[SPLIT] Could not stop console watcher cleanly: {error}");
     }
+}
+
+pub fn record_bot_replay_diagnostic(
+    entity_index: u32,
+    duration_ms: u64,
+    output_path: String,
+) -> Result<String, String> {
+    bot_replay_diagnostic::record_bot_replay_diagnostic(entity_index, duration_ms, output_path)
 }
 
 pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
