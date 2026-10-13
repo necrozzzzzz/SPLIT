@@ -676,12 +676,16 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
 
 def patch_frame_movement(frame, forward, left):
     """
-    Ajoute forwardmove/leftmove à la FIN du command message.
+    Remplace complètement les axes de mouvement du template.
 
-    Le moteur utilise les dernières valeurs présentes :
-    c'est exactement le principe validé avec notre test carré.
+    command.field5 = forwardmove
+    command.field6 = leftmove
+    command.field7 = upmove
+
+    Les anciennes valeurs 5/6/7 du BOTREC natif sont supprimées avant
+    d'écrire les axes SPLIT. Ça évite qu'un upmove ou un axe hérité du
+    template FORWARD_JUMP_BACK_JUMP pollue la route reconstruite.
     """
-
     out = bytearray()
     offset = 0
     patched = False
@@ -692,24 +696,20 @@ def patch_frame_movement(frame, forward, left):
 
         field = key >> 3
         wire = key & 7
-
         offset = after_key
 
         if wire == 0:
             _, end = read_varint(frame, offset)
-
             out += frame[key_start:end]
             offset = end
 
         elif wire == 1:
             end = offset + 8
-
             out += frame[key_start:end]
             offset = end
 
         elif wire == 5:
             end = offset + 4
-
             out += frame[key_start:end]
             offset = end
 
@@ -719,20 +719,49 @@ def patch_frame_movement(frame, forward, left):
         elif wire == 2:
             size, payload_start = read_varint(frame, offset)
             payload_end = payload_start + size
-
             payload = frame[payload_start:payload_end]
 
             if field == 1 and not patched:
-                # field 5 = forwardmove
-                # field 6 = leftmove
+                command_out = bytearray()
+                command_offset = 0
 
-                payload += float_field(5, forward)
-                payload += float_field(6, left)
+                while command_offset < len(payload):
+                    cmd_key_start = command_offset
+                    cmd_key, cmd_after_key = read_varint(payload, command_offset)
+                    cmd_field = cmd_key >> 3
+                    cmd_wire = cmd_key & 7
+                    command_offset = cmd_after_key
+
+                    if cmd_wire == 0:
+                        _, cmd_end = read_varint(payload, command_offset)
+                    elif cmd_wire == 1:
+                        cmd_end = command_offset + 8
+                    elif cmd_wire == 2:
+                        cmd_size, cmd_payload_start = read_varint(payload, command_offset)
+                        cmd_end = cmd_payload_start + cmd_size
+                    elif cmd_wire == 5:
+                        cmd_end = command_offset + 4
+                    elif cmd_wire == 7:
+                        cmd_end = command_offset
+                    else:
+                        raise RuntimeError(
+                            f"wire command {cmd_wire} non supporté"
+                        )
+
+                    if cmd_field not in (5, 6, 7):
+                        command_out += payload[cmd_key_start:cmd_end]
+
+                    command_offset = cmd_end
+
+                command_out += float_field(5, forward)
+                command_out += float_field(6, left)
+                # Explicitly clear upmove so no vertical axis from the
+                # template survives.
+                command_out += clear_field(7)
 
                 out += encode_varint(key)
-                out += encode_varint(len(payload))
-                out += payload
-
+                out += encode_varint(len(command_out))
+                out += command_out
                 patched = True
 
             else:
@@ -1238,7 +1267,10 @@ def main():
     # - route <= template : on tronque comme avant.
     # - route > template  : on ajoute des frames synthétiques à partir
     #   d'une frame native propre, avec ticks continus.
-    modified_frames = list(frames[:min(route_frame_count, len(frames))])
+    modified_frames = [
+        strip_outer_position(frame)
+        for frame in frames[:min(route_frame_count, len(frames))]
+    ]
 
     synthetic_count = max(
         0,
