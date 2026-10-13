@@ -55,6 +55,14 @@ struct RouteInputEvent {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+struct RouteCameraEvent {
+    t_ms: f64,
+    pitch: f32,
+    yaw: f32,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 struct RouteSampleDiagnostics {
     scene_node: u64,
     local_origin: [f32; 3],
@@ -102,6 +110,9 @@ pub struct RouteRecording {
     input_event_source: &'static str,
     input_event_count: usize,
     input_events: Vec<RouteInputEvent>,
+    camera_event_source: &'static str,
+    camera_event_count: usize,
+    camera_events: Vec<RouteCameraEvent>,
     sampling_stats: SamplingStats,
     #[serde(skip_serializing_if = "Option::is_none")]
     stop_reason: Option<String>,
@@ -223,6 +234,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
                         started_at.elapsed().as_secs_f64() * 1_000.0,
                         vec![first],
                         Vec::new(),
+                        Vec::new(),
                         Some(error.clone()),
                         0,
                     );
@@ -233,6 +245,8 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
             };
             run_worker(
                 pid,
+                resolution,
+                route_schema,
                 reader,
                 first,
                 started_at,
@@ -370,6 +384,8 @@ pub(crate) fn shutdown() {
 
 fn run_worker(
     pid: u32,
+    resolution: pawn::PawnResolution,
+    route_schema: schema::RouteSchema,
     reader: pawn::PawnTelemetryReader,
     first: RouteSample,
     started_at: Instant,
@@ -425,6 +441,56 @@ fn run_worker(
             }
         })
         .ok();
+    let camera_events: Arc<Mutex<Vec<RouteCameraEvent>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let camera_running = Arc::new(AtomicBool::new(true));
+
+    let camera_thread = pawn::PawnTelemetryReader::new(
+        pid,
+        resolution,
+        route_schema,
+    )
+    .ok()
+    .and_then(|camera_reader| {
+        let camera_events_worker = camera_events.clone();
+        let camera_running_worker = camera_running.clone();
+        let camera_started_at = started_at;
+
+        thread::Builder::new()
+            .name("split-route-camera-recorder".to_string())
+            .spawn(move || {
+                let mut previous: Option<[f32; 2]> = None;
+
+                while camera_running_worker.load(Ordering::Acquire) {
+                    if let Ok([pitch, yaw]) =
+                        camera_reader.read_camera_angles_fast()
+                    {
+                        let changed = previous.is_none_or(|last| {
+                            last[0].to_bits() != pitch.to_bits()
+                                || last[1].to_bits() != yaw.to_bits()
+                        });
+
+                        if changed {
+                            if let Ok(mut events) = camera_events_worker.lock() {
+                                events.push(RouteCameraEvent {
+                                    t_ms: camera_started_at
+                                        .elapsed()
+                                        .as_secs_f64()
+                                        * 1_000.0,
+                                    pitch,
+                                    yaw,
+                                });
+                            }
+                            previous = Some([pitch, yaw]);
+                        }
+                    }
+
+                    thread::sleep(Duration::from_millis(2));
+                }
+            })
+            .ok()
+    });
+
 
     loop {
         let now = Instant::now();
@@ -474,7 +540,16 @@ fn run_worker(
     if let Some(handle) = input_thread {
         let _ = handle.join();
     }
+    camera_running.store(false, Ordering::Release);
+    if let Some(handle) = camera_thread {
+        let _ = handle.join();
+    }
+
     let captured_input_events = input_events
+        .lock()
+        .map(|events| events.clone())
+        .unwrap_or_default();
+    let captured_camera_events = camera_events
         .lock()
         .map(|events| events.clone())
         .unwrap_or_default();
@@ -485,6 +560,7 @@ fn run_worker(
         duration_ms,
         samples,
         captured_input_events,
+        captured_camera_events,
         stop_reason.clone(),
         missed_deadlines,
     );
@@ -635,13 +711,14 @@ fn finish_recording(
     duration_ms: f64,
     samples: Vec<RouteSample>,
     input_events: Vec<RouteInputEvent>,
+    camera_events: Vec<RouteCameraEvent>,
     stop_reason: Option<String>,
     missed_deadlines: u64,
 ) -> RouteRecording {
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 4,
+        version: 5,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -653,6 +730,9 @@ fn finish_recording(
         input_event_source: "Dedicated ~1 ms GetAsyncKeyState transition recorder: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
         input_event_count: input_events.len(),
         input_events,
+        camera_event_source: "Dedicated ~2 ms m_angClientCamera transition recorder",
+        camera_event_count: camera_events.len(),
+        camera_events,
         sampling_stats,
         stop_reason,
         samples,
@@ -849,6 +929,7 @@ mod tests {
             40.0,
             samples,
             Vec::new(),
+            Vec::new(),
             None,
             2,
         );
@@ -866,6 +947,7 @@ mod tests {
             "2026-10-06T12:00:00.000Z".to_string(),
             25.5,
             vec![valid_sample(0.0), valid_sample(17.0)],
+            Vec::new(),
             Vec::new(),
             None,
             0,
