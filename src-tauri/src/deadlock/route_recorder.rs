@@ -445,51 +445,55 @@ fn run_worker(
         Arc::new(Mutex::new(Vec::new()));
     let camera_running = Arc::new(AtomicBool::new(true));
 
-    let camera_thread = pawn::PawnTelemetryReader::new(
-        pid,
-        resolution,
-        route_schema,
-    )
-    .ok()
-    .and_then(|camera_reader| {
-        let camera_events_worker = camera_events.clone();
-        let camera_running_worker = camera_running.clone();
-        let camera_started_at = started_at;
+    let camera_events_worker = camera_events.clone();
+    let camera_running_worker = camera_running.clone();
+    let camera_started_at = started_at;
 
-        thread::Builder::new()
-            .name("split-route-camera-recorder".to_string())
-            .spawn(move || {
-                let mut previous: Option<[f32; 2]> = None;
+    let camera_thread = thread::Builder::new()
+        .name("split-route-camera-recorder".to_string())
+        .spawn(move || {
+            // Open the read-only Deadlock process handle inside this thread.
+            // Windows HANDLE is represented as *mut c_void and therefore the
+            // PawnTelemetryReader itself is not Send; creating it here avoids
+            // moving that handle across thread boundaries.
+            let Ok(camera_reader) = pawn::PawnTelemetryReader::new(
+                pid,
+                resolution,
+                route_schema,
+            ) else {
+                return;
+            };
 
-                while camera_running_worker.load(Ordering::Acquire) {
-                    if let Ok([pitch, yaw]) =
-                        camera_reader.read_camera_angles_fast()
-                    {
-                        let changed = previous.is_none_or(|last| {
-                            last[0].to_bits() != pitch.to_bits()
-                                || last[1].to_bits() != yaw.to_bits()
-                        });
+            let mut previous: Option<[f32; 2]> = None;
 
-                        if changed {
-                            if let Ok(mut events) = camera_events_worker.lock() {
-                                events.push(RouteCameraEvent {
-                                    t_ms: camera_started_at
-                                        .elapsed()
-                                        .as_secs_f64()
-                                        * 1_000.0,
-                                    pitch,
-                                    yaw,
-                                });
-                            }
-                            previous = Some([pitch, yaw]);
+            while camera_running_worker.load(Ordering::Acquire) {
+                if let Ok([pitch, yaw]) =
+                    camera_reader.read_camera_angles_fast()
+                {
+                    let changed = previous.is_none_or(|last| {
+                        last[0].to_bits() != pitch.to_bits()
+                            || last[1].to_bits() != yaw.to_bits()
+                    });
+
+                    if changed {
+                        if let Ok(mut events) = camera_events_worker.lock() {
+                            events.push(RouteCameraEvent {
+                                t_ms: camera_started_at
+                                    .elapsed()
+                                    .as_secs_f64()
+                                    * 1_000.0,
+                                pitch,
+                                yaw,
+                            });
                         }
+                        previous = Some([pitch, yaw]);
                     }
-
-                    thread::sleep(Duration::from_millis(2));
                 }
-            })
-            .ok()
-    });
+
+                thread::sleep(Duration::from_millis(2));
+            }
+        })
+        .ok();
 
 
     loop {
