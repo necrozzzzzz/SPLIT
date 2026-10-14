@@ -569,6 +569,48 @@ pub(crate) fn resolve_first_other_citadel_pawn(
 }
 
 
+/// Enumerates all validated Citadel player pawns except the local player.
+/// Candidate indices are stable only for the current game session.
+pub(crate) fn list_other_citadel_pawns(
+    pid: u32,
+    identity_size: u32,
+    local_pawn: u64,
+) -> Result<Vec<u32>, String> {
+    let identity_size = validate_identity_size(identity_size)?;
+    let service = interfaces::find_interface(
+        pid, RESOURCE_SERVICE_MODULE, RESOURCE_SERVICE_INTERFACE,
+    )?.ok_or_else(|| format!("Exact interface {RESOURCE_SERVICE_INTERFACE} was not found"))?;
+    let process = open_process_read_only(pid)?;
+    let (client_base, client_size) = camera::find_module(pid, "client.dll")?;
+    let client_range = (client_base as u64, client_size as u64);
+    let entity_system = read_remote_u64(
+        process.0,
+        checked_add(service, RESOURCE_SERVICE_ENTITY_SYSTEM_OFFSET, "entity system")?,
+        "client entity system",
+    )?;
+    let chunks = read_chunks(process.0, entity_system)?;
+    let mut result = Vec::new();
+    for (chunk_index, chunk) in chunks.iter().copied().enumerate() {
+        if chunk == 0 { continue; }
+        let identities = read_exact(
+            process.0, chunk, identity_size * ENTITIES_PER_CHUNK, "entity identity chunk",
+        )?;
+        for slot in 0..ENTITIES_PER_CHUNK {
+            let index = chunk_index * ENTITIES_PER_CHUNK + slot;
+            let identity = identity_from_chunk(&identities, slot, identity_size)?;
+            if identity.instance == 0 || identity.instance == local_pawn
+                || identity_index(identity.handle) != Some(index) { continue; }
+            if validate_object_vtable(
+                process.0, identity.instance, Some("C_CitadelPlayerPawn"),
+                client_range, "other Citadel pawn",
+            ).is_ok() {
+                result.push(index as u32);
+            }
+        }
+    }
+    Ok(result)
+}
+
 pub(crate) fn resolve_entity_by_index(
     pid: u32,
     entity_index: u32,
