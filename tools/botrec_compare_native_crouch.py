@@ -45,14 +45,13 @@ def show(title, path):
     print(f"\\n=== {title} === frames={len(rows)} crouch_presses={len(presses)}")
     if not presses:
         return
-    for hit in presses[:3]:
+    for hit in presses[:5]:
         print(f"First crouch at frame {rows[hit][0]}, t≈{rows[hit][0]*1000/64:.1f} ms")
         print("frame held forward left up command_fields(field:wire_types) outer_fields")
         for row in rows[max(0, hit-8):min(len(rows), hit+9)]:
             idx, held, fwd, left, up, cmd_fields, outer_fields = row
             print(f"{idx:4d} 0x{held:016X} {fwd:+.3f} {left:+.3f} {up:+.3f} {cmd_fields} {outer_fields}")
-        # Only one transition for clarity; the native donor may contain other crouches.
-        break
+        print("---")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
