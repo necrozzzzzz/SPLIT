@@ -22,24 +22,24 @@ def interp(points, t):
             hi = mid
     a, b = points[lo], points[hi]
     f = (t - a[0]) / (b[0] - a[0]) if b[0] != a[0] else 0
-    return tuple(a[i] + f * (b[i] - a[i]) for i in (1, 2))
+    return tuple(a[i] + f * (b[i] - a[i]) for i in (1, 2, 3))
 
 def speed(points, t):
     a, b = interp(points, t - 50), interp(points, t + 50)
-    return (math.dist(a, b) * 10) if a and b else None
+    return (math.dist(a[:2], b[:2]) * 10) if a and b else None
 
 def compare(route_path, trace_path):
     route = json.loads(Path(route_path).read_text(encoding="utf-8"))
-    player = sorted((float(s["tMs"]), *map(float, s["position"][:2])) for s in route["samples"])
+    player = sorted((float(s["tMs"]), *map(float, s["position"][:3])) for s in route["samples"])
     with open(trace_path, newline="", encoding="utf-8-sig") as f:
         records = list(csv.DictReader(f))
-    bot = sorted((float(r["elapsed_ms"]), float(r["pos_x"]), float(r["pos_y"]))
+    bot = sorted((float(r["elapsed_ms"]), float(r["pos_x"]), float(r["pos_y"]), float(r["pos_z"]))
                  for r in records if not r.get("read_error") and r.get("pos_x") and r.get("pos_y"))
     if len(bot) < 20:
         raise ValueError("Not enough usable bot positions")
     # Find first long teleport back to the player's spawn position.
-    start = player[0][1:]
-    teleports = [t for t, x, y in bot
+    start = player[0][1:3]
+    teleports = [t for t, x, y, z in bot
                  if math.dist((x, y), start) < 2]
     if not teleports:
         raise ValueError("BOTREC spawn teleport not found in trace")
@@ -52,7 +52,7 @@ def compare(route_path, trace_path):
     early = [t for t in range(500, int(first_crouch) - 30, 20)]
     scored = []
     for offset in range(int(first_teleport) - 100, int(first_teleport) + 300):
-        errors = [math.dist(interp(player, t), interp(bot, t + offset))
+        errors = [math.dist(interp(player, t)[:2], interp(bot, t + offset)[:2])
                   for t in early if interp(player, t) and interp(bot, t + offset)]
         if len(errors) >= 5:
             errors.sort()
@@ -62,12 +62,12 @@ def compare(route_path, trace_path):
     residual, offset = min(scored)
     print(f"Early-walk aligned clock offset: +{offset} ms (median position error {residual:.1f} units)")
     print(f"First recorded Ctrl: {first_crouch:.1f} ms")
-    print("t_ms,player_speed_xy,bot_speed_xy,position_error_xy")
+    print("t_ms,player_speed_xy,bot_speed_xy,position_error_xy,player_z,bot_z,z_delta")
     for t in (600, 750, 800, 850, round(first_crouch), 900, 950, 1000, 1100, 1200):
         p, b = interp(player, t), interp(bot, t + offset)
         if p and b:
             ps, bs = speed(player, t), speed(bot, t + offset)
-            print(f"{t},{ps:.1f},{bs:.1f},{math.dist(p,b):.1f}")
+            print(f"{t},{ps:.1f},{bs:.1f},{math.dist(p[:2],b[:2]):.1f},{p[2]:.2f},{b[2]:.2f},{b[2]-p[2]:+.2f}")
     print("Note: velocities use 100-ms position differences; source telemetry may contain tearing.")
     print("Clock alignment is approximate, not a BOTREC tick synchronization.")
 
