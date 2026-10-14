@@ -2450,6 +2450,11 @@ def main():
             )
 
     print(
+        "Ground checkpoints in first 2s (ms): "
+        + (", ".join(str(t) for t in early_checkpoint_ms)
+           if early_checkpoint_ms else "none")
+    )
+    print(
         f"Transitions buttons : {button_transition_count}"
     )
 
