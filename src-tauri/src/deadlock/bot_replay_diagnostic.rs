@@ -48,7 +48,7 @@ pub fn record_bot_replay_diagnostic(
     let file = File::create(&output_path)
         .map_err(|e| format!("Cannot create diagnostic CSV: {e}"))?;
     let mut out = BufWriter::new(file);
-    writeln!(out, "elapsed_ms,entity_index,sim_tick,sim_time,pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,speed_xy,derived_speed_xy,derived_vel_x,derived_vel_y,read_error")
+    writeln!(out, "elapsed_ms,entity_index,sim_tick,sim_time,pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,speed_xy,derived_speed_xy,derived_vel_x,derived_vel_y,entity_flags,ground_handle,grounded_flag,read_error")
         .map_err(|e| e.to_string())?;
     let start = Instant::now();
     let interval = Duration::from_millis(16);
@@ -62,7 +62,7 @@ pub fn record_bot_replay_diagnostic(
         }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         match pawn::read_pawn_motion_at_index(pid, entity_index, route_schema) {
-            Ok((pos, vel, tick, sim_time)) => {
+            Ok((pos, vel, tick, sim_time, flags, ground)) => {
                 let speed = vel[0].hypot(vel[1]);
                 // Position-derived velocity is an independent cross-check of the
                 // schema velocity offset. Exclude teleports and tiny time deltas.
@@ -80,7 +80,10 @@ pub fn record_bot_replay_diagnostic(
                     Some((vx, vy)) => format!("{:.4},{:.4},{:.4}", vx.hypot(vy), vx, vy),
                     None => ",,".to_string(),
                 };
-                writeln!(out, "{elapsed:.3},{entity_index},{tick},{sim_time:.6},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{speed:.4},{derived_fields},",
+                let flags_value = flags.map(|v| v.to_string()).unwrap_or_default();
+                let ground_value = ground.map(|v| v.to_string()).unwrap_or_default();
+                let grounded = flags.map(|v| if v & 1 != 0 { "1" } else { "0" }).unwrap_or("");
+                writeln!(out, "{elapsed:.3},{entity_index},{tick},{sim_time:.6},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{speed:.4},{derived_fields},{flags_value},{ground_value},{grounded},",
                     pos[0], pos[1], pos[2], vel[0], vel[1], vel[2])
                     .map_err(|e| e.to_string())?;
                 good += 1;
@@ -88,7 +91,7 @@ pub fn record_bot_replay_diagnostic(
             Err(error) => {
                 let safe_error = error.replace(',', " ").replace('\n', " ").replace('\r', " ");
                 previous_position = None;
-                writeln!(out, "{elapsed:.3},{entity_index},,,,,,,,,,,,,{safe_error}")
+                writeln!(out, "{elapsed:.3},{entity_index},,,,,,,,,,,,,,,,{safe_error}")
                     .map_err(|e| e.to_string())?;
                 failures += 1;
                 if failures > 20 && good == 0 {
