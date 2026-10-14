@@ -387,8 +387,9 @@ def patch_outer_position_xy(frame, x, y):
 
 def patch_outer_position(frame, x, y, z):
     """
-    Remplace outer.field2 par une position monde absolue XYZ.
-    Le BOTREC natif encode ces valeurs comme des états absolus par axe.
+    Legacy experiment: writes XYZ to outer.field2 CAMERA position.
+    This is CCitadelUserCmdPB.vec_camera_position, NOT pawn origin.
+    Kept for explicit A/B compatibility; disabled by default.
     """
     frame = strip_outer_position(frame)
 
@@ -1737,7 +1738,7 @@ def main():
     airborne_xy_guide = False
     mechanics_command_view = False
     client_camera_view = False
-    no_position_checkpoints = False
+    no_position_checkpoints = True
     force_dash_left = False
     delay_first_crouch_ms = 0.0
 
@@ -1769,6 +1770,13 @@ def main():
 
         if arg == "--client-camera-view":
             client_camera_view = True
+            i += 1
+            continue
+
+        if arg == "--legacy-position-checkpoints":
+            # Compatibility experiment only: outer.field2 is CAMERA position,
+            # not pawn origin (CCitadelUserCmdPB.vec_camera_position).
+            no_position_checkpoints = False
             i += 1
             continue
 
@@ -1971,8 +1979,8 @@ def main():
         + ("legacy client camera (--client-camera-view)"
            if client_camera_view else "recorded pawn diagnostics.viewAngles where available")
     )
-    print("Ground position checkpoints: "
-          + ("DISABLED (test only)" if no_position_checkpoints else "enabled"))
+    print("Legacy camera-position overrides: "
+          + ("disabled (default)" if no_position_checkpoints else "ENABLED (legacy experiment)"))
     print(f"Samples     : {len(samples)}")
     print(
         f"Sample rate : "
