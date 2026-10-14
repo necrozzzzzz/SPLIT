@@ -48,13 +48,14 @@ pub fn record_bot_replay_diagnostic(
     let file = File::create(&output_path)
         .map_err(|e| format!("Cannot create diagnostic CSV: {e}"))?;
     let mut out = BufWriter::new(file);
-    writeln!(out, "elapsed_ms,entity_index,sim_tick,sim_time,pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,speed_xy,read_error")
+    writeln!(out, "elapsed_ms,entity_index,sim_tick,sim_time,pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,speed_xy,derived_speed_xy,derived_vel_x,derived_vel_y,read_error")
         .map_err(|e| e.to_string())?;
     let start = Instant::now();
     let interval = Duration::from_millis(16);
     let mut next = start;
     let mut good = 0u64;
     let mut failures = 0u64;
+    let mut previous_position: Option<([f32; 3], f64)> = None;
     while start.elapsed().as_millis() < duration_ms as u128 {
         if process::deadlock_pid() != Some(pid) {
             return Err("Deadlock process changed during diagnostic.".to_string());
@@ -63,14 +64,31 @@ pub fn record_bot_replay_diagnostic(
         match pawn::read_pawn_motion_at_index(pid, entity_index, route_schema) {
             Ok((pos, vel, tick, sim_time)) => {
                 let speed = vel[0].hypot(vel[1]);
-                writeln!(out, "{elapsed:.3},{entity_index},{tick},{sim_time:.6},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{speed:.4},",
+                // Position-derived velocity is an independent cross-check of the
+                // schema velocity offset. Exclude teleports and tiny time deltas.
+                let derived = previous_position.and_then(|(old, old_ms)| {
+                    let dt = (elapsed - old_ms) / 1000.0;
+                    if dt < 0.005 || dt > 0.25 { return None; }
+                    let dx = (pos[0] - old[0]) as f64;
+                    let dy = (pos[1] - old[1]) as f64;
+                    let dz = (pos[2] - old[2]) as f64;
+                    if dx.hypot(dy).hypot(dz) > 150.0 { return None; }
+                    Some((dx / dt, dy / dt))
+                });
+                previous_position = Some((pos, elapsed));
+                let derived_fields = match derived {
+                    Some((vx, vy)) => format!("{:.4},{:.4},{:.4}", vx.hypot(vy), vx, vy),
+                    None => ",,".to_string(),
+                };
+                writeln!(out, "{elapsed:.3},{entity_index},{tick},{sim_time:.6},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{speed:.4},{derived_fields},",
                     pos[0], pos[1], pos[2], vel[0], vel[1], vel[2])
                     .map_err(|e| e.to_string())?;
                 good += 1;
             }
             Err(error) => {
                 let safe_error = error.replace(',', " ").replace('\n', " ").replace('\r', " ");
-                writeln!(out, "{elapsed:.3},{entity_index},,,,,,,,,,{safe_error}")
+                previous_position = None;
+                writeln!(out, "{elapsed:.3},{entity_index},,,,,,,,,,,,,{safe_error}")
                     .map_err(|e| e.to_string())?;
                 failures += 1;
                 if failures > 20 && good == 0 {
