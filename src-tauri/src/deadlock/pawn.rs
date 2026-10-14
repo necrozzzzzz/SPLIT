@@ -4,7 +4,7 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
     System::{
         Memory::{VirtualQueryEx, MEMORY_BASIC_INFORMATION, MEM_COMMIT, PAGE_GUARD, PAGE_NOACCESS},
-        Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ},
+        Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ},
     },
 };
 
@@ -706,61 +706,108 @@ pub(crate) fn read_current_pawn_handle(
     )
 }
 
-/// Read-only motion sample for an explicitly selected non-local pawn.
-/// Returns (origin, velocity, simulation_tick, simulation_time).
+/// Prepared read-only motion reader for a bot selected by entity index.
+/// Resolves the pawn and validates its class once, outside the capture loop.
+/// The selected bot must remain alive/in the same session during the trace.
+pub(crate) struct PawnMotionReader {
+    process: ReadOnlyProcess,
+    pawn: u64,
+    expected_vtable: u64,
+    route_schema: super::schema::RouteSchema,
+}
+
+impl PawnMotionReader {
+    pub(crate) fn new(
+        pid: u32,
+        entity_index: u32,
+        route_schema: super::schema::RouteSchema,
+    ) -> Result<Self, String> {
+        let pawn = resolve_entity_by_index(pid, entity_index, route_schema.identity_size)?;
+        let process = open_process_read_only(pid)?;
+        let (client_base, client_size) = camera::find_module(pid, "client.dll")?;
+        validate_object_vtable(
+            process.0,
+            pawn,
+            Some("C_CitadelPlayerPawn"),
+            (client_base as u64, client_size as u64),
+            "diagnostic target pawn",
+        )?;
+        let expected_vtable = read_remote_u64(process.0, pawn, "diagnostic pawn vtable")?;
+        Ok(Self { process, pawn, expected_vtable, route_schema })
+    }
+
+    pub(crate) fn read(
+        &self,
+    ) -> Result<([f32; 3], [f32; 3], u32, f32, Option<u32>, Option<u32>, bool), String> {
+        let mut exit_code = 0u32;
+        if unsafe { GetExitCodeProcess(self.process.0, &mut exit_code) } == 0 {
+            return Err(format!("Cannot query diagnostic process: {}", std::io::Error::last_os_error()));
+        }
+        // STILL_ACTIVE = 259. The retained handle refers to the original process,
+        // so a new Deadlock process cannot silently replace this trace target.
+        if exit_code != 259 {
+            return Err("Deadlock process exited during diagnostic.".to_string());
+        }
+        let pawn = self.pawn;
+        // Keep a cheap per-sample object check without repeating module/interface discovery.
+        if read_remote_u64(self.process.0, pawn, "diagnostic pawn vtable")? != self.expected_vtable {
+            return Err("Diagnostic pawn changed; restart the capture.".to_string());
+        }
+        let time_before = read_remote_f32(
+            self.process.0,
+            checked_add(pawn, self.route_schema.simulation_time_offset as u64, "simulation time")?,
+            "diagnostic simulation time before read",
+        )?;
+        let scene_node = read_remote_u64(
+            self.process.0,
+            checked_add(pawn, self.route_schema.game_scene_node_offset as u64, "scene node")?,
+            "diagnostic scene node",
+        )?;
+        if scene_node == 0 {
+            return Err("Diagnostic target has no scene node".to_string());
+        }
+        let position = read_remote_f32x3(
+            self.process.0,
+            checked_add(scene_node, self.route_schema.absolute_origin_offset as u64, "origin")?,
+            "diagnostic absolute origin",
+        )?;
+        let velocity = read_remote_f32x3(
+            self.process.0,
+            checked_add(pawn, self.route_schema.absolute_velocity_offset as u64, "velocity")?,
+            "diagnostic absolute velocity",
+        )?;
+        let tick = read_remote_u32(
+            self.process.0,
+            checked_add(pawn, self.route_schema.simulation_tick_offset as u64, "simulation tick")?,
+            "diagnostic simulation tick",
+        )?;
+        let simulation_time = read_remote_f32(
+            self.process.0,
+            checked_add(pawn, self.route_schema.simulation_time_offset as u64, "simulation time")?,
+            "diagnostic simulation time",
+        )?;
+        let flags = self.route_schema.entity_flags_offset.and_then(|offset| {
+            checked_add(pawn, offset as u64, "entity flags").ok()
+                .and_then(|addr| read_remote_u32(self.process.0, addr, "entity flags").ok())
+        });
+        let ground_entity = self.route_schema.ground_entity_offset.and_then(|offset| {
+            checked_add(pawn, offset as u64, "ground handle").ok()
+                .and_then(|addr| read_remote_u32(self.process.0, addr, "ground handle").ok())
+        });
+        let time_stable = time_before.to_bits() == simulation_time.to_bits();
+        Ok((position, velocity, tick, simulation_time, flags, ground_entity, time_stable))
+    }
+}
+
+/// Compatibility single-sample entry point; tracing uses a prepared reader.
 pub(crate) fn read_pawn_motion_at_index(
     pid: u32,
     entity_index: u32,
     route_schema: super::schema::RouteSchema,
 ) -> Result<([f32; 3], [f32; 3], u32, f32, Option<u32>, Option<u32>), String> {
-    let pawn = resolve_entity_by_index(pid, entity_index, route_schema.identity_size)?;
-    let process = open_process_read_only(pid)?;
-    let (client_base, client_size) = camera::find_module(pid, "client.dll")?;
-    validate_object_vtable(
-        process.0,
-        pawn,
-        Some("C_CitadelPlayerPawn"),
-        (client_base as u64, client_size as u64),
-        "diagnostic target pawn",
-    )?;
-
-    let scene_node = read_remote_u64(
-        process.0,
-        checked_add(pawn, route_schema.game_scene_node_offset as u64, "scene node")?,
-        "diagnostic scene node",
-    )?;
-    if scene_node == 0 {
-        return Err("Diagnostic target has no scene node".to_string());
-    }
-    let position = read_remote_f32x3(
-        process.0,
-        checked_add(scene_node, route_schema.absolute_origin_offset as u64, "origin")?,
-        "diagnostic absolute origin",
-    )?;
-    let velocity = read_remote_f32x3(
-        process.0,
-        checked_add(pawn, route_schema.absolute_velocity_offset as u64, "velocity")?,
-        "diagnostic absolute velocity",
-    )?;
-    let tick = read_remote_u32(
-        process.0,
-        checked_add(pawn, route_schema.simulation_tick_offset as u64, "simulation tick")?,
-        "diagnostic simulation tick",
-    )?;
-    let simulation_time = read_remote_f32(
-        process.0,
-        checked_add(pawn, route_schema.simulation_time_offset as u64, "simulation time")?,
-        "diagnostic simulation time",
-    )?;
-    let flags = route_schema.entity_flags_offset.and_then(|offset| {
-        checked_add(pawn, offset as u64, "entity flags").ok()
-            .and_then(|addr| read_remote_u32(process.0, addr, "entity flags").ok())
-    });
-    let ground_entity = route_schema.ground_entity_offset.and_then(|offset| {
-        checked_add(pawn, offset as u64, "ground handle").ok()
-            .and_then(|addr| read_remote_u32(process.0, addr, "ground handle").ok())
-    });
-    Ok((position, velocity, tick, simulation_time, flags, ground_entity))
+    let (pos, vel, tick, time, flags, ground, _) =
+        PawnMotionReader::new(pid, entity_index, route_schema)?.read()?;
+    Ok((pos, vel, tick, time, flags, ground))
 }
 
 pub(crate) fn debug_bot_movement(
