@@ -605,6 +605,7 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
     Modes:
     - None: aucun delta buttons sur cette frame.
     - "change": field1=held, field2=changed.
+    - "initial": explicit held/changed plus a cleared third state.
     - "clear_changed": clear field2 après une transition maintenue.
     - "reset": clear complet après une release vers held=0.
     """
@@ -687,7 +688,7 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
                             f"wire command {cmd_wire} non supporté"
                         )
 
-                if mode == "change":
+                if mode in ("change", "initial"):
                     buttons_payload = bytearray()
 
                     if held_mask:
@@ -696,6 +697,9 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
                         buttons_payload += clear_field(1)
 
                     buttons_payload += varint_field(2, changed_mask)
+                    if mode == "initial":
+                        # Start independently of the preceding playback delta state.
+                        buttons_payload += clear_field(3)
 
                     command_out += encode_varint((3 << 3) | 2)
                     command_out += encode_varint(len(buttons_payload))
@@ -2261,7 +2265,13 @@ def main():
             previous_button_mask ^ current_button_mask
         )
 
-        if changed_button_mask:
+        if frame_index == 0:
+            # Explicitly initialize all three button states on every playback.
+            button_mode = "initial"
+            clear_changed_next = True
+            if changed_button_mask:
+                button_transition_count += 1
+        elif changed_button_mask:
             button_mode = "change"
             clear_changed_next = True
             button_transition_count += 1
