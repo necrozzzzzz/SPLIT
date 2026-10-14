@@ -99,6 +99,8 @@ pub(crate) struct RouteSchema {
     pub(crate) scene_node_ang_wrapped_local_rotation_offset: u32,
 
     pub(crate) absolute_velocity_offset: u32,
+    pub(crate) entity_flags_offset: Option<u32>,
+    pub(crate) ground_entity_offset: Option<u32>,
     pub(crate) simulation_tick_offset: u32,
     pub(crate) simulation_time_offset: u32,
     pub(crate) old_origin_offset: u32,
@@ -547,6 +549,8 @@ pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
                 )?,
         
                 absolute_velocity_offset: required("C_BaseEntity", "m_vecAbsVelocity")?,
+                entity_flags_offset: resolver.find_field_offset(client, "C_BaseEntity", "m_fFlags")?,
+                ground_entity_offset: resolver.find_field_offset(client, "C_BaseEntity", "m_hGroundEntity")?,
                 simulation_tick_offset: required("C_BaseEntity", "m_nSimulationTick")?,
                 simulation_time_offset: required("C_BaseEntity", "m_flSimulationTime")?,
                 old_origin_offset: required("C_BasePlayerPawn", "m_vOldOrigin")?,
