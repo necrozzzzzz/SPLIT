@@ -1217,6 +1217,8 @@ function App() {
   const [ghostPlaybackStatus, setGhostPlaybackStatus] =
     useState<GhostPlaybackStatus>(EMPTY_GHOST_PLAYBACK_STATUS);
   const [botDiagnosticIndex, setBotDiagnosticIndex] = useState("");
+  const [botCandidates, setBotCandidates] = useState<number[]>([]);
+  const [botScanBusy, setBotScanBusy] = useState(false);
   const [botDiagnosticBusy, setBotDiagnosticBusy] = useState(false);
   const [botDiagnosticResult, setBotDiagnosticResult] = useState<string | null>(null);
   const [ghostPlaybackBusy, setGhostPlaybackBusy] = useState(false);
@@ -1326,6 +1328,21 @@ function App() {
       setError(String(reason));
     } finally {
       setRouteRecorderBusy(false);
+    }
+  }, []);
+
+  const scanBotCandidates = useCallback(async () => {
+    setBotScanBusy(true);
+    setError(null);
+    try {
+      const candidates = await invoke<number[]>("list_bot_replay_candidates");
+      setBotCandidates(candidates);
+      if (candidates.length === 1) setBotDiagnosticIndex(String(candidates[0]));
+      if (candidates.length === 0) setError("No non-local player pawn detected. Spawn Haze and rescan.");
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBotScanBusy(false);
     }
   }, []);
 
@@ -8310,21 +8327,30 @@ function App() {
             <span>Read-only, 15 s</span>
           </div>
           <p className="route-recorder-status">
-            Supply the entity index of the BOTREC bot (not your player).
-            Start tracing immediately before the bot replay; this does not
-            start or synchronize BOTREC automatically.
+            Click Find bots after spawning Haze. If several pawns are found,
+            choose the correct entity. Start tracing immediately before playback;
+            recording is not automatically synchronized with BOTREC.
           </p>
           <div className="route-recorder-actions">
-            <input
-              type="number"
-              min={1}
-              max={32767}
-              placeholder="Bot pawn entity index"
-              aria-label="Bot pawn entity index"
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={botScanBusy || botDiagnosticBusy || !status.deadlockRunning || status.matchSafetyLocked}
+              onClick={() => void scanBotCandidates()}
+            >
+              {botScanBusy ? "Scanning..." : "Find bots"}
+            </button>
+            <select
+              aria-label="Bot pawn candidate"
               value={botDiagnosticIndex}
               onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
-              disabled={botDiagnosticBusy}
-            />
+              disabled={botDiagnosticBusy || botCandidates.length === 0}
+            >
+              <option value="">Choose detected pawn</option>
+              {botCandidates.map((index) => (
+                <option key={index} value={String(index)}>Entity #{index}</option>
+              ))}
+            </select>
             <button
               className="refresh-button"
               type="button"
