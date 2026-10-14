@@ -739,31 +739,73 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
 
 
 def strip_command_movement_axes(frame):
-    """Remove command fields 5/6/7 without changing button transitions.
+    """Remove optional analogue fields 5/6/7 while preserving valid protobuf.
 
-    The game's native ground-slide recordings derive forward movement from
-    held button 0x8; they normally omit these optional analogue axis fields.
+    parse_fields() reports VALUE offsets, not tag offsets: copying slices
+    using those starts silently corrupts the BOTREC command. Walk full
+    protobuf tag+value boundaries here instead.
     """
+    def strip_message_fields(message, excluded):
+        out = bytearray()
+        offset = 0
+        while offset < len(message):
+            tag_start = offset
+            key, offset = read_varint(message, offset)
+            wire = key & 7
+            field = key >> 3
+            if wire == 0:
+                _, offset = read_varint(message, offset)
+            elif wire == 1:
+                offset += 8
+            elif wire == 2:
+                size, payload_start = read_varint(message, offset)
+                offset = payload_start + size
+            elif wire == 5:
+                offset += 4
+            elif wire == 7:
+                pass
+            else:
+                raise RuntimeError(f"Unsupported protobuf wire type {wire}")
+            if offset > len(message):
+                raise RuntimeError("Truncated protobuf message")
+            if field not in excluded:
+                out += message[tag_start:offset]
+        return bytes(out)
+
     out = bytearray()
-    saw_command = False
-    for field, wire, start, end in parse_fields(frame):
-        if field != 1 or wire != 2:
-            out += frame[start:end]
-            continue
-        # Parse the nested command, removing axes including protobuf clears.
-        _, payload_start = read_varint(frame, start)
-        length, payload_start = read_varint(frame, payload_start)
-        command = frame[payload_start:payload_start + length]
-        new_command = bytearray()
-        for cmd_field, _, cmd_start, cmd_end in parse_fields(command):
-            if cmd_field not in (5, 6, 7):
-                new_command += command[cmd_start:cmd_end]
-        out += encode_varint((1 << 3) | 2)
-        out += encode_varint(len(new_command))
-        out += new_command
-        saw_command = True
-    if not saw_command:
-        raise RuntimeError("No command to strip movement axes")
+    offset = 0
+    found = False
+    while offset < len(frame):
+        tag_start = offset
+        key, offset = read_varint(frame, offset)
+        wire = key & 7
+        field = key >> 3
+        if wire == 0:
+            _, offset = read_varint(frame, offset)
+        elif wire == 1:
+            offset += 8
+        elif wire == 2:
+            size, payload_start = read_varint(frame, offset)
+            offset = payload_start + size
+        elif wire == 5:
+            offset += 4
+        elif wire == 7:
+            pass
+        else:
+            raise RuntimeError(f"Unsupported protobuf wire type {wire}")
+        if offset > len(frame):
+            raise RuntimeError("Truncated BOTREC frame")
+        if field == 1 and wire == 2:
+            command = frame[payload_start:offset]
+            patched = strip_message_fields(command, {5, 6, 7})
+            out += encode_varint(key)
+            out += encode_varint(len(patched))
+            out += patched
+            found = True
+        else:
+            out += frame[tag_start:offset]
+    if not found:
+        raise RuntimeError("No command in BOTREC frame")
     return bytes(out)
 
 
