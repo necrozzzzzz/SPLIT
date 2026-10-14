@@ -4,6 +4,17 @@ use std::{fs::File, io::{BufWriter, Write}, thread, time::{Duration, Instant}};
 
 use super::{match_safety, pawn, process, schema};
 
+pub fn list_bot_replay_candidates() -> Result<Vec<u32>, String> {
+    match_safety::ensure_route_recording_allowed()?;
+    let pid = process::deadlock_pid().ok_or("Deadlock is not running.")?;
+    let route_schema = schema::resolve_route_schema(pid)?;
+    let local = pawn::resolve_local_pawn(
+        pid, route_schema.local_flag_offset,
+        route_schema.pawn_handle_offset, route_schema.identity_size,
+    )?;
+    pawn::list_other_citadel_pawns(pid, route_schema.identity_size, local.pawn)
+}
+
 pub fn record_bot_replay_diagnostic(
     entity_index: u32,
     duration_ms: u64,
