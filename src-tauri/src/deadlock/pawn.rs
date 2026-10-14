@@ -712,7 +712,7 @@ pub(crate) fn read_pawn_motion_at_index(
     pid: u32,
     entity_index: u32,
     route_schema: super::schema::RouteSchema,
-) -> Result<([f32; 3], [f32; 3], u32, f32), String> {
+) -> Result<([f32; 3], [f32; 3], u32, f32, Option<u32>, Option<u32>), String> {
     let pawn = resolve_entity_by_index(pid, entity_index, route_schema.identity_size)?;
     let process = open_process_read_only(pid)?;
     let (client_base, client_size) = camera::find_module(pid, "client.dll")?;
@@ -752,7 +752,15 @@ pub(crate) fn read_pawn_motion_at_index(
         checked_add(pawn, route_schema.simulation_time_offset as u64, "simulation time")?,
         "diagnostic simulation time",
     )?;
-    Ok((position, velocity, tick, simulation_time))
+    let flags = route_schema.entity_flags_offset.and_then(|offset| {
+        checked_add(pawn, offset as u64, "entity flags").ok()
+            .and_then(|addr| read_remote_u32(process.0, addr, "entity flags").ok())
+    });
+    let ground_entity = route_schema.ground_entity_offset.and_then(|offset| {
+        checked_add(pawn, offset as u64, "ground handle").ok()
+            .and_then(|addr| read_remote_u32(process.0, addr, "ground handle").ok())
+    });
+    Ok((position, velocity, tick, simulation_time, flags, ground_entity))
 }
 
 pub(crate) fn debug_bot_movement(
