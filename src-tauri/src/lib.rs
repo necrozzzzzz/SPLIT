@@ -392,6 +392,12 @@ fn resume_deadlock_presentation() -> Result<deadlock::DeadlockStatus, String> {
 }
 
 #[tauri::command]
+async fn list_bot_replay_candidates() -> Result<Vec<u32>, String> {
+    tauri::async_runtime::spawn_blocking(deadlock::list_bot_replay_candidates)
+        .await.map_err(|e| format!("Bot scan task failed: {e}"))?
+}
+
+#[tauri::command]
 async fn record_bot_replay_diagnostic(
     entity_index: u32,
     duration_ms: u64,
@@ -732,6 +738,7 @@ pub fn run() {
             retry_console_watcher,
             prepare_teleports_now,
             resume_deadlock_presentation,
+            list_bot_replay_candidates,
             record_bot_replay_diagnostic,
             start_route_recording,
             stop_route_recording,
