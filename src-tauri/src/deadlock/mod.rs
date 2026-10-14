@@ -1695,6 +1695,10 @@ pub fn shutdown_background_services() {
     }
 }
 
+pub fn list_bot_replay_candidates() -> Result<Vec<u32>, String> {
+    bot_replay_diagnostic::list_bot_replay_candidates()
+}
+
 pub fn record_bot_replay_diagnostic(
     entity_index: u32,
     duration_ms: u64,
