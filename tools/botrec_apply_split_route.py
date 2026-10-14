@@ -738,76 +738,6 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
 
 
 
-def strip_command_movement_axes(frame):
-    """Remove optional analogue fields 5/6/7 while preserving valid protobuf.
-
-    parse_fields() reports VALUE offsets, not tag offsets: copying slices
-    using those starts silently corrupts the BOTREC command. Walk full
-    protobuf tag+value boundaries here instead.
-    """
-    def strip_message_fields(message, excluded):
-        out = bytearray()
-        offset = 0
-        while offset < len(message):
-            tag_start = offset
-            key, offset = read_varint(message, offset)
-            wire = key & 7
-            field = key >> 3
-            if wire == 0:
-                _, offset = read_varint(message, offset)
-            elif wire == 1:
-                offset += 8
-            elif wire == 2:
-                size, payload_start = read_varint(message, offset)
-                offset = payload_start + size
-            elif wire == 5:
-                offset += 4
-            elif wire == 7:
-                pass
-            else:
-                raise RuntimeError(f"Unsupported protobuf wire type {wire}")
-            if offset > len(message):
-                raise RuntimeError("Truncated protobuf message")
-            if field not in excluded:
-                out += message[tag_start:offset]
-        return bytes(out)
-
-    out = bytearray()
-    offset = 0
-    found = False
-    while offset < len(frame):
-        tag_start = offset
-        key, offset = read_varint(frame, offset)
-        wire = key & 7
-        field = key >> 3
-        if wire == 0:
-            _, offset = read_varint(frame, offset)
-        elif wire == 1:
-            offset += 8
-        elif wire == 2:
-            size, payload_start = read_varint(frame, offset)
-            offset = payload_start + size
-        elif wire == 5:
-            offset += 4
-        elif wire == 7:
-            pass
-        else:
-            raise RuntimeError(f"Unsupported protobuf wire type {wire}")
-        if offset > len(frame):
-            raise RuntimeError("Truncated BOTREC frame")
-        if field == 1 and wire == 2:
-            command = frame[payload_start:offset]
-            patched = strip_message_fields(command, {5, 6, 7})
-            out += encode_varint(key)
-            out += encode_varint(len(patched))
-            out += patched
-            found = True
-        else:
-            out += frame[tag_start:offset]
-    if not found:
-        raise RuntimeError("No command in BOTREC frame")
-    return bytes(out)
-
 
 def patch_frame_movement(frame, forward, left):
     """
@@ -1808,7 +1738,6 @@ def main():
     mechanics_command_view = False
     client_camera_view = False
     no_position_checkpoints = False
-    native_implicit_ground_move = False
     force_dash_left = False
     delay_first_crouch_ms = 0.0
 
@@ -1845,11 +1774,6 @@ def main():
 
         if arg == "--no-position-checkpoints":
             no_position_checkpoints = True
-            i += 1
-            continue
-
-        if arg == "--native-implicit-ground-move":
-            native_implicit_ground_move = True
             i += 1
             continue
 
@@ -2356,18 +2280,11 @@ def main():
             changed_button_mask,
         )
 
-        if (native_implicit_ground_move
-                and target_ms <= 2000.0
-                and forward == 1.0 and left == 0.0
-                and (current_button_mask & BUTTON_FORWARD)):
-            # Native successful slide has no optional axis fields.
-            positioned_frame = strip_command_movement_axes(cleaned_frame)
-        else:
-            positioned_frame = patch_frame_movement(
-                cleaned_frame,
-                forward,
-                left,
-            )
+        positioned_frame = patch_frame_movement(
+            cleaned_frame,
+            forward,
+            left,
+        )
 
         # Hybrid guidance:
         # - preserve native Z physics for wall-jump / mantle;
