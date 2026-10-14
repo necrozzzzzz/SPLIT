@@ -738,6 +738,35 @@ def patch_frame_buttons(frame, mode, held_mask=0, changed_mask=0):
 
 
 
+def strip_command_movement_axes(frame):
+    """Remove command fields 5/6/7 without changing button transitions.
+
+    The game's native ground-slide recordings derive forward movement from
+    held button 0x8; they normally omit these optional analogue axis fields.
+    """
+    out = bytearray()
+    saw_command = False
+    for field, wire, start, end in parse_fields(frame):
+        if field != 1 or wire != 2:
+            out += frame[start:end]
+            continue
+        # Parse the nested command, removing axes including protobuf clears.
+        _, payload_start = read_varint(frame, start)
+        length, payload_start = read_varint(frame, payload_start)
+        command = frame[payload_start:payload_start + length]
+        new_command = bytearray()
+        for cmd_field, _, cmd_start, cmd_end in parse_fields(command):
+            if cmd_field not in (5, 6, 7):
+                new_command += command[cmd_start:cmd_end]
+        out += encode_varint((1 << 3) | 2)
+        out += encode_varint(len(new_command))
+        out += new_command
+        saw_command = True
+    if not saw_command:
+        raise RuntimeError("No command to strip movement axes")
+    return bytes(out)
+
+
 def patch_frame_movement(frame, forward, left):
     """
     Remplace complètement les axes de mouvement du template.
@@ -1737,6 +1766,7 @@ def main():
     mechanics_command_view = False
     client_camera_view = False
     no_position_checkpoints = False
+    native_implicit_ground_move = False
     force_dash_left = False
     delay_first_crouch_ms = 0.0
 
@@ -1773,6 +1803,11 @@ def main():
 
         if arg == "--no-position-checkpoints":
             no_position_checkpoints = True
+            i += 1
+            continue
+
+        if arg == "--native-implicit-ground-move":
+            native_implicit_ground_move = True
             i += 1
             continue
 
@@ -2279,11 +2314,18 @@ def main():
             changed_button_mask,
         )
 
-        positioned_frame = patch_frame_movement(
-            cleaned_frame,
-            forward,
-            left,
-        )
+        if (native_implicit_ground_move
+                and target_ms <= 2000.0
+                and forward == 1.0 and left == 0.0
+                and (current_button_mask & BUTTON_FORWARD)):
+            # Native successful slide has no optional axis fields.
+            positioned_frame = strip_command_movement_axes(cleaned_frame)
+        else:
+            positioned_frame = patch_frame_movement(
+                cleaned_frame,
+                forward,
+                left,
+            )
 
         # Hybrid guidance:
         # - preserve native Z physics for wall-jump / mantle;
