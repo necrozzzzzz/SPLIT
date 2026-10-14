@@ -1736,6 +1736,7 @@ def main():
     airborne_xy_guide = False
     mechanics_command_view = False
     client_camera_view = False
+    no_position_checkpoints = False
     force_dash_left = False
     delay_first_crouch_ms = 0.0
 
@@ -1767,6 +1768,11 @@ def main():
 
         if arg == "--client-camera-view":
             client_camera_view = True
+            i += 1
+            continue
+
+        if arg == "--no-position-checkpoints":
+            no_position_checkpoints = True
             i += 1
             continue
 
@@ -1964,6 +1970,8 @@ def main():
         + ("legacy client camera (--client-camera-view)"
            if client_camera_view else "recorded pawn diagnostics.viewAngles where available")
     )
+    print("Ground position checkpoints: "
+          + ("DISABLED (test only)" if no_position_checkpoints else "enabled"))
     print(f"Samples     : {len(samples)}")
     print(
         f"Sample rate : "
@@ -2151,6 +2159,7 @@ def main():
     clear_changed_next = False
     button_transition_count = 0
     last_position_checkpoint_ms = None
+    early_checkpoint_ms = []
 
     xy_guide_x = None
     xy_guide_y = None
@@ -2344,7 +2353,8 @@ def main():
                 xy_guide_prev_vx = None
                 xy_guide_prev_vy = None
             use_position_checkpoint = (
-                frame_index < len(frames)
+                not no_position_checkpoints
+                and frame_index < len(frames)
                 and has_outer_position(frames[frame_index])
                 and should_apply_ground_position_checkpoint(
                     samples,
@@ -2367,6 +2377,8 @@ def main():
                     route_z,
                 )
                 last_position_checkpoint_ms = target_ms
+                if target_ms <= 2000.0:
+                    early_checkpoint_ms.append(round(target_ms, 3))
             else:
                 modified_frames[frame_index] = strip_outer_position(
                     positioned_frame
