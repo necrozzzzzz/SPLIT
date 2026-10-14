@@ -42,11 +42,11 @@ def show(title, path):
     rows = decode(path.read_bytes())
     presses = [i for i in range(1, len(rows))
                if rows[i][1] & 4 and not (rows[i-1][1] & 4)]
-    print(f"\\n=== {title} === frames={len(rows)} crouch_presses={len(presses)}")
+    print(f"\n=== {title} === frames={len(rows)} crouch_presses={len(presses)}")
     if not presses:
         return
     for hit in presses[:5]:
-        print(f"First crouch at frame {rows[hit][0]}, t≈{rows[hit][0]*1000/64:.1f} ms")
+        print(f"First crouch at frame {rows[hit][0]}, t~{rows[hit][0]*1000/64:.1f} ms")
         print("frame held forward left up command_fields(field:wire_types) outer_fields")
         for row in rows[max(0, hit-8):min(len(rows), hit+9)]:
             idx, held, fwd, left, up, cmd_fields, outer_fields = row
