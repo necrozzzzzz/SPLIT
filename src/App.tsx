@@ -8327,30 +8327,42 @@ function App() {
             <span>Read-only, 15 s</span>
           </div>
           <p className="route-recorder-status">
-            Click Find bots after spawning Haze. If several pawns are found,
-            choose the correct entity. Start tracing immediately before playback;
-            recording is not automatically synchronized with BOTREC.
+            Enter Haze's entity index from cl_ent_find haze. Automatic scanning is optional
+            and can be slow. Start tracing immediately before playback;
+            recording is not synchronized automatically with BOTREC.
           </p>
           <div className="route-recorder-actions">
+            <input
+              type="number"
+              min={1}
+              max={32767}
+              placeholder="Haze entity index (e.g. 3138)"
+              aria-label="Bot pawn entity index"
+              value={botDiagnosticIndex}
+              onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
+              disabled={botDiagnosticBusy}
+            />
             <button
               className="secondary-button"
               type="button"
               disabled={botScanBusy || botDiagnosticBusy || !status.deadlockRunning || status.matchSafetyLocked}
               onClick={() => void scanBotCandidates()}
             >
-              {botScanBusy ? "Scanning..." : "Find bots"}
+              {botScanBusy ? "Scanning..." : "Find bots (optional)"}
             </button>
-            <select
-              aria-label="Bot pawn candidate"
-              value={botDiagnosticIndex}
-              onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
-              disabled={botDiagnosticBusy || botCandidates.length === 0}
-            >
-              <option value="">Choose detected pawn</option>
-              {botCandidates.map((index) => (
-                <option key={index} value={String(index)}>Entity #{index}</option>
-              ))}
-            </select>
+            {botCandidates.length > 0 && (
+              <select
+                aria-label="Detected bot pawn"
+                value=""
+                onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
+                disabled={botDiagnosticBusy}
+              >
+                <option value="">Detected entities</option>
+                {botCandidates.map((index) => (
+                  <option key={index} value={String(index)}>Entity #{index}</option>
+                ))}
+              </select>
+            )}
             <button
               className="refresh-button"
               type="button"
