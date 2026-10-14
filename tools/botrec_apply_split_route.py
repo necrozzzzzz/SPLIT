@@ -28,6 +28,8 @@ BUTTON_FORWARD = 0x0000000000000008
 BUTTON_BACK = 0x0000000000000010
 BUTTON_LEFT = 0x0000000000000200
 BUTTON_RIGHT = 0x0000000000000400
+# Native reference: tap frames 62..69, hold frames 204..259.
+BUTTON_MELEE = 0x0000000100000000
 BUTTON_DASH = 0x0000100000000000
 BUTTON_JUMP = 0x0101000000000000
 
@@ -903,7 +905,40 @@ def route_button_mask(sample):
     if buttons.get("dash"):
         mask |= BUTTON_DASH
 
+    if buttons.get("melee"):
+        mask |= BUTTON_MELEE
+
     return mask
+
+
+def prepare_melee_tick_events(samples, times_ms, events, event_times_ms):
+    """Keep every melee edge, including taps shorter than one BOTREC tick.
+
+    A recorded press cannot start before its source timestamp. If its release
+    rounds to the same 64 Hz tick, move that release to the following tick.
+    Closely spaced taps retain separate press/release ticks in source order.
+    Other actions keep their existing timing.
+    """
+    source = events if events else samples
+    source_times = event_times_ms if events else times_ms
+    tick_events = []
+    previous = False
+    previous_tick = -1
+    for event, event_ms in zip(source, source_times):
+        held = bool(event.get("buttons", {}).get("melee"))
+        if held == previous:
+            continue
+        tick = max(0, int(math.ceil(event_ms * BOTREC_HZ / 1000.0 - 1e-9)))
+        tick = max(tick, previous_tick + 1)
+        tick_events.append((tick, held))
+        previous = held
+        previous_tick = tick
+    return tick_events
+
+
+def melee_held_at_tick(tick_events, ticks, tick):
+    index = bisect.bisect_right(ticks, tick) - 1
+    return index >= 0 and tick_events[index][1]
 
 
 def route_sample_at_ms(samples, times_ms, target_ms):
@@ -1912,6 +1947,15 @@ def main():
         else None
     )
 
+    melee_tick_events = prepare_melee_tick_events(
+        samples, times_ms, input_events, input_event_times_ms,
+    )
+    melee_ticks = [tick for tick, _ in melee_tick_events]
+    has_melee_data = any(
+        "melee" in event.get("buttons", {})
+        for event in (input_events or samples)
+    )
+
     speed_ref = choose_reference_speed(samples)
     has_button_data = bool(input_events) or any(
         isinstance(sample.get("buttons"), dict)
@@ -2018,7 +2062,7 @@ def main():
     print(
         "Buttons     : "
         + (
-            "movement+jump/crouch/dash"
+            "movement+jump/crouch/dash" + ("/melee" if has_melee_data else "")
             if has_movement_input_data
             else (
                 "jump/crouch/dash"
@@ -2028,6 +2072,8 @@ def main():
         )
     )
     print()
+    if not has_melee_data:
+        print("CAC         : absent du JSON; réenregistrer pour capturer le CAC")
     print(f"BOTREC      : {len(frames)} frames")
 
     # -----------------------------
@@ -2078,6 +2124,10 @@ def main():
     route_frame_count = int(
         math.floor(route_duration_ms * BOTREC_HZ / 1000.0)
     ) + 1
+
+    # Do not truncate a final release quantized past the last telemetry tick.
+    if melee_ticks:
+        route_frame_count = max(route_frame_count, melee_ticks[-1] + 1)
 
     if route_frame_count <= 0:
         raise RuntimeError(
@@ -2164,7 +2214,7 @@ def main():
     debug_rows = [
         "frame,t_ms,sample_index,sample_t_ms,pos_x,pos_y,pos_z,"
         "vel_x,vel_y,vel_z,yaw,pitch,forward,left,"
-        "forward_key,back_key,left_key,right_key,jump,crouch,dash,"
+        "forward_key,back_key,left_key,right_key,jump,crouch,dash,melee,"
         "button_mask,changed_mask"
     ]
 
@@ -2235,6 +2285,11 @@ def main():
             input_event_times_ms,
             target_ms,
         )
+
+        # Preserve short melee taps independently of the telemetry sampler.
+        current_button_mask &= ~BUTTON_MELEE
+        if melee_held_at_tick(melee_tick_events, melee_ticks, frame_index):
+            current_button_mask |= BUTTON_MELEE
 
         # Isolated timing experiment: postpone only the first Ctrl press.
         if (
@@ -2448,6 +2503,7 @@ def main():
                         str(int(bool(source_buttons.get("jump")))),
                         str(int(bool(source_buttons.get("crouch")))),
                         str(int(bool(source_buttons.get("dash")))),
+                        str(int(bool(current_button_mask & BUTTON_MELEE))),
                         f"0x{current_button_mask:X}",
                         f"0x{changed_button_mask:X}",
                     ]

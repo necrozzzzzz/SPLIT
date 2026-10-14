@@ -15,11 +15,12 @@ use windows_sys::Win32::{
     System::Threading::GetCurrentThreadId,
     UI::{
         Input::KeyboardAndMouse::{
-            GetAsyncKeyState, VK_CONTROL, VK_LCONTROL, VK_LSHIFT, VK_RCONTROL,
+            GetAsyncKeyState, GetKeyboardLayout, MapVirtualKeyExW, MAPVK_VSC_TO_VK_EX, VK_CONTROL, VK_LCONTROL, VK_LSHIFT, VK_RCONTROL,
             VK_RSHIFT, VK_SHIFT, VK_SPACE,
         },
         WindowsAndMessaging::{
-            CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
+            CallNextHookEx, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
+            PostThreadMessageW, SetWindowsHookExW,
             UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
             WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
         },
@@ -55,6 +56,7 @@ struct RouteButtons {
     jump: bool,
     crouch: bool,
     dash: bool,
+    melee: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -162,49 +164,77 @@ struct KeyboardHookState {
     started_at: Instant,
     events: Arc<Mutex<Vec<RouteInputEvent>>>,
     down_keys: [bool; 256],
+    key_codes: RouteKeyCodes,
     buttons: RouteButtons,
 }
 
 static KEYBOARD_HOOK_STATE: Mutex<Option<KeyboardHookState>> = Mutex::new(None);
 
-fn relevant_key_codes() -> [u16; 13] {
-    [
-        b'Z' as u16,
-        b'W' as u16,
-        b'S' as u16,
-        b'Q' as u16,
-        b'A' as u16,
-        b'D' as u16,
-        VK_SPACE,
-        VK_LCONTROL,
-        VK_RCONTROL,
-        VK_LSHIFT,
-        VK_RSHIFT,
-        VK_CONTROL,
-        VK_SHIFT,
-    ]
+// Default movement/melee bindings occupy the same physical positions on
+// AZERTY and QWERTY. Resolve these positions once when recording starts;
+// never merge A and Q into a single action. Custom game binds are not read yet.
+#[derive(Debug, Clone, Copy)]
+struct RouteKeyCodes {
+    forward: u16,
+    back: u16,
+    left: u16,
+    right: u16,
+    melee: u16,
 }
 
-fn initial_hook_key_state() -> [bool; 256] {
-    let mut down = [false; 256];
-
-    for virtual_key in relevant_key_codes() {
-        if virtual_key == 0 {
-            continue;
-        }
-
-        down[virtual_key as usize] = key_is_down(virtual_key);
+impl RouteKeyCodes {
+    fn current_layout() -> Result<Self, String> {
+        let window = unsafe { GetForegroundWindow() };
+        let thread_id = unsafe {
+            GetWindowThreadProcessId(window, std::ptr::null_mut())
+        };
+        let layout = unsafe { GetKeyboardLayout(thread_id) };
+        let resolve = |scan_code| {
+            let key = unsafe {
+                MapVirtualKeyExW(scan_code, MAPVK_VSC_TO_VK_EX, layout)
+            };
+            if key == 0 || key >= 256 {
+                Err("Could not resolve default route keyboard bindings.".to_string())
+            } else {
+                Ok(key as u16)
+            }
+        };
+        Ok(Self {
+            forward: resolve(0x11)?, // Z / W
+            back: resolve(0x1f)?,    // S
+            left: resolve(0x1e)?,    // Q / A
+            right: resolve(0x20)?,   // D
+            melee: resolve(0x10)?,   // A / Q
+        })
     }
 
+    fn relevant_keys(self) -> [u16; 12] {
+        [
+            self.forward, self.back, self.left, self.right, self.melee,
+            VK_SPACE, VK_LCONTROL, VK_RCONTROL, VK_LSHIFT, VK_RSHIFT,
+            VK_CONTROL, VK_SHIFT,
+        ]
+    }
+}
+
+fn initial_hook_key_state(key_codes: RouteKeyCodes) -> [bool; 256] {
+    let mut down = [false; 256];
+    for virtual_key in key_codes.relevant_keys() {
+        down[virtual_key as usize] = key_is_down(virtual_key);
+    }
     down
 }
 
-fn route_buttons_from_down_keys(down: &[bool; 256]) -> RouteButtons {
+fn route_buttons_from_down_keys(
+    down: &[bool; 256],
+    key_codes: RouteKeyCodes,
+) -> RouteButtons {
     RouteButtons {
-        forward: down[b'Z' as usize] || down[b'W' as usize],
-        back: down[b'S' as usize],
-        left: down[b'Q' as usize] || down[b'A' as usize],
-        right: down[b'D' as usize],
+        forward: down[key_codes.forward as usize],
+        back: down[key_codes.back as usize],
+        left: down[key_codes.left as usize],
+        right: down[key_codes.right as usize],
+        melee: down[key_codes.melee as usize],
         jump: down[VK_SPACE as usize],
         crouch: down[VK_CONTROL as usize]
             || down[VK_LCONTROL as usize]
@@ -232,27 +262,13 @@ unsafe extern "system" fn route_keyboard_hook(
             if virtual_key < 256 {
                 if let Ok(mut state_guard) = KEYBOARD_HOOK_STATE.lock() {
                     if let Some(state) = state_guard.as_mut() {
-                        let tracked = matches!(
-                            virtual_key as u16,
-                            key if key == b'Z' as u16
-                                || key == b'W' as u16
-                                || key == b'S' as u16
-                                || key == b'Q' as u16
-                                || key == b'A' as u16
-                                || key == b'D' as u16
-                                || key == VK_SPACE
-                                || key == VK_CONTROL
-                                || key == VK_LCONTROL
-                                || key == VK_RCONTROL
-                                || key == VK_SHIFT
-                                || key == VK_LSHIFT
-                                || key == VK_RSHIFT
-                        );
+                        let tracked = state.key_codes.relevant_keys()
+                            .contains(&(virtual_key as u16));
 
                         if tracked {
                             state.down_keys[virtual_key] = is_down;
                             let buttons =
-                                route_buttons_from_down_keys(&state.down_keys);
+                                route_buttons_from_down_keys(&state.down_keys, state.key_codes);
 
                             if buttons != state.buttons {
                                 state.buttons = buttons;
@@ -282,8 +298,9 @@ fn run_polling_input_fallback(
     input_running: &AtomicBool,
     input_events: &Arc<Mutex<Vec<RouteInputEvent>>>,
     started_at: Instant,
+    key_codes: RouteKeyCodes,
 ) {
-    let mut previous = capture_route_buttons();
+    let mut previous = capture_route_buttons(key_codes);
 
     if let Ok(mut events) = input_events.lock() {
         events.push(RouteInputEvent {
@@ -293,7 +310,7 @@ fn run_polling_input_fallback(
     }
 
     while input_running.load(Ordering::Acquire) {
-        let buttons = capture_route_buttons();
+        let buttons = capture_route_buttons(key_codes);
 
         if buttons != previous {
             if let Ok(mut events) = input_events.lock() {
@@ -362,6 +379,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
         stage.elapsed().as_secs_f64() * 1_000.0
     );
 
+    let key_codes = RouteKeyCodes::current_layout()?;
     let started_at = Instant::now();
     let started_at_text = rfc3339_now()?;
 
@@ -369,7 +387,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     let first = {
         let reader = pawn::PawnTelemetryReader::new(pid, resolution, route_schema)?;
         let elapsed = started_at.elapsed();
-        let buttons = capture_route_buttons();
+        let buttons = capture_route_buttons(key_codes);
         sample_from_telemetry(
             elapsed,
             reader.read_route_fast()?,
@@ -411,6 +429,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
                 resolution,
                 route_schema,
                 reader,
+                key_codes,
                 first,
                 started_at,
                 started_at_text,
@@ -550,6 +569,7 @@ fn run_worker(
     resolution: pawn::PawnResolution,
     route_schema: schema::RouteSchema,
     reader: pawn::PawnTelemetryReader,
+    key_codes: RouteKeyCodes,
     first: RouteSample,
     started_at: Instant,
     started_at_text: String,
@@ -585,8 +605,8 @@ fn run_worker(
                 return;
             }
 
-            let down_keys = initial_hook_key_state();
-            let initial_buttons = route_buttons_from_down_keys(&down_keys);
+            let down_keys = initial_hook_key_state(key_codes);
+            let initial_buttons = route_buttons_from_down_keys(&down_keys, key_codes);
 
             if let Ok(mut events) = input_events_worker.lock() {
                 events.push(RouteInputEvent {
@@ -600,6 +620,7 @@ fn run_worker(
                     started_at: input_started_at,
                     events: input_events_worker.clone(),
                     down_keys,
+                    key_codes,
                     buttons: initial_buttons,
                 });
             }
@@ -626,6 +647,7 @@ fn run_worker(
                     &input_running_worker,
                     &input_events_worker,
                     input_started_at,
+                    key_codes,
                 );
                 return;
             }
@@ -729,7 +751,7 @@ fn run_worker(
         }
 
         let elapsed = started_at.elapsed();
-        let buttons = capture_route_buttons();
+        let buttons = capture_route_buttons(key_codes);
         match reader.read_route_fast().and_then(|telemetry| {
             sample_from_telemetry(
                 elapsed,
@@ -881,24 +903,13 @@ fn sample_from_telemetry(
     Ok(sample)
 }
 
-fn capture_route_buttons() -> RouteButtons {
-    RouteButtons {
-        // Support both the user's AZERTY ZQSD layout and QWERTY WASD.
-        // GetAsyncKeyState uses virtual-key codes for the actual key labels.
-        forward: key_is_down(b'Z' as u16) || key_is_down(b'W' as u16),
-        back: key_is_down(b'S' as u16),
-        left: key_is_down(b'Q' as u16) || key_is_down(b'A' as u16),
-        right: key_is_down(b'D' as u16),
-        jump: key_is_down(VK_SPACE),
-        crouch: key_is_down(VK_CONTROL),
-        dash: key_is_down(VK_SHIFT),
-    }
+fn capture_route_buttons(key_codes: RouteKeyCodes) -> RouteButtons {
+    route_buttons_from_down_keys(&initial_hook_key_state(key_codes), key_codes)
 }
 
 fn key_is_down(virtual_key: u16) -> bool {
-    // High bit = key is currently down. Route recording already samples at
-    // ~60 Hz, so preserving the held state gives BOTREC enough information
-    // to reconstruct press/release transitions on the output timeline.
+    // High bit = current held state. This is only the telemetry snapshot /
+    // polling fallback; the keyboard hook preserves brief press/release events.
     unsafe { (GetAsyncKeyState(i32::from(virtual_key)) as u16 & 0x8000) != 0 }
 }
 
@@ -949,7 +960,7 @@ fn finish_recording(
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 6,
+        version: 7,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -958,7 +969,7 @@ fn finish_recording(
         velocity_source: "C_BaseEntity::m_vecAbsVelocity",
         view_angles_source: "C_CitadelPlayerPawn::m_angClientCamera",
         buttons_source: "Telemetry samples keep a compatibility snapshot of Win32 GetAsyncKeyState buttons",
-        input_event_source: "Low-level Windows WH_KEYBOARD_LL keydown/keyup transition recorder: Z/W=forward, S=back, Q/A=left, D=right, Space=jump, Ctrl=crouch/slide, Shift=dash",
+        input_event_source: "Low-level Windows WH_KEYBOARD_LL press/release recorder with default physical bindings: 0x11=forward, 0x1f=back, 0x1e=left, 0x20=right, 0x10=melee; Space=jump, Ctrl=crouch/slide, Shift=dash. AZERTY/QWERTY layout resolved at start; custom Deadlock binds not synchronized",
         input_event_count: input_events.len(),
         input_events,
         camera_event_source: "Dedicated ~2 ms m_angClientCamera transition recorder",
@@ -1135,6 +1146,48 @@ mod tests {
     }
 
     #[test]
+    fn azerty_and_qwerty_keep_melee_separate_from_left() {
+        for (forward, left, melee) in [(b'Z', b'Q', b'A'), (b'W', b'A', b'Q')] {
+            let keys = RouteKeyCodes {
+                forward: forward as u16, back: b'S' as u16,
+                left: left as u16, right: b'D' as u16, melee: melee as u16,
+            };
+            let mut down = [false; 256];
+            down[melee as usize] = true;
+            let buttons = route_buttons_from_down_keys(&down, keys);
+            assert!(buttons.melee);
+            assert!(!buttons.left);
+            down[left as usize] = true;
+            let buttons = route_buttons_from_down_keys(&down, keys);
+            assert!(buttons.melee && buttons.left);
+            down[melee as usize] = false;
+            let buttons = route_buttons_from_down_keys(&down, keys);
+            assert!(buttons.left && !buttons.melee);
+        }
+    }
+
+    #[test]
+    fn brief_melee_press_and_release_survive_serialization() {
+        let recording = finish_recording(
+            "2026-10-14T22:00:00.000Z".to_string(), 100.0,
+            vec![valid_sample(0.0), valid_sample(16.0)],
+            vec![
+                RouteInputEvent { t_ms: 5.0, buttons: RouteButtons {
+                    melee: true, ..RouteButtons::default()
+                } },
+                RouteInputEvent { t_ms: 9.0, buttons: RouteButtons::default() },
+            ],
+            Vec::new(), None, 0,
+        );
+        let json = serde_json::to_value(&recording).unwrap();
+        assert_eq!(json["version"], 7);
+        assert_eq!(json["inputEvents"][0]["buttons"]["melee"], true);
+        assert_eq!(json["inputEvents"][1]["buttons"]["melee"], false);
+        assert_eq!(json["inputEvents"][0]["tMs"], 5.0);
+        assert_eq!(json["inputEvents"][1]["tMs"], 9.0);
+    }
+
+    #[test]
     fn a_second_recording_is_refused() {
         assert!(ensure_can_start(false).is_ok());
         assert!(ensure_can_start(true).is_err());
@@ -1223,3 +1276,4 @@ mod tests {
         assert_eq!(civil_from_days(20_367), (2025, 10, 6));
     }
 }
+
