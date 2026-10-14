@@ -1735,6 +1735,7 @@ def main():
     warp_native_chain = False
     airborne_xy_guide = False
     mechanics_command_view = False
+    client_camera_view = False
     force_dash_left = False
     delay_first_crouch_ms = 0.0
 
@@ -1761,6 +1762,11 @@ def main():
 
         if arg == "--mechanics-command-view":
             mechanics_command_view = True
+            i += 1
+            continue
+
+        if arg == "--client-camera-view":
+            client_camera_view = True
             i += 1
             continue
 
@@ -1953,6 +1959,11 @@ def main():
             f"{first_crouch_start_ms + delay_first_crouch_ms:.1f} ms "
             f"(release unchanged at {first_crouch_release_ms:.1f} ms)"
         )
+    print(
+        "Command view: "
+        + ("legacy client camera (--client-camera-view)"
+           if client_camera_view else "recorded pawn diagnostics.viewAngles where available")
+    )
     print(f"Samples     : {len(samples)}")
     print(
         f"Sample rate : "
@@ -2164,25 +2175,18 @@ def main():
         if camera_state is not None:
             route_yaw, route_pitch = camera_state
 
-        if mechanics_view_anchors is not None:
-            wall_jump_ms, _, chain_end_ms = mechanics_view_anchors
-            mechanics_view_start_ms = max(
-                0.0,
-                wall_jump_ms - 100.0,
+        # BOTREC field 4 is the command/pawn view, not the visual client
+        # camera. Use recorded pawn view for every frame where available,
+        # including ground movement and the very first crouch/slide.
+        # --client-camera-view preserves the previous converter output for A/B.
+        if not client_camera_view:
+            command_view = command_view_at_ms(
+                samples,
+                times_ms,
+                target_ms,
             )
-
-            if (
-                mechanics_view_start_ms
-                <= target_ms
-                <= chain_end_ms
-            ):
-                command_view = command_view_at_ms(
-                    samples,
-                    times_ms,
-                    target_ms,
-                )
-                if command_view is not None:
-                    route_yaw, route_pitch = command_view
+            if command_view is not None:
+                route_yaw, route_pitch = command_view
 
         movement_input = input_movement_at_ms(
             samples,
