@@ -74,11 +74,14 @@ struct RouteEngineInputEvent {
     read_finished_ms: f64,
     movement_services_hex: String,
     // Hex strings preserve all uint64 bits when the JSON is opened in JS.
-    button_states_hex: [String; 3],
-    pressed_command_numbers: Vec<u32>,
-    last_command_number: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    button_states_hex: Option<[String; 3]>,
+    button_state_layout: &'static str,
+    button_block_hex: String,
+    pressed_command_numbers: Option<Vec<u32>>,
+    last_command_number: Option<u32>,
     command_axes: [f32; 3],
-    old_view_angles: [f32; 3],
+    old_view_angles: Option<[f32; 3]>,
     buffers_match: bool,
 }
 
@@ -90,8 +93,11 @@ impl RouteEngineInputEvent {
             t_ms: (read_started_ms + read_finished_ms) * 0.5,
             read_started_ms, read_finished_ms,
             movement_services_hex: format!("0x{:016X}", input.movement_services),
-            button_states_hex: input.button_states.map(|v| format!("0x{v:016X}")),
-            pressed_command_numbers: input.pressed_command_numbers.to_vec(),
+            button_states_hex: input.button_states.map(|states| states.map(|v| format!("0x{v:016X}"))),
+            button_state_layout: if input.button_states.is_some() { "reflectedArray" } else { "rawEmbeddedMember" },
+            button_block_hex: input.button_block[..input.button_block_len as usize]
+                .iter().map(|v| format!("{v:02X}")).collect(),
+            pressed_command_numbers: input.pressed_command_numbers.map(|values| values.to_vec()),
             last_command_number: input.last_command_number,
             command_axes: input.command_axes,
             old_view_angles: input.old_view_angles,
@@ -161,6 +167,7 @@ pub struct RouteRecording {
     target_sample_rate_hz: u32,
     sample_count: usize,
     position_source: &'static str,
+    sample_coherence_source: &'static str,
     velocity_source: &'static str,
     view_angles_source: &'static str,
     buttons_source: &'static str,
@@ -743,7 +750,7 @@ fn run_worker(
             if let Ok(mut capture) = engine_capture_worker.lock() {
                 capture.schema_available = reader.has_engine_input_schema();
                 if !capture.schema_available {
-                    capture.last_error = Some("Engine-input fields unavailable in live schema".to_string());
+                    capture.last_error = Some(reader.engine_input_schema_error());
                     return;
                 }
             }
@@ -973,7 +980,7 @@ fn read_verified_sample(
     buttons: RouteButtons, previous: Option<&RouteSample>,
 ) -> Result<RouteSample, String> {
     let read_start = started_at.elapsed();
-    let telemetry = reader.read()?;
+    let telemetry = reader.read_route_clock_checked()?;
     let read_end = started_at.elapsed();
     let midpoint = read_start + (read_end - read_start) / 2;
     let mut sample = sample_from_telemetry(midpoint, telemetry, buttons, previous)?;
@@ -1098,19 +1105,20 @@ fn finish_recording(
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 8,
+        version: 9,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
         sample_count: samples.len(),
         position_source: "CGameSceneNode::m_vecAbsOrigin",
+        sample_coherence_source: "Single telemetry snapshot plus scene-node/simulation-clock recheck. coherent means this guard matched, not atomic publication of every engine field.",
         velocity_source: "C_BaseEntity::m_vecAbsVelocity",
         view_angles_source: "C_CitadelPlayerPawn::m_angClientCamera",
         buttons_source: "Telemetry samples keep a compatibility snapshot of Win32 GetAsyncKeyState buttons",
         input_event_source: "Low-level Windows WH_KEYBOARD_LL press/release recorder with default physical bindings: 0x11=forward, 0x1f=back, 0x1e=left, 0x20=right, 0x10=melee; Space=jump, Ctrl=crouch/slide, Shift=dash. AZERTY/QWERTY layout resolved at start; custom Deadlock binds not synchronized",
         input_event_count: input_events.len(),
         input_events,
-        engine_input_source: "Read-only ~2 ms CPlayer_MovementServices observations: two bounded snapshots with pointer recheck. Hex button states, per-button press command numbers, last processed command, command axes and OLD view angles. Not a complete CUserCmd stream; polling can miss commands. Not used for conversion yet.",
+        engine_input_source: "Read-only CPlayer_MovementServices polling, two bounded snapshots and pointer recheck. Raw m_nButtons member bytes are always retained; masks are decoded ONLY when the nested array offset is reflected. Press command numbers, last processed command and OLD view angles are optional/null when not reflected. Not a complete CUserCmd stream; polling can miss commands. Not used for conversion yet.",
         engine_input_event_count: 0,
         engine_input_events: Vec::new(),
         engine_input_read_errors: 0,
@@ -1326,7 +1334,7 @@ mod tests {
             Vec::new(), None, 0,
         );
         let json = serde_json::to_value(&recording).unwrap();
-        assert_eq!(json["version"], 8);
+        assert_eq!(json["version"], 9);
         assert_eq!(json["inputEvents"][0]["buttons"]["melee"], true);
         assert_eq!(json["inputEvents"][1]["buttons"]["melee"], false);
         assert_eq!(json["inputEvents"][0]["tMs"], 5.0);
@@ -1339,9 +1347,10 @@ mod tests {
         pressed[32] = 500;
         let event = RouteEngineInputEvent::from_snapshot(pawn::EngineInputSnapshot {
             movement_services: 0x12345678,
-            button_states: [0x0101000100000008, 0x100000000, 0],
-            pressed_command_numbers: pressed, last_command_number: 501,
-            command_axes: [0.75, -1.0, 0.0], old_view_angles: [-10.0, 25.0, 0.0],
+            button_states: Some([0x0101000100000008, 0x100000000, 0]),
+            button_block: [0; 64], button_block_len: 32,
+            pressed_command_numbers: Some(pressed), last_command_number: Some(501),
+            command_axes: [0.75, -1.0, 0.0], old_view_angles: Some([-10.0, 25.0, 0.0]),
             buffers_match: false,
         }, 10.0, 14.0);
         let json = serde_json::to_value(&event).unwrap();
@@ -1349,10 +1358,30 @@ mod tests {
         assert_eq!(json["readStartedMs"], 10.0);
         assert_eq!(json["readFinishedMs"], 14.0);
         assert_eq!(json["buttonStatesHex"][0], "0x0101000100000008");
+        assert_eq!(json["buttonStateLayout"], "reflectedArray");
         assert_eq!(json["pressedCommandNumbers"][32], 500);
         assert_eq!(json["lastCommandNumber"], 501);
         assert_eq!(json["buffersMatch"], false);
         assert_eq!(json["commandAxes"][0], 0.75);
+    }
+
+    #[test]
+    fn raw_button_json_does_not_claim_decoded_masks_or_missing_command_numbers() {
+        let mut block = [0_u8; 64];
+        block[..4].copy_from_slice(&[0xAB, 0xCD, 0, 1]);
+        let event = RouteEngineInputEvent::from_snapshot(pawn::EngineInputSnapshot {
+            movement_services: 0x10000, button_states: None,
+            button_block: block, button_block_len: 24,
+            pressed_command_numbers: None, last_command_number: None,
+            command_axes: [1.0, 0.0, 0.0], old_view_angles: None, buffers_match: true,
+        }, 0.0, 2.0);
+        let json = serde_json::to_value(event).unwrap();
+        assert!(json.get("buttonStatesHex").is_none());
+        assert_eq!(json["buttonStateLayout"], "rawEmbeddedMember");
+        assert!(json["buttonBlockHex"].as_str().unwrap().starts_with("ABCD0001"));
+        assert_eq!(json["buttonBlockHex"].as_str().unwrap().len(), 48);
+        assert!(json["lastCommandNumber"].is_null());
+        assert!(json["pressedCommandNumbers"].is_null());
     }
 
     #[test]
@@ -1444,5 +1473,6 @@ mod tests {
         assert_eq!(civil_from_days(20_367), (2025, 10, 6));
     }
 }
+
 
 

@@ -95,17 +95,20 @@ struct TelemetrySnapshot {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct EngineInputSnapshot {
     pub(crate) movement_services: u64,
-    pub(crate) button_states: [u64; 3],
-    pub(crate) pressed_command_numbers: [u32; 64],
-    pub(crate) last_command_number: u32,
+    pub(crate) button_states: Option<[u64; 3]>,
+    pub(crate) button_block: [u8; 64],
+    pub(crate) button_block_len: u8,
+    pub(crate) pressed_command_numbers: Option<[u32; 64]>,
+    pub(crate) last_command_number: Option<u32>,
     pub(crate) command_axes: [f32; 3],
-    pub(crate) old_view_angles: [f32; 3],
+    pub(crate) old_view_angles: Option<[f32; 3]>,
     pub(crate) buffers_match: bool,
 }
 
 pub(crate) struct PawnTelemetryReader {
     process: ReadOnlyProcess,
     engine_input_schema: Option<super::schema::RouteEngineInputSchema>,
+    engine_input_missing_field: Option<&'static str>,
     resolution: PawnResolution,
     pawn_handle_offset: u32,
     game_scene_node_offset: u32,
@@ -151,6 +154,7 @@ impl PawnTelemetryReader {
         let reader = Self {
             process: open_process_read_only(pid)?,
             engine_input_schema: route_schema.engine_input,
+            engine_input_missing_field: route_schema.engine_input_missing_field,
             resolution,
             pawn_handle_offset: route_schema.pawn_handle_offset,
             game_scene_node_offset: route_schema.game_scene_node_offset,
@@ -178,13 +182,43 @@ impl PawnTelemetryReader {
         self.engine_input_schema.is_some()
     }
 
+    pub(crate) fn engine_input_schema_error(&self) -> String {
+        format!("Engine-input schema unavailable: {}", self.engine_input_missing_field
+            .unwrap_or("unknown required member"))
+    }
+
+    /// A cheap consistency guard for the sampled entity clock and scene node.
+    /// This detects clock changes across the scene read; it does not certify
+    /// atomic publication of all engine fields or compare complete frames.
+    pub(crate) fn read_route_clock_checked(&self) -> Result<PawnTelemetry, String> {
+        let mut telemetry = self.read_route_fast()?;
+        let (start, size) = field_span(&[
+            (self.game_scene_node_offset, 8),
+            (self.simulation_tick_offset, 4),
+            (self.simulation_time_offset, 4),
+        ])?;
+        let bytes = read_exact(
+            self.process.0,
+            checked_add(self.resolution.pawn, start as u64, "route clock guard")?,
+            size, "route clock guard",
+        )?;
+        let node = read_u64(&bytes, (self.game_scene_node_offset - start) as usize, "scene guard")?;
+        let tick = read_u32(&bytes, (self.simulation_tick_offset - start) as usize, "tick guard")?;
+        let time = read_f32(&bytes, (self.simulation_time_offset - start) as usize, "time guard")?;
+        let d = &mut telemetry.diagnostics;
+        d.coherent = telemetry_clock_matches(
+            d.simulation_tick, d.simulation_time, d.scene_node, tick, time, node,
+        );
+        Ok(telemetry)
+    }
+
     /// Two bounded snapshots of the schema-resolved movement component.
     /// The pointer is checked again afterwards; unequal reads are retained
     /// as diagnostics with buffers_match=false, never silently repaired.
     pub(crate) fn read_engine_inputs(&self) -> Result<EngineInputSnapshot, String> {
         self.ensure_current_pawn()?;
         let schema = self.engine_input_schema
-            .ok_or_else(|| "Engine-input fields unavailable in live schema".to_string())?;
+            .ok_or_else(|| self.engine_input_schema_error())?;
         let pointer_address = checked_add(
             self.resolution.pawn, schema.movement_services_offset as u64,
             "movement-services pointer",
@@ -394,13 +428,34 @@ impl PawnTelemetryReader {
     }
 }
 
+fn telemetry_clock_matches(
+    tick: u32, time: f32, node: u64, after_tick: u32, after_time: f32, after_node: u64,
+) -> bool {
+    tick != u32::MAX && time.is_finite() && time >= 0.0
+        && tick == after_tick && time.to_bits() == after_time.to_bits()
+        && node == after_node
+}
+
 fn engine_input_span(schema: super::schema::RouteEngineInputSchema) -> Result<(u32, usize), String> {
-    let (start, size) = field_span(&[
-        (schema.buttons_offset, 24), (schema.pressed_commands_offset, 64 * 4),
-        (schema.last_command_offset, 4), (schema.forward_offset, 4),
-        (schema.left_offset, 4), (schema.up_offset, 4),
-        (schema.old_view_angles_offset, 12),
-    ])?;
+    // m_nButtons ends at the next reflected member. Raw bytes are retained
+    // when the inner array has no reflected offset; no mask layout is assumed.
+    if !(24..=64).contains(&schema.buttons_size) || schema.buttons_size % 8 != 0 {
+        return Err("Unsupported bounded m_nButtons member size".to_string());
+    }
+    if let Some(states) = schema.button_states_offset {
+        if states < schema.buttons_offset || u64::from(states) + 24 >
+            u64::from(schema.buttons_offset) + u64::from(schema.buttons_size) {
+            return Err("Reflected button states exceed parent member".to_string());
+        }
+    }
+    let mut fields = vec![
+        (schema.buttons_offset, schema.buttons_size as usize),
+        (schema.forward_offset, 4), (schema.left_offset, 4), (schema.up_offset, 4),
+    ];
+    if let Some(offset) = schema.pressed_commands_offset { fields.push((offset, 64 * 4)); }
+    if let Some(offset) = schema.last_command_offset { fields.push((offset, 4)); }
+    if let Some(offset) = schema.old_view_angles_offset { fields.push((offset, 12)); }
+    let (start, size) = field_span(&fields)?;
     if size > 16 * 1024 || u64::from(start) + size as u64 > u64::from(schema.class_size) {
         return Err("Engine-input fields exceed validated class bounds".to_string());
     }
@@ -411,32 +466,47 @@ fn parse_engine_input_snapshot(
     bytes: &[u8], start: u32, schema: super::schema::RouteEngineInputSchema,
     movement_services: u64, buffers_match: bool,
 ) -> Result<EngineInputSnapshot, String> {
+    engine_input_span(schema)?;
     let at = |offset: u32| offset.checked_sub(start)
         .map(|value| value as usize)
         .ok_or_else(|| "Engine-input field precedes snapshot".to_string());
     let buttons = at(schema.buttons_offset)?;
-    let button_states = [
-        read_u64(bytes, buttons, "held buttons")?,
-        read_u64(bytes, buttons + 8, "changed buttons")?,
-        read_u64(bytes, buttons + 16, "third button state")?,
-    ];
-    let pressed = at(schema.pressed_commands_offset)?;
-    let mut pressed_command_numbers = [0; 64];
-    for (index, command) in pressed_command_numbers.iter_mut().enumerate() {
-        *command = read_u32(bytes, pressed + index * 4, "button pressed command number")?;
-    }
+    let mut button_block = [0; 64];
+    let len = schema.buttons_size as usize;
+    let raw = bytes.get(buttons..buttons + len)
+        .ok_or_else(|| "Raw buttons exceed snapshot".to_string())?;
+    button_block[..len].copy_from_slice(raw);
+    let button_states = schema.button_states_offset.map(|offset| -> Result<[u64; 3], String> {
+        let offset = at(offset)?;
+        Ok([read_u64(bytes, offset, "held buttons")?,
+            read_u64(bytes, offset + 8, "changed buttons")?,
+            read_u64(bytes, offset + 16, "third button state")?])
+    }).transpose()?;
+    let pressed_command_numbers = schema.pressed_commands_offset.map(|offset| -> Result<[u32; 64], String> {
+        let pressed = at(offset)?;
+        let mut result = [0; 64];
+        for (index, command) in result.iter_mut().enumerate() {
+            *command = read_u32(bytes, pressed + index * 4, "button pressed command number")?;
+        }
+        Ok(result)
+    }).transpose()?;
     let command_axes = [
         read_f32(bytes, at(schema.forward_offset)?, "command forward")?,
         read_f32(bytes, at(schema.left_offset)?, "command left")?,
         read_f32(bytes, at(schema.up_offset)?, "command up")?,
     ];
-    let old_view_angles = read_f32x3(bytes, at(schema.old_view_angles_offset)?, "old command view")?;
-    if !command_axes.iter().chain(old_view_angles.iter()).all(|v| v.is_finite()) {
+    let old_view_angles = schema.old_view_angles_offset.map(|offset| {
+        read_f32x3(bytes, at(offset)?, "old command view")
+    }).transpose()?;
+    if !command_axes.iter().chain(old_view_angles.iter().flatten()).all(|v| v.is_finite()) {
         return Err("Engine-input observation contains non-finite values".to_string());
     }
     Ok(EngineInputSnapshot {
-        movement_services, button_states, pressed_command_numbers,
-        last_command_number: read_u32(bytes, at(schema.last_command_offset)?, "last command")?,
+        movement_services, button_states, button_block, button_block_len: len as u8,
+        pressed_command_numbers,
+        last_command_number: schema.last_command_offset.map(|offset| {
+            read_u32(bytes, at(offset)?, "last command")
+        }).transpose()?,
         command_axes, old_view_angles, buffers_match,
     })
 }
@@ -2170,9 +2240,9 @@ mod tests {
     fn input_schema() -> super::super::schema::RouteEngineInputSchema {
         super::super::schema::RouteEngineInputSchema {
             movement_services_offset: 0x100, class_size: 0x200,
-            buttons_offset: 0x20, pressed_commands_offset: 0x40,
-            last_command_offset: 0x140, forward_offset: 0x144,
-            left_offset: 0x148, up_offset: 0x14c, old_view_angles_offset: 0x150,
+            buttons_offset: 0x20, buttons_size: 0x20, button_states_offset: Some(0x20),
+            pressed_commands_offset: Some(0x40), last_command_offset: Some(0x140), forward_offset: 0x144,
+            left_offset: 0x148, up_offset: 0x14c, old_view_angles_offset: Some(0x150),
         }
     }
 
@@ -2183,16 +2253,16 @@ mod tests {
         let mut bytes = vec![0; size];
         let held = (1_u64 << 56) | (1_u64 << 32) | 8;
         bytes[0..8].copy_from_slice(&held.to_le_bytes());
-        let pressed = (schema.pressed_commands_offset - start) as usize + 32 * 4;
+        let pressed = (schema.pressed_commands_offset.unwrap() - start) as usize + 32 * 4;
         bytes[pressed..pressed + 4].copy_from_slice(&1234_u32.to_le_bytes());
-        let last = (schema.last_command_offset - start) as usize;
+        let last = (schema.last_command_offset.unwrap() - start) as usize;
         bytes[last..last + 4].copy_from_slice(&1235_u32.to_le_bytes());
         let forward = (schema.forward_offset - start) as usize;
         bytes[forward..forward + 4].copy_from_slice(&0.75_f32.to_le_bytes());
         let snapshot = parse_engine_input_snapshot(&bytes, start, schema, 0x10000, false).unwrap();
-        assert_eq!(snapshot.button_states[0], held);
-        assert_eq!(snapshot.pressed_command_numbers[32], 1234);
-        assert_eq!(snapshot.last_command_number, 1235);
+        assert_eq!(snapshot.button_states.unwrap()[0], held);
+        assert_eq!(snapshot.pressed_command_numbers.unwrap()[32], 1234);
+        assert_eq!(snapshot.last_command_number, Some(1235));
         assert_eq!(snapshot.command_axes, [0.75, 0.0, 0.0]);
         assert!(!snapshot.buffers_match);
         assert!(parse_engine_input_snapshot(&bytes[..8], start, schema, 0x10000, true).is_err());
@@ -2206,9 +2276,43 @@ mod tests {
         schema.class_size = 0x150;
         assert!(engine_input_span(schema).is_err());
         schema.class_size = 100_000;
-        schema.old_view_angles_offset = 90_000;
+        schema.old_view_angles_offset = Some(90_000);
         assert!(engine_input_span(schema).is_err());
     }
 
+    #[test]
+    fn raw_button_member_is_kept_without_guessing_nested_array_offset() {
+        let mut schema = input_schema();
+        schema.button_states_offset = None;
+        schema.pressed_commands_offset = None;
+        schema.last_command_offset = None;
+        schema.old_view_angles_offset = None;
+        let (start, size) = engine_input_span(schema).unwrap();
+        let mut bytes = vec![0; size];
+        bytes[..8].copy_from_slice(&0x12345678_u64.to_le_bytes());
+        bytes[8..16].copy_from_slice(&0x100000000_u64.to_le_bytes());
+        let result = parse_engine_input_snapshot(&bytes, start, schema, 0x10000, true).unwrap();
+        assert!(result.button_states.is_none());
+        assert!(result.last_command_number.is_none());
+        assert!(result.pressed_command_numbers.is_none());
+        assert!(result.old_view_angles.is_none());
+        assert_eq!(result.button_block_len, 32);
+        assert_eq!(&result.button_block[..32], &bytes[..32]);
+        schema.button_states_offset = Some(schema.buttons_offset + 16);
+        assert!(engine_input_span(schema).is_err());
+        schema.buttons_size = 100;
+        assert!(engine_input_span(schema).is_err());
+    }
+
+    #[test]
+    fn route_clock_guard_rejects_changes_and_sentinel_ticks() {
+        assert!(telemetry_clock_matches(10, 1.0, 0x10000, 10, 1.0, 0x10000));
+        assert!(!telemetry_clock_matches(10, 1.0, 0x10000, 11, 1.0, 0x10000));
+        assert!(!telemetry_clock_matches(10, 1.0, 0x10000, 10, 1.5, 0x10000));
+        assert!(!telemetry_clock_matches(10, 1.0, 0x10000, 10, 1.0, 0x20000));
+        assert!(!telemetry_clock_matches(u32::MAX, 1.0, 0x10000, u32::MAX, 1.0, 0x10000));
+    }
+
 }
+
 
