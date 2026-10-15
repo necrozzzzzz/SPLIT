@@ -91,8 +91,21 @@ struct TelemetrySnapshot {
     simulation_time: f32,
 }
 
+/// Observations of movement-service state, not a complete raw CUserCmd stream.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EngineInputSnapshot {
+    pub(crate) movement_services: u64,
+    pub(crate) button_states: [u64; 3],
+    pub(crate) pressed_command_numbers: [u32; 64],
+    pub(crate) last_command_number: u32,
+    pub(crate) command_axes: [f32; 3],
+    pub(crate) old_view_angles: [f32; 3],
+    pub(crate) buffers_match: bool,
+}
+
 pub(crate) struct PawnTelemetryReader {
     process: ReadOnlyProcess,
+    engine_input_schema: Option<super::schema::RouteEngineInputSchema>,
     resolution: PawnResolution,
     pawn_handle_offset: u32,
     game_scene_node_offset: u32,
@@ -137,6 +150,7 @@ impl PawnTelemetryReader {
         ])?;
         let reader = Self {
             process: open_process_read_only(pid)?,
+            engine_input_schema: route_schema.engine_input,
             resolution,
             pawn_handle_offset: route_schema.pawn_handle_offset,
             game_scene_node_offset: route_schema.game_scene_node_offset,
@@ -158,6 +172,38 @@ impl PawnTelemetryReader {
         };
         reader.ensure_current_pawn()?;
         Ok(reader)
+    }
+
+    pub(crate) fn has_engine_input_schema(&self) -> bool {
+        self.engine_input_schema.is_some()
+    }
+
+    /// Two bounded snapshots of the schema-resolved movement component.
+    /// The pointer is checked again afterwards; unequal reads are retained
+    /// as diagnostics with buffers_match=false, never silently repaired.
+    pub(crate) fn read_engine_inputs(&self) -> Result<EngineInputSnapshot, String> {
+        self.ensure_current_pawn()?;
+        let schema = self.engine_input_schema
+            .ok_or_else(|| "Engine-input fields unavailable in live schema".to_string())?;
+        let pointer_address = checked_add(
+            self.resolution.pawn, schema.movement_services_offset as u64,
+            "movement-services pointer",
+        )?;
+        let services = read_remote_u64(self.process.0, pointer_address, "movement services")?;
+        validate_user_address(services, "movement services")?;
+        let (start, size) = engine_input_span(schema)?;
+        let address = checked_add(services, start as u64, "engine-input snapshot")?;
+        let first = read_exact(self.process.0, address, size, "engine inputs first")?;
+        let second = read_exact(self.process.0, address, size, "engine inputs second")?;
+        let pointer_after = read_remote_u64(
+            self.process.0, pointer_address, "movement-services pointer after",
+        )?;
+        if services != pointer_after {
+            return Err("Movement services changed during input read".to_string());
+        }
+        parse_engine_input_snapshot(
+            &second, start, schema, services, first == second,
+        )
     }
 
     /// Very lean camera-only read path for high-rate route input capture.
@@ -205,7 +251,7 @@ impl PawnTelemetryReader {
                 prediction_error_time: snapshot.prediction_error_time,
                 simulation_tick: snapshot.simulation_tick,
                 simulation_time: snapshot.simulation_time,
-                coherent: true,
+                coherent: false,
                 read_attempts: 1,
             },
         })
@@ -348,8 +394,59 @@ impl PawnTelemetryReader {
     }
 }
 
+fn engine_input_span(schema: super::schema::RouteEngineInputSchema) -> Result<(u32, usize), String> {
+    let (start, size) = field_span(&[
+        (schema.buttons_offset, 24), (schema.pressed_commands_offset, 64 * 4),
+        (schema.last_command_offset, 4), (schema.forward_offset, 4),
+        (schema.left_offset, 4), (schema.up_offset, 4),
+        (schema.old_view_angles_offset, 12),
+    ])?;
+    if size > 16 * 1024 || u64::from(start) + size as u64 > u64::from(schema.class_size) {
+        return Err("Engine-input fields exceed validated class bounds".to_string());
+    }
+    Ok((start, size))
+}
+
+fn parse_engine_input_snapshot(
+    bytes: &[u8], start: u32, schema: super::schema::RouteEngineInputSchema,
+    movement_services: u64, buffers_match: bool,
+) -> Result<EngineInputSnapshot, String> {
+    let at = |offset: u32| offset.checked_sub(start)
+        .map(|value| value as usize)
+        .ok_or_else(|| "Engine-input field precedes snapshot".to_string());
+    let buttons = at(schema.buttons_offset)?;
+    let button_states = [
+        read_u64(bytes, buttons, "held buttons")?,
+        read_u64(bytes, buttons + 8, "changed buttons")?,
+        read_u64(bytes, buttons + 16, "third button state")?,
+    ];
+    let pressed = at(schema.pressed_commands_offset)?;
+    let mut pressed_command_numbers = [0; 64];
+    for (index, command) in pressed_command_numbers.iter_mut().enumerate() {
+        *command = read_u32(bytes, pressed + index * 4, "button pressed command number")?;
+    }
+    let command_axes = [
+        read_f32(bytes, at(schema.forward_offset)?, "command forward")?,
+        read_f32(bytes, at(schema.left_offset)?, "command left")?,
+        read_f32(bytes, at(schema.up_offset)?, "command up")?,
+    ];
+    let old_view_angles = read_f32x3(bytes, at(schema.old_view_angles_offset)?, "old command view")?;
+    if !command_axes.iter().chain(old_view_angles.iter()).all(|v| v.is_finite()) {
+        return Err("Engine-input observation contains non-finite values".to_string());
+    }
+    Ok(EngineInputSnapshot {
+        movement_services, button_states, pressed_command_numbers,
+        last_command_number: read_u32(bytes, at(schema.last_command_offset)?, "last command")?,
+        command_axes, old_view_angles, buffers_match,
+    })
+}
+
+
 fn snapshots_match(left: &TelemetrySnapshot, right: &TelemetrySnapshot) -> bool {
-    left.scene_node == right.scene_node
+    left.simulation_tick != u32::MAX
+        && left.simulation_time.is_finite()
+        && left.simulation_time >= 0.0
+        && left.scene_node == right.scene_node
         && left.simulation_tick == right.simulation_tick
         && left.simulation_time.to_bits() == right.simulation_time.to_bits()
         && f32x3_bits_equal(left.position, right.position)
@@ -2063,5 +2160,55 @@ mod tests {
         let mut changed = snapshot;
         changed.view_angles[1] = 91.0;
         assert!(!snapshots_match(&snapshot, &changed));
+        changed = snapshot;
+        changed.simulation_tick = u32::MAX;
+        assert!(!snapshots_match(&changed, &changed));
+        changed = snapshot;
+        changed.simulation_time = f32::NAN;
+        assert!(!snapshots_match(&changed, &changed));
     }
+    fn input_schema() -> super::super::schema::RouteEngineInputSchema {
+        super::super::schema::RouteEngineInputSchema {
+            movement_services_offset: 0x100, class_size: 0x200,
+            buttons_offset: 0x20, pressed_commands_offset: 0x40,
+            last_command_offset: 0x140, forward_offset: 0x144,
+            left_offset: 0x148, up_offset: 0x14c, old_view_angles_offset: 0x150,
+        }
+    }
+
+    #[test]
+    fn engine_inputs_keep_high_bits_press_commands_and_fractional_axes() {
+        let schema = input_schema();
+        let (start, size) = engine_input_span(schema).unwrap();
+        let mut bytes = vec![0; size];
+        let held = (1_u64 << 56) | (1_u64 << 32) | 8;
+        bytes[0..8].copy_from_slice(&held.to_le_bytes());
+        let pressed = (schema.pressed_commands_offset - start) as usize + 32 * 4;
+        bytes[pressed..pressed + 4].copy_from_slice(&1234_u32.to_le_bytes());
+        let last = (schema.last_command_offset - start) as usize;
+        bytes[last..last + 4].copy_from_slice(&1235_u32.to_le_bytes());
+        let forward = (schema.forward_offset - start) as usize;
+        bytes[forward..forward + 4].copy_from_slice(&0.75_f32.to_le_bytes());
+        let snapshot = parse_engine_input_snapshot(&bytes, start, schema, 0x10000, false).unwrap();
+        assert_eq!(snapshot.button_states[0], held);
+        assert_eq!(snapshot.pressed_command_numbers[32], 1234);
+        assert_eq!(snapshot.last_command_number, 1235);
+        assert_eq!(snapshot.command_axes, [0.75, 0.0, 0.0]);
+        assert!(!snapshot.buffers_match);
+        assert!(parse_engine_input_snapshot(&bytes[..8], start, schema, 0x10000, true).is_err());
+        bytes[forward..forward + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(parse_engine_input_snapshot(&bytes, start, schema, 0x10000, true).is_err());
+    }
+
+    #[test]
+    fn engine_input_span_refuses_fields_outside_class() {
+        let mut schema = input_schema();
+        schema.class_size = 0x150;
+        assert!(engine_input_span(schema).is_err());
+        schema.class_size = 100_000;
+        schema.old_view_angles_offset = 90_000;
+        assert!(engine_input_span(schema).is_err());
+    }
+
 }
+

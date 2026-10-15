@@ -68,6 +68,48 @@ struct RouteInputEvent {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+struct RouteEngineInputEvent {
+    t_ms: f64,
+    read_started_ms: f64,
+    read_finished_ms: f64,
+    movement_services_hex: String,
+    // Hex strings preserve all uint64 bits when the JSON is opened in JS.
+    button_states_hex: [String; 3],
+    pressed_command_numbers: Vec<u32>,
+    last_command_number: u32,
+    command_axes: [f32; 3],
+    old_view_angles: [f32; 3],
+    buffers_match: bool,
+}
+
+impl RouteEngineInputEvent {
+    fn from_snapshot(
+        input: pawn::EngineInputSnapshot, read_started_ms: f64, read_finished_ms: f64,
+    ) -> Self {
+        Self {
+            t_ms: (read_started_ms + read_finished_ms) * 0.5,
+            read_started_ms, read_finished_ms,
+            movement_services_hex: format!("0x{:016X}", input.movement_services),
+            button_states_hex: input.button_states.map(|v| format!("0x{v:016X}")),
+            pressed_command_numbers: input.pressed_command_numbers.to_vec(),
+            last_command_number: input.last_command_number,
+            command_axes: input.command_axes,
+            old_view_angles: input.old_view_angles,
+            buffers_match: input.buffers_match,
+        }
+    }
+}
+
+#[derive(Default)]
+struct EngineInputCapture {
+    events: Vec<RouteEngineInputEvent>,
+    read_errors: u64,
+    last_error: Option<String>,
+    schema_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 struct RouteCameraEvent {
     t_ms: f64,
     pitch: f32,
@@ -77,6 +119,8 @@ struct RouteCameraEvent {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct RouteSampleDiagnostics {
+    read_started_ms: f64,
+    read_finished_ms: f64,
     scene_node: u64,
     local_origin: [f32; 3],
     absolute_origin: [f32; 3],
@@ -123,6 +167,13 @@ pub struct RouteRecording {
     input_event_source: &'static str,
     input_event_count: usize,
     input_events: Vec<RouteInputEvent>,
+    engine_input_source: &'static str,
+    engine_input_event_count: usize,
+    engine_input_events: Vec<RouteEngineInputEvent>,
+    engine_input_read_errors: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    engine_input_last_error: Option<String>,
+    engine_input_schema_available: bool,
     camera_event_source: &'static str,
     camera_event_count: usize,
     camera_events: Vec<RouteCameraEvent>,
@@ -386,14 +437,8 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     let stage = Instant::now();
     let first = {
         let reader = pawn::PawnTelemetryReader::new(pid, resolution, route_schema)?;
-        let elapsed = started_at.elapsed();
         let buttons = capture_route_buttons(key_codes);
-        sample_from_telemetry(
-            elapsed,
-            reader.read_route_fast()?,
-            buttons,
-            None,
-        )?
+        read_verified_sample(&reader, started_at, buttons, None)?
     };
     println!(
         "[SPLIT][RouteRecorder][StartTiming] first_sample={:.2}ms",
@@ -679,6 +724,73 @@ fn run_worker(
         })
         .ok();
 
+    let engine_capture = Arc::new(Mutex::new(EngineInputCapture::default()));
+    let engine_running = Arc::new(AtomicBool::new(true));
+    let engine_capture_worker = engine_capture.clone();
+    let engine_running_worker = engine_running.clone();
+    let engine_thread = thread::Builder::new()
+        .name("split-route-engine-inputs".to_string())
+        .spawn(move || {
+            let reader = match pawn::PawnTelemetryReader::new(pid, resolution, route_schema) {
+                Ok(reader) => reader,
+                Err(error) => {
+                    if let Ok(mut capture) = engine_capture_worker.lock() {
+                        capture.last_error = Some(error);
+                    }
+                    return;
+                }
+            };
+            if let Ok(mut capture) = engine_capture_worker.lock() {
+                capture.schema_available = reader.has_engine_input_schema();
+                if !capture.schema_available {
+                    capture.last_error = Some("Engine-input fields unavailable in live schema".to_string());
+                    return;
+                }
+            }
+            let mut previous = None;
+            let mut consecutive_errors = 0;
+            while engine_running_worker.load(Ordering::Acquire) {
+                let read_started_ms = started_at.elapsed().as_secs_f64() * 1_000.0;
+                let input = reader.read_engine_inputs();
+                let read_finished_ms = started_at.elapsed().as_secs_f64() * 1_000.0;
+                match input {
+                    Ok(input) => {
+                        consecutive_errors = 0;
+                        if previous != Some(input) {
+                            if let Ok(mut capture) = engine_capture_worker.lock() {
+                                capture.events.push(RouteEngineInputEvent::from_snapshot(
+                                    input, read_started_ms, read_finished_ms,
+                                ));
+                            }
+                            previous = Some(input);
+                        }
+                    }
+                    Err(error) => {
+                        consecutive_errors += 1;
+                        if let Ok(mut capture) = engine_capture_worker.lock() {
+                            capture.read_errors += 1;
+                            capture.last_error = Some(error);
+                        }
+                        if consecutive_errors >= 21 {
+                            break;
+                        }
+                    }
+                }
+                // Observational polling can miss commands; command numbers and
+                // pressed-command history expose gaps instead of inventing frames.
+                thread::sleep(Duration::from_millis(2));
+            }
+        });
+    let engine_thread = match engine_thread {
+        Ok(handle) => Some(handle),
+        Err(error) => {
+            if let Ok(mut capture) = engine_capture.lock() {
+                capture.last_error = Some(format!("Could not start engine-input capture: {error}"));
+            }
+            None
+        }
+    };
+
     let camera_events: Arc<Mutex<Vec<RouteCameraEvent>>> =
         Arc::new(Mutex::new(Vec::new()));
     let camera_running = Arc::new(AtomicBool::new(true));
@@ -750,16 +862,8 @@ fn run_worker(
             break;
         }
 
-        let elapsed = started_at.elapsed();
         let buttons = capture_route_buttons(key_codes);
-        match reader.read_route_fast().and_then(|telemetry| {
-            sample_from_telemetry(
-                elapsed,
-                telemetry,
-                buttons,
-                samples.last(),
-            )
-        })
+        match read_verified_sample(&reader, started_at, buttons, samples.last())
         {
             Ok(sample) => {
                 samples.push(sample);
@@ -798,6 +902,11 @@ fn run_worker(
         let _ = handle.join();
     }
 
+    engine_running.store(false, Ordering::Release);
+    if let Some(handle) = engine_thread {
+        let _ = handle.join();
+    }
+
     let captured_input_events = input_events
         .lock()
         .map(|events| events.clone())
@@ -808,7 +917,7 @@ fn run_worker(
         .unwrap_or_default();
 
     let duration_ms = started_at.elapsed().as_secs_f64() * 1_000.0;
-    let recording = finish_recording(
+    let mut recording = finish_recording(
         started_at_text,
         duration_ms,
         samples,
@@ -816,6 +925,18 @@ fn run_worker(
         captured_camera_events,
         stop_reason.clone(),
         missed_deadlines,
+    );
+    if let Ok(mut capture) = engine_capture.lock() {
+        recording.engine_input_events = std::mem::take(&mut capture.events);
+        recording.engine_input_event_count = recording.engine_input_events.len();
+        recording.engine_input_read_errors = capture.read_errors;
+        recording.engine_input_last_error = capture.last_error.take();
+        recording.engine_input_schema_available = capture.schema_available;
+    }
+    println!(
+        "[SPLIT][RouteRecorder] engine_inputs={} schema_available={} read_errors={} last_error={:?}",
+        recording.engine_input_event_count, recording.engine_input_schema_available,
+        recording.engine_input_read_errors, recording.engine_input_last_error,
     );
     if let Some(reason) = &stop_reason {
         eprintln!("[SPLIT][RouteRecorder] aborted reason={reason}");
@@ -847,6 +968,21 @@ fn advance_deadline(next_deadline: &mut Instant, now: Instant) -> u64 {
     missed
 }
 
+fn read_verified_sample(
+    reader: &pawn::PawnTelemetryReader, started_at: Instant,
+    buttons: RouteButtons, previous: Option<&RouteSample>,
+) -> Result<RouteSample, String> {
+    let read_start = started_at.elapsed();
+    let telemetry = reader.read()?;
+    let read_end = started_at.elapsed();
+    let midpoint = read_start + (read_end - read_start) / 2;
+    let mut sample = sample_from_telemetry(midpoint, telemetry, buttons, previous)?;
+    sample.diagnostics.read_started_ms = read_start.as_secs_f64() * 1_000.0;
+    sample.diagnostics.read_finished_ms = read_end.as_secs_f64() * 1_000.0;
+    Ok(sample)
+}
+
+
 fn sample_from_telemetry(
     elapsed: Duration,
     telemetry: pawn::PawnTelemetry,
@@ -873,6 +1009,8 @@ fn sample_from_telemetry(
         yaw: telemetry.yaw,
         buttons,
         diagnostics: RouteSampleDiagnostics {
+            read_started_ms: t_ms,
+            read_finished_ms: t_ms,
             scene_node: telemetry.diagnostics.scene_node,
             local_origin: telemetry.diagnostics.local_origin,
             absolute_origin: telemetry.diagnostics.absolute_origin,
@@ -960,7 +1098,7 @@ fn finish_recording(
     let sampling_stats = sampling_stats(&samples, missed_deadlines);
     RouteRecording {
         format: "split-route-debug",
-        version: 7,
+        version: 8,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -972,6 +1110,12 @@ fn finish_recording(
         input_event_source: "Low-level Windows WH_KEYBOARD_LL press/release recorder with default physical bindings: 0x11=forward, 0x1f=back, 0x1e=left, 0x20=right, 0x10=melee; Space=jump, Ctrl=crouch/slide, Shift=dash. AZERTY/QWERTY layout resolved at start; custom Deadlock binds not synchronized",
         input_event_count: input_events.len(),
         input_events,
+        engine_input_source: "Read-only ~2 ms CPlayer_MovementServices observations: two bounded snapshots with pointer recheck. Hex button states, per-button press command numbers, last processed command, command axes and OLD view angles. Not a complete CUserCmd stream; polling can miss commands. Not used for conversion yet.",
+        engine_input_event_count: 0,
+        engine_input_events: Vec::new(),
+        engine_input_read_errors: 0,
+        engine_input_last_error: None,
+        engine_input_schema_available: false,
         camera_event_source: "Dedicated ~2 ms m_angClientCamera transition recorder",
         camera_event_count: camera_events.len(),
         camera_events,
@@ -1126,6 +1270,8 @@ mod tests {
             pitch: Some(-10.0),
             buttons: RouteButtons::default(),
             diagnostics: RouteSampleDiagnostics {
+                read_started_ms: t_ms,
+                read_finished_ms: t_ms,
                 scene_node: 0x1234,
                 local_origin: [1.0, 2.0, 3.0],
                 absolute_origin: [1.0, 2.0, 3.0],
@@ -1180,11 +1326,33 @@ mod tests {
             Vec::new(), None, 0,
         );
         let json = serde_json::to_value(&recording).unwrap();
-        assert_eq!(json["version"], 7);
+        assert_eq!(json["version"], 8);
         assert_eq!(json["inputEvents"][0]["buttons"]["melee"], true);
         assert_eq!(json["inputEvents"][1]["buttons"]["melee"], false);
         assert_eq!(json["inputEvents"][0]["tMs"], 5.0);
         assert_eq!(json["inputEvents"][1]["tMs"], 9.0);
+    }
+
+    #[test]
+    fn engine_input_json_preserves_uint64_masks_and_read_window() {
+        let mut pressed = [0_u32; 64];
+        pressed[32] = 500;
+        let event = RouteEngineInputEvent::from_snapshot(pawn::EngineInputSnapshot {
+            movement_services: 0x12345678,
+            button_states: [0x0101000100000008, 0x100000000, 0],
+            pressed_command_numbers: pressed, last_command_number: 501,
+            command_axes: [0.75, -1.0, 0.0], old_view_angles: [-10.0, 25.0, 0.0],
+            buffers_match: false,
+        }, 10.0, 14.0);
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["tMs"], 12.0);
+        assert_eq!(json["readStartedMs"], 10.0);
+        assert_eq!(json["readFinishedMs"], 14.0);
+        assert_eq!(json["buttonStatesHex"][0], "0x0101000100000008");
+        assert_eq!(json["pressedCommandNumbers"][32], 500);
+        assert_eq!(json["lastCommandNumber"], 501);
+        assert_eq!(json["buffersMatch"], false);
+        assert_eq!(json["commandAxes"][0], 0.75);
     }
 
     #[test]
@@ -1276,4 +1444,5 @@ mod tests {
         assert_eq!(civil_from_days(20_367), (2025, 10, 6));
     }
 }
+
 

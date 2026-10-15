@@ -84,8 +84,24 @@ pub(crate) struct SchemaResolver {
     scopes: Vec<ScopeEntry>,
 }
 
+// Optional read-only diagnostics. Resolve every member through live SchemaSystem;
+// unavailable diagnostics must not prevent the existing recorder from starting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RouteEngineInputSchema {
+    pub(crate) movement_services_offset: u32,
+    pub(crate) class_size: u32,
+    pub(crate) buttons_offset: u32,
+    pub(crate) pressed_commands_offset: u32,
+    pub(crate) last_command_offset: u32,
+    pub(crate) forward_offset: u32,
+    pub(crate) left_offset: u32,
+    pub(crate) up_offset: u32,
+    pub(crate) old_view_angles_offset: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RouteSchema {
+    pub(crate) engine_input: Option<RouteEngineInputSchema>,
     pub(crate) local_flag_offset: u32,
     pub(crate) pawn_handle_offset: u32,
     pub(crate) identity_size: u32,
@@ -522,7 +538,30 @@ pub(crate) fn resolve_route_schema(pid: u32) -> Result<RouteSchema, String> {
                     .ok_or_else(|| format!("Exact schema field {class_name}::{field_name} was not found"))
             };
         
+            let engine_input = (|| -> Result<RouteEngineInputSchema, String> {
+                let class_name = "CPlayer_MovementServices";
+                let buttons_offset = required(class_name, "m_nButtons")?
+                    .checked_add(required("CInButtonState", "m_pButtonStates")?)
+                    .ok_or_else(|| "Engine input button offset overflow".to_string())?;
+                Ok(RouteEngineInputSchema {
+                    movement_services_offset: required("C_BasePlayerPawn", "m_pMovementServices")?,
+                    class_size: resolver.find_class_size(client, class_name)?
+                        .ok_or_else(|| "Movement-services class size unavailable".to_string())?,
+                    buttons_offset,
+                    pressed_commands_offset: required(class_name, "m_pButtonPressedCmdNumber")?,
+                    last_command_offset: required(class_name, "m_nLastCommandNumberProcessed")?,
+                    forward_offset: required(class_name, "m_flCmdForwardMove")?,
+                    left_offset: required(class_name, "m_flCmdLeftMove")?,
+                    up_offset: required(class_name, "m_flCmdUpMove")?,
+                    old_view_angles_offset: required(class_name, "m_vecOldViewAngles")?,
+                })
+            })().map_err(|error| {
+                eprintln!("[SPLIT][RouteRecorder] engine-input schema unavailable: {error}");
+                error
+            }).ok();
+
             Ok(RouteSchema {
+                engine_input,
                 local_flag_offset: required("CBasePlayerController", "m_bIsLocalPlayerController")?,
                 pawn_handle_offset: required("CBasePlayerController", "m_hPawn")?,
                 identity_size: resolver
@@ -1186,3 +1225,4 @@ mod tests {
         assert_eq!(validate_field_offset(0x1234, 0x4000), Ok(0x1234));
     }
 }
+
