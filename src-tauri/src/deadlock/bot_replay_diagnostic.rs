@@ -60,6 +60,8 @@ pub fn record_bot_replay_diagnostic(
     let mut next = start;
     let mut good = 0u64;
     let mut failures = 0u64;
+    let mut input_observations = 0u64;
+    let mut input_errors = 0u64;
     let mut consecutive_failures = 0u64;
     let mut missed_deadlines = 0u64;
     let mut previous_position: Option<([f32; 3], f64, f64)> = None;
@@ -137,9 +139,11 @@ pub fn record_bot_replay_diagnostic(
             let input_start = start.elapsed().as_secs_f64() * 1000.0;
             let observation = reader.read_input_observation();
             let input_end = start.elapsed().as_secs_f64() * 1000.0;
+            if observation.is_ok() { input_observations += 1; } else { input_errors += 1; }
             append_input_columns(&mut row, input_start, input_end, observation);
         } else {
             row[39] = csv_error(&input_schema_error);
+            input_errors += 1;
         }
         writeln!(out, "{}", row.join(",")).map_err(|e| e.to_string())?;
         if consecutive_failures > 20 {
@@ -164,7 +168,7 @@ pub fn record_bot_replay_diagnostic(
         .map(|first| (good - 1) as f64 * 1000.0 / (last_good_ms - first))
         .unwrap_or(0.0);
     let summary = format!(
-        "Bot replay trace: {output_path} ({good} samples, {failures} read errors). Actual {effective_hz:.2} Hz; max interval {max_interval_ms:.3} ms; max read {max_read_ms:.3} ms; missed slots {missed_deadlines}. Start time is the capture start, not the exact BOTREC tick. Input columns are separately timed client observations; nonlocal fields may be unavailable or stale, and matching buffers do not prove execution."
+        "Bot replay trace: {output_path} ({good} samples, {failures} read errors). Actual {effective_hz:.2} Hz; max interval {max_interval_ms:.3} ms; max read {max_read_ms:.3} ms; missed slots {missed_deadlines}. Start time is the capture start, not the exact BOTREC tick. Inputs: {input_observations} observations, {input_errors} errors. Input columns are separately timed client observations; nonlocal fields may be unavailable or stale, and matching buffers do not prove execution."
     );
     println!("[SPLIT][BotTrace] {summary}");
     Ok(summary)
