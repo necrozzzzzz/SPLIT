@@ -219,25 +219,7 @@ impl PawnTelemetryReader {
         self.ensure_current_pawn()?;
         let schema = self.engine_input_schema
             .ok_or_else(|| self.engine_input_schema_error())?;
-        let pointer_address = checked_add(
-            self.resolution.pawn, schema.movement_services_offset as u64,
-            "movement-services pointer",
-        )?;
-        let services = read_remote_u64(self.process.0, pointer_address, "movement services")?;
-        validate_user_address(services, "movement services")?;
-        let (start, size) = engine_input_span(schema)?;
-        let address = checked_add(services, start as u64, "engine-input snapshot")?;
-        let first = read_exact(self.process.0, address, size, "engine inputs first")?;
-        let second = read_exact(self.process.0, address, size, "engine inputs second")?;
-        let pointer_after = read_remote_u64(
-            self.process.0, pointer_address, "movement-services pointer after",
-        )?;
-        if services != pointer_after {
-            return Err("Movement services changed during input read".to_string());
-        }
-        parse_engine_input_snapshot(
-            &second, start, schema, services, first == second,
-        )
+        read_engine_inputs_at(self.process.0, self.resolution.pawn, schema)
     }
 
     /// Very lean camera-only read path for high-rate route input capture.
@@ -434,6 +416,31 @@ fn telemetry_clock_matches(
     tick != u32::MAX && time.is_finite() && time >= 0.0
         && tick == after_tick && time.to_bits() == after_time.to_bits()
         && node == after_node
+}
+
+/// Bounded read of one pawn's movement-service observations. No controller/local
+/// player assumption; nonlocal fields may be stale or unpublished on the client.
+fn read_engine_inputs_at(process: HANDLE, pawn: u64, schema: super::schema::RouteEngineInputSchema)
+    -> Result<EngineInputSnapshot, String> {
+        let pointer_address = checked_add(
+            pawn, schema.movement_services_offset as u64,
+            "movement-services pointer",
+        )?;
+        let services = read_remote_u64(process, pointer_address, "movement services")?;
+        validate_user_address(services, "movement services")?;
+        let (start, size) = engine_input_span(schema)?;
+        let address = checked_add(services, start as u64, "engine-input snapshot")?;
+        let first = read_exact(process, address, size, "engine inputs first")?;
+        let second = read_exact(process, address, size, "engine inputs second")?;
+        let pointer_after = read_remote_u64(
+            process, pointer_address, "movement-services pointer after",
+        )?;
+        if services != pointer_after {
+            return Err("Movement services changed during input read".to_string());
+        }
+        parse_engine_input_snapshot(
+            &second, start, schema, services, first == second,
+        )
 }
 
 fn engine_input_span(schema: super::schema::RouteEngineInputSchema) -> Result<(u32, usize), String> {
@@ -883,6 +890,16 @@ pub(crate) struct PawnMotionReader {
     route_schema: super::schema::RouteSchema,
 }
 
+/// Entity angles and movement-service observations are sampled separately from
+/// motion. Matching guards do NOT certify authoritative server commands.
+pub(crate) struct BotInputObservation {
+    pub(crate) inputs: EngineInputSnapshot,
+    pub(crate) view: [f32; 3],
+    pub(crate) camera: [f32; 3],
+    pub(crate) angles_stable: bool,
+    pub(crate) simulation_time_stable: bool,
+}
+
 impl PawnMotionReader {
     pub(crate) fn new(
         pid: u32,
@@ -901,6 +918,43 @@ impl PawnMotionReader {
         )?;
         let expected_vtable = read_remote_u64(process.0, pawn, "diagnostic pawn vtable")?;
         Ok(Self { process, pawn, expected_vtable, route_schema })
+    }
+
+    pub(crate) fn has_engine_input_schema(&self) -> bool {
+        self.route_schema.engine_input.is_some()
+    }
+
+    /// Optional client observations, not raw user commands or execution proof.
+    pub(crate) fn read_input_observation(&self) -> Result<BotInputObservation, String> {
+        if read_remote_u64(self.process.0, self.pawn, "input pawn vtable")? != self.expected_vtable {
+            return Err("Diagnostic pawn changed during input observation".to_string());
+        }
+        let schema = self.route_schema.engine_input.ok_or_else(|| format!(
+            "Engine-input schema unavailable: {}",
+            self.route_schema.engine_input_missing_field.unwrap_or("unknown member")))?;
+        let time_address = checked_add(self.pawn, self.route_schema.simulation_time_offset as u64, "input time")?;
+        let view_address = checked_add(self.pawn, self.route_schema.view_angles_offset as u64, "input view")?;
+        let camera_address = checked_add(self.pawn, self.route_schema.client_camera_angles_offset as u64, "input camera")?;
+        let before_time = read_remote_f32(self.process.0, time_address, "input time before")?;
+        let before_view = read_remote_f32x3(self.process.0, view_address, "input view before")?;
+        let before_camera = read_remote_f32x3(self.process.0, camera_address, "input camera before")?;
+        let inputs = read_engine_inputs_at(self.process.0, self.pawn, schema)?;
+        let view = read_remote_f32x3(self.process.0, view_address, "input view after")?;
+        let camera = read_remote_f32x3(self.process.0, camera_address, "input camera after")?;
+        let after_time = read_remote_f32(self.process.0, time_address, "input time after")?;
+        if !view.iter().chain(camera.iter()).chain(before_view.iter()).chain(before_camera.iter())
+            .all(|v| v.is_finite()) || !before_time.is_finite() || !after_time.is_finite() {
+            return Err("Non-finite bot input observation".to_string());
+        }
+        if read_remote_u64(self.process.0, self.pawn, "input pawn vtable after")? != self.expected_vtable {
+            return Err("Diagnostic pawn changed during input observation".to_string());
+        }
+        Ok(BotInputObservation {
+            inputs, view, camera,
+            angles_stable: before_view.iter().zip(view.iter()).all(|(a,b)| a.to_bits() == b.to_bits())
+                && before_camera.iter().zip(camera.iter()).all(|(a,b)| a.to_bits() == b.to_bits()),
+            simulation_time_stable: before_time.to_bits() == after_time.to_bits(),
+        })
     }
 
     pub(crate) fn read(
@@ -2314,5 +2368,3 @@ mod tests {
     }
 
 }
-
-

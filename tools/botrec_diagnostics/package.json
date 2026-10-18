@@ -1,0 +1,1 @@
+{"name":"split-botrec-diagnostics","private":true,"type":"module","dependencies":{"deadem":"4.0.2"},"scripts":{"extract":"node extract_sourcetv.mjs"}}

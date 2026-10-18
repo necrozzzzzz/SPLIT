@@ -45,11 +45,15 @@ pub fn record_bot_replay_diagnostic(
     // Resolve/open/validate once; do not enumerate processes or modules per sample.
     let reader = pawn::PawnMotionReader::new(pid, entity_index, route_schema)?;
     reader.read()?;
+    let input_schema_available = reader.has_engine_input_schema();
+    let input_schema_error = if input_schema_available { String::new() } else {
+        reader.read_input_observation().err().unwrap_or_default()
+    };
 
     let file = File::create(&output_path)
         .map_err(|e| format!("Cannot create diagnostic CSV: {e}"))?;
     let mut out = BufWriter::new(file);
-    writeln!(out, "elapsed_ms,entity_index,sim_tick,sim_time,pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,speed_xy,derived_speed_xy,derived_vel_x,derived_vel_y,entity_flags,ground_handle,grounded_flag,read_error,sample_interval_ms,sim_delta_ms,sim_derived_speed_xy,sim_derived_vel_x,sim_derived_vel_y,read_duration_ms,sim_time_stable")
+    writeln!(out, "elapsed_ms,entity_index,sim_tick,sim_time,pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,speed_xy,derived_speed_xy,derived_vel_x,derived_vel_y,entity_flags,ground_handle,grounded_flag,read_error,sample_interval_ms,sim_delta_ms,sim_derived_speed_xy,sim_derived_vel_x,sim_derived_vel_y,read_duration_ms,sim_time_stable,input_read_started_ms,input_read_finished_ms,input_last_command,button_block_hex,cmd_forward,cmd_left,cmd_up,pawn_pitch,pawn_yaw,camera_pitch,camera_yaw,input_buffers_match,input_angles_stable,input_sim_time_stable,input_error,button_held,button_changed,button_third,button_layout")
         .map_err(|e| e.to_string())?;
     let start = Instant::now();
     let interval = Duration::from_millis(16);
@@ -78,7 +82,7 @@ pub fn record_bot_replay_diagnostic(
         previous_capture_ms = Some(elapsed);
         max_read_ms = max_read_ms.max(read_duration_ms);
         // Fixed-size rows also keep failed reads aligned with the CSV header.
-        let mut row = vec![String::new(); 25];
+        let mut row = vec![String::new(); 44];
         row[0] = format!("{elapsed:.3}");
         row[1] = entity_index.to_string();
         row[18] = sample_interval_ms.map(|dt| format!("{dt:.3}")).unwrap_or_default();
@@ -129,6 +133,14 @@ pub fn record_bot_replay_diagnostic(
                 consecutive_failures += 1;
             }
         }
+        if input_schema_available {
+            let input_start = start.elapsed().as_secs_f64() * 1000.0;
+            let observation = reader.read_input_observation();
+            let input_end = start.elapsed().as_secs_f64() * 1000.0;
+            append_input_columns(&mut row, input_start, input_end, observation);
+        } else {
+            row[39] = csv_error(&input_schema_error);
+        }
         writeln!(out, "{}", row.join(",")).map_err(|e| e.to_string())?;
         if consecutive_failures > 20 {
             out.flush().map_err(|e| e.to_string())?;
@@ -152,10 +164,43 @@ pub fn record_bot_replay_diagnostic(
         .map(|first| (good - 1) as f64 * 1000.0 / (last_good_ms - first))
         .unwrap_or(0.0);
     let summary = format!(
-        "Bot replay trace: {output_path} ({good} samples, {failures} read errors). Actual {effective_hz:.2} Hz; max interval {max_interval_ms:.3} ms; max read {max_read_ms:.3} ms; missed slots {missed_deadlines}. Start time is the capture start, not the exact BOTREC tick."
+        "Bot replay trace: {output_path} ({good} samples, {failures} read errors). Actual {effective_hz:.2} Hz; max interval {max_interval_ms:.3} ms; max read {max_read_ms:.3} ms; missed slots {missed_deadlines}. Start time is the capture start, not the exact BOTREC tick. Input columns are separately timed client observations; nonlocal fields may be unavailable or stale, and matching buffers do not prove execution."
     );
     println!("[SPLIT][BotTrace] {summary}");
     Ok(summary)
+}
+
+fn csv_error(error: &str) -> String {
+    error.replace([',', '\n', '\r'], " ")
+}
+
+fn append_input_columns(row: &mut [String], start: f64, end: f64,
+    observation: Result<pawn::BotInputObservation, String>) {
+    row[25] = format!("{start:.3}");
+    row[26] = format!("{end:.3}");
+    match observation {
+        Err(error) => row[39] = csv_error(&error),
+        Ok(observation) => {
+            let input = observation.inputs;
+            row[27] = input.last_command_number.map(|n| n.to_string()).unwrap_or_default();
+            row[28] = input.button_block[..input.button_block_len as usize]
+                .iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join("");
+            for axis in 0..3 { row[29 + axis] = format!("{:.6}", input.command_axes[axis]); }
+            row[32] = format!("{:.6}", observation.view[0]);
+            row[33] = format!("{:.6}", observation.view[1]);
+            row[34] = format!("{:.6}", observation.camera[0]);
+            row[35] = format!("{:.6}", observation.camera[1]);
+            row[36] = u8::from(input.buffers_match).to_string();
+            row[37] = u8::from(observation.angles_stable).to_string();
+            row[38] = u8::from(observation.simulation_time_stable).to_string();
+            if let Some(states) = input.button_states {
+                for i in 0..3 { row[40 + i] = format!("0x{:016X}", states[i]); }
+                row[43] = "reflectedArray".to_string();
+            } else {
+                row[43] = "rawEmbeddedMember".to_string();
+            }
+        }
+    }
 }
 
 /// Position-derived average velocity over the supplied interval.
@@ -201,5 +246,42 @@ mod tests {
         let pos = [10.0, 0.0, 0.0];
         assert_eq!(derive_motion(old, pos, 0.04), Some((250.0, 0.0)));
         assert_eq!(derive_motion(old, pos, 0.03125), Some((320.0, 0.0)));
+    }
+}
+
+#[cfg(test)]
+mod input_observation_tests {
+    use super::*;
+    #[test]
+    fn failed_input_observation_keeps_motion_columns_and_csv_width() {
+        let mut row = vec![String::new(); 44];
+        row[4] = "123.0".into();
+        append_input_columns(&mut row, 1.0, 2.0, Err("missing,field\nnot zero".into()));
+        assert_eq!(row[4], "123.0");
+        assert_eq!(row[39], "missing field not zero");
+        assert!(row[27..39].iter().all(String::is_empty));
+        assert_eq!(row.join(",").split(',').count(), 44);
+    }
+    #[test]
+    fn raw_layout_never_claims_a_decoded_button_mask() {
+        let mut row = vec![String::new(); 44];
+        let input = pawn::EngineInputSnapshot {
+            movement_services: 0x10000, button_states: None,
+            button_block: [0xAB; 64], button_block_len: 32,
+            pressed_command_numbers: None, last_command_number: Some(42),
+            command_axes: [0.75, -0.25, 0.0], old_view_angles: None, buffers_match: false,
+        };
+        append_input_columns(&mut row, 1.0, 3.0, Ok(pawn::BotInputObservation {
+            inputs: input, view: [-30.0, 20.0, 0.0], camera: [-29.0, 21.0, 0.0],
+            angles_stable: false, simulation_time_stable: true,
+        }));
+        assert_eq!(row[27], "42");
+        assert_eq!(row[28], "AB".repeat(32));
+        assert_eq!(row[29], "0.750000");
+        assert_eq!(row[30], "-0.250000");
+        assert_eq!(row[36], "0");
+        assert_eq!(row[37], "0");
+        assert!(row[40..43].iter().all(String::is_empty));
+        assert_eq!(row[43], "rawEmbeddedMember");
     }
 }
