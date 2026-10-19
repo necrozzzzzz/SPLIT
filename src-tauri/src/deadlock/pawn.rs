@@ -110,6 +110,7 @@ pub(crate) struct PawnTelemetryReader {
     engine_input_schema: Option<super::schema::RouteEngineInputSchema>,
     engine_input_missing_field: Option<&'static str>,
     resolution: PawnResolution,
+    use_pawn_view: bool,
     pawn_handle_offset: u32,
     game_scene_node_offset: u32,
     local_origin_offset: u32,
@@ -135,13 +136,27 @@ impl PawnTelemetryReader {
         resolution: PawnResolution,
         route_schema: super::schema::RouteSchema,
     ) -> Result<Self, String> {
+        Self::new_for_capture(pid, resolution, route_schema, false)
+    }
+
+    pub(crate) fn new_for_capture(
+        pid: u32,
+        resolution: PawnResolution,
+        route_schema: super::schema::RouteSchema,
+        use_pawn_view: bool,
+    ) -> Result<Self, String> {
+        // Non-local v_angle can remain zero. Selected bots use their reflected
+        // replicated eye angles; never silently substitute local-only fields.
+        let view_angles_offset = route_view_offset(
+            route_schema.view_angles_offset, route_schema.eye_angles_offset, use_pawn_view,
+        )?;
         let (pawn_snapshot_start, pawn_snapshot_size) = field_span(&[
             (route_schema.game_scene_node_offset, 8),
             (route_schema.absolute_velocity_offset, 12),
             (route_schema.simulation_tick_offset, 4),
             (route_schema.simulation_time_offset, 4),
             (route_schema.old_origin_offset, 12),
-            (route_schema.view_angles_offset, 12),
+            (view_angles_offset, 12),
             (route_schema.client_camera_angles_offset, 12),
             (route_schema.prediction_error_offset, 12),
             (route_schema.prediction_error_time_offset, 4),
@@ -156,6 +171,7 @@ impl PawnTelemetryReader {
             engine_input_schema: route_schema.engine_input,
             engine_input_missing_field: route_schema.engine_input_missing_field,
             resolution,
+            use_pawn_view,
             pawn_handle_offset: route_schema.pawn_handle_offset,
             game_scene_node_offset: route_schema.game_scene_node_offset,
             local_origin_offset: route_schema.local_origin_offset,
@@ -165,7 +181,7 @@ impl PawnTelemetryReader {
             simulation_tick_offset: route_schema.simulation_tick_offset,
             simulation_time_offset: route_schema.simulation_time_offset,
             old_origin_offset: route_schema.old_origin_offset,
-            view_angles_offset: route_schema.view_angles_offset,
+            view_angles_offset,
             client_camera_angles_offset: route_schema.client_camera_angles_offset,
             prediction_error_offset: route_schema.prediction_error_offset,
             prediction_error_time_offset: route_schema.prediction_error_time_offset,
@@ -222,15 +238,21 @@ impl PawnTelemetryReader {
         read_engine_inputs_at(self.process.0, self.resolution.pawn, schema)
     }
 
-    /// Very lean camera-only read path for high-rate route input capture.
-    /// Reads only m_angClientCamera (12 bytes) from the already resolved pawn.
+    /// High-rate angle read after checking the retained controller handle.
+    /// Local capture uses m_angClientCamera; bot capture uses m_angEyeAngles.
     pub(crate) fn read_camera_angles_fast(&self) -> Result<[f32; 2], String> {
+        self.ensure_current_pawn()?;
         let pawn = self.resolution.pawn;
+        let offset = if self.use_pawn_view {
+            self.view_angles_offset
+        } else {
+            self.client_camera_angles_offset
+        };
         let bytes = read_exact(
             self.process.0,
             checked_add(
                 pawn,
-                self.client_camera_angles_offset as u64,
+                offset as u64,
                 "client camera angles",
             )?,
             12,
@@ -249,12 +271,13 @@ impl PawnTelemetryReader {
     pub(crate) fn read_route_fast(&self) -> Result<PawnTelemetry, String> {
         self.ensure_current_pawn()?;
         let snapshot = self.read_snapshot()?;
+        let angles = if self.use_pawn_view { snapshot.view_angles } else { snapshot.client_camera_angles };
 
         Ok(PawnTelemetry {
             position: snapshot.absolute_origin,
             velocity: snapshot.velocity,
-            pitch: Some(snapshot.client_camera_angles[0]),
-            yaw: Some(snapshot.client_camera_angles[1]),
+            pitch: Some(angles[0]),
+            yaw: Some(angles[1]),
             diagnostics: PawnTelemetryDiagnostics {
                 scene_node: snapshot.scene_node,
                 local_origin: snapshot.position,
@@ -283,6 +306,7 @@ impl PawnTelemetryReader {
             let third = self.read_snapshot()?;
             (third, 3, snapshots_match(&second, &third))
         };
+        let angles = if self.use_pawn_view { snapshot.view_angles } else { snapshot.client_camera_angles };
 
         Ok(PawnTelemetry {
             // Of the reactive scene-node sources measured at runtime,
@@ -292,8 +316,8 @@ impl PawnTelemetryReader {
             velocity: snapshot.velocity,
             // m_angClientCamera remained coherent during the observed one-sample
             // v_angle tear. v_angle is retained below as a runtime diagnostic.
-            pitch: Some(snapshot.client_camera_angles[0]),
-            yaw: Some(snapshot.client_camera_angles[1]),
+            pitch: Some(angles[0]),
+            yaw: Some(angles[1]),
             diagnostics: PawnTelemetryDiagnostics {
                 scene_node: snapshot.scene_node,
                 local_origin: snapshot.position,
@@ -404,9 +428,17 @@ impl PawnTelemetryReader {
             "local pawn handle",
         )?;
         if current != self.resolution.pawn_handle {
-            return Err("Local pawn changed during route recording".to_string());
+            return Err("Recorded pawn changed during route recording".to_string());
         }
         Ok(())
+    }
+}
+
+fn route_view_offset(local_view: u32, bot_eye: Option<u32>, selected_bot: bool) -> Result<u32, String> {
+    if selected_bot {
+        bot_eye.ok_or_else(|| "Selected-bot capture requires reflected C_CitadelPlayerPawn::m_angEyeAngles; no local-camera fallback is used.".to_string())
+    } else {
+        Ok(local_view)
     }
 }
 
@@ -566,6 +598,25 @@ pub(crate) fn resolve_local_pawn(
     pawn_handle_offset: u32,
     identity_size: u32,
 ) -> Result<PawnResolution, String> {
+    resolve_recording_pawn(pid, local_flag_offset, pawn_handle_offset, identity_size, None)
+}
+
+/// Resolve a selected pawn through its owning controller. Retaining its full
+/// handle (including serial) lets every reader reject despawn/replacement.
+pub(crate) fn resolve_selected_pawn(
+    pid: u32, entity_index: u32, route_schema: super::schema::RouteSchema,
+) -> Result<PawnResolution, String> {
+    if entity_index == 0 || entity_index as usize >= MAX_ENTITIES {
+        return Err("Choose a pawn entity index between 1 and 32767.".to_string());
+    }
+    resolve_recording_pawn(pid, route_schema.local_flag_offset,
+        route_schema.pawn_handle_offset, route_schema.identity_size, Some(entity_index))
+}
+
+fn resolve_recording_pawn(
+    pid: u32, local_flag_offset: u32, pawn_handle_offset: u32,
+    identity_size: u32, selected_index: Option<u32>,
+) -> Result<PawnResolution, String> {
     let identity_size = validate_identity_size(identity_size)?;
     let service =
         interfaces::find_interface(pid, RESOURCE_SERVICE_MODULE, RESOURCE_SERVICE_INTERFACE)?
@@ -619,18 +670,24 @@ pub(crate) fn resolve_local_pawn(
                 if identity.instance == 0 || identity_index(identity.handle) != Some(index) {
                     continue;
                 }
-                let flag_address = checked_add(
-                    identity.instance,
-                    local_flag_offset as u64,
-                    "local-controller flag",
-                )?;
-                let Ok(flag_bytes) =
-                    read_exact(process.0, flag_address, 1, "local-controller flag")
-                else {
-                    continue;
-                };
-                if !is_local_controller_flag(flag_bytes[0]) {
-                    continue;
+                if let Some(selected_index) = selected_index {
+                    let address = checked_add(identity.instance, pawn_handle_offset as u64, "selected controller pawn handle")?;
+                    let Ok(handle) = read_remote_u32(process.0, address, "selected controller pawn handle") else { continue; };
+                    if identity_index(handle) != Some(selected_index as usize) { continue; }
+                } else {
+                    let flag_address = checked_add(
+                        identity.instance,
+                        local_flag_offset as u64,
+                        "local-controller flag",
+                    )?;
+                    let Ok(flag_bytes) =
+                        read_exact(process.0, flag_address, 1, "local-controller flag")
+                    else {
+                        continue;
+                    };
+                    if !is_local_controller_flag(flag_bytes[0]) {
+                        continue;
+                    }
                 }
                 if validate_object_vtable(
                     process.0,
@@ -646,7 +703,10 @@ pub(crate) fn resolve_local_pawn(
                 break 'find_controller identity.instance;
             }
         }
-        return Err("No validated local player controller was found".to_string());
+        return Err(match selected_index {
+            Some(index) => format!("No validated controller owns pawn entity #{index}. Rescan after spawning the bot."),
+            None => "No validated local player controller was found".to_string(),
+        });
     };
     #[cfg(debug_assertions)]
     super::district::debug_controller_found(controller, visited);
@@ -2217,6 +2277,14 @@ fn read_u64(bytes: &[u8], offset: usize, label: &str) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bot_capture_requires_its_own_reflected_eye_angles() {
+        assert_eq!(route_view_offset(100, Some(200), true), Ok(200));
+        assert!(route_view_offset(100, None, true).is_err());
+        // A missing non-local member must not break ordinary local recording.
+        assert_eq!(route_view_offset(100, None, false), Ok(100));
+    }
 
     #[test]
     fn handle_decoding_rejects_null_and_out_of_range_values() {

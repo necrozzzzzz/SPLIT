@@ -411,6 +411,13 @@ async fn record_bot_replay_diagnostic(
 }
 
 #[tauri::command]
+async fn start_bot_route_recording(entity_index: u32) -> Result<deadlock::RouteRecordingStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || deadlock::start_bot_route_recording(entity_index))
+        .await
+        .map_err(|error| format!("Bot route recorder start task failed: {error}"))?
+}
+
+#[tauri::command]
 async fn start_route_recording() -> Result<deadlock::RouteRecordingStatus, String> {
     tauri::async_runtime::spawn_blocking(deadlock::start_route_recording)
         .await
@@ -741,6 +748,7 @@ pub fn run() {
             list_bot_replay_candidates,
             record_bot_replay_diagnostic,
             start_route_recording,
+            start_bot_route_recording,
             stop_route_recording,
             get_route_recording_status,
             save_route_recording_json,

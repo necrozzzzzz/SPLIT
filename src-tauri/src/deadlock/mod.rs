@@ -1711,6 +1711,10 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     route_recorder::start_route_recording()
 }
 
+pub fn start_bot_route_recording(entity_index: u32) -> Result<RouteRecordingStatus, String> {
+    route_recorder::start_bot_route_recording(entity_index)
+}
+
 pub fn stop_route_recording() -> Result<RouteRecordingStatus, String> {
     route_recorder::stop_route_recording()
 }

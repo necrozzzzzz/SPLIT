@@ -228,6 +228,7 @@ type RouteRecordingStatus = {
   sampleCount: number;
   hasRecording: boolean;
   stopReason: string | null;
+  targetEntityIndex: number | null;
 };
 
 const EMPTY_ROUTE_RECORDING_STATUS: RouteRecordingStatus = {
@@ -236,6 +237,7 @@ const EMPTY_ROUTE_RECORDING_STATUS: RouteRecordingStatus = {
   sampleCount: 0,
   hasRecording: false,
   stopReason: null,
+  targetEntityIndex: null,
 };
 
 type GhostPlaybackStatus = {
@@ -1217,6 +1219,7 @@ function App() {
   const [ghostPlaybackStatus, setGhostPlaybackStatus] =
     useState<GhostPlaybackStatus>(EMPTY_GHOST_PLAYBACK_STATUS);
   const [botDiagnosticIndex, setBotDiagnosticIndex] = useState("");
+  const [routeCaptureMode, setRouteCaptureMode] = useState<"localPlayer" | "controlledBot">("localPlayer");
   const [botCandidates, setBotCandidates] = useState<number[]>([]);
   const [botScanBusy, setBotScanBusy] = useState(false);
   const [botDiagnosticBusy, setBotDiagnosticBusy] = useState(false);
@@ -1273,12 +1276,19 @@ function App() {
   }, [activeSettingsSection]);
 
   const startRouteRecording = useCallback(async () => {
+    const entityIndex = Number(botDiagnosticIndex);
+    if (routeCaptureMode === "controlledBot" &&
+        (!Number.isInteger(entityIndex) || entityIndex < 1 || entityIndex > 32767)) {
+      setError("Choose the controlled bot's pawn entity index before starting.");
+      return;
+    }
     setRouteRecorderBusy(true);
     setError(null);
     try {
       setRouteRecordingStatus(
         await invoke<RouteRecordingStatus>(
-          "start_route_recording",
+          routeCaptureMode === "controlledBot" ? "start_bot_route_recording" : "start_route_recording",
+          routeCaptureMode === "controlledBot" ? { entityIndex } : undefined,
         ),
       );
     } catch (reason) {
@@ -1286,7 +1296,7 @@ function App() {
     } finally {
       setRouteRecorderBusy(false);
     }
-  }, []);
+  }, [routeCaptureMode, botDiagnosticIndex]);
 
   const stopRouteRecording = useCallback(async () => {
     setRouteRecorderBusy(true);
@@ -8253,14 +8263,73 @@ function App() {
             <span>60 Hz raw telemetry</span>
           </div>
 
+          <div className="route-recorder-actions">
+            <label>
+              Record target{" "}
+              <select
+                aria-label="Route recording target"
+                value={routeCaptureMode}
+                onChange={(event) => setRouteCaptureMode(event.currentTarget.value as "localPlayer" | "controlledBot")}
+                disabled={routeRecorderBusy || routeRecordingStatus.recording}
+              >
+                <option value="localPlayer">Local player</option>
+                <option value="controlledBot">Controlled bot (native recording)</option>
+              </select>
+            </label>
+            {routeCaptureMode === "controlledBot" && (
+              <>
+                <input
+                  type="number" min={1} max={32767}
+                  aria-label="Route bot pawn entity index"
+                  placeholder="Bot pawn entity index"
+                  value={botDiagnosticIndex}
+                  onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
+                  disabled={routeRecorderBusy || routeRecordingStatus.recording}
+                />
+                <button
+                  className="secondary-button" type="button"
+                  disabled={botScanBusy || routeRecorderBusy || routeRecordingStatus.recording || !status.deadlockRunning || status.matchSafetyLocked}
+                  onClick={() => void scanBotCandidates()}
+                >
+                  {botScanBusy ? "Scanning..." : "Find bots (optional)"}
+                </button>
+                {botCandidates.length > 0 && (
+                  <select
+                    aria-label="Detected route bot pawn" value=""
+                    disabled={routeRecorderBusy || routeRecordingStatus.recording}
+                    onChange={(event) => setBotDiagnosticIndex(event.currentTarget.value)}
+                  >
+                    <option value="">Choose detected entity</option>
+                    {botCandidates.map((index) => (
+                      <option key={index} value={String(index)}>Entity #{index}</option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
+          </div>
+          {routeCaptureMode === "controlledBot" && (
+            <p className="route-recorder-status">
+              Start native recording with the bot idle, select its entity here, then
+              start SPLIT before performing the passage. Stop and save both recordings.
+              Keyboard events
+              are your physical keys, not proof of bot-executed inputs. Do not use
+              this mode to capture keyboard inputs from autonomous playback.
+            </p>
+          )}
+
           {routeRecordingStatus.recording ? (
             <>
               <p className="route-recorder-status">
-                Recording route...
+                Recording {routeRecordingStatus.targetEntityIndex != null
+                  ? `bot #${routeRecordingStatus.targetEntityIndex}` : "local player"}...
                 <strong>
                   {(routeRecordingStatus.elapsedMs / 1000).toFixed(2)} s
                   {" - "}
                   {routeRecordingStatus.sampleCount} samples
+                  {routeRecordingStatus.targetEntityIndex != null && (
+                    <small>Bot #{routeRecordingStatus.targetEntityIndex}</small>
+                  )}
                 </strong>
               </p>
               <button
@@ -8279,13 +8348,16 @@ function App() {
                   Recorded {(routeRecordingStatus.elapsedMs / 1000).toFixed(2)} s
                   {" - "}
                   {routeRecordingStatus.sampleCount} samples
+                  {routeRecordingStatus.targetEntityIndex != null && (
+                    <small>Captured bot #{routeRecordingStatus.targetEntityIndex}</small>
+                  )}
                   {routeRecordingStatus.stopReason && (
                     <small>{routeRecordingStatus.stopReason}</small>
                   )}
                 </p>
               ) : (
                 <p className="route-recorder-status">
-                  Records raw local-player position and velocity in Practice.
+                  Records position, velocity and orientation of the selected target in Practice.
                 </p>
               )}
 

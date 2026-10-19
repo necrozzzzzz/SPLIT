@@ -162,6 +162,8 @@ struct SamplingStats {
 pub struct RouteRecording {
     format: &'static str,
     version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_target: Option<RouteCaptureTarget>,
     started_at: String,
     duration_ms: f64,
     target_sample_rate_hz: u32,
@@ -198,6 +200,15 @@ pub struct RouteRecordingStatus {
     sample_count: u64,
     has_recording: bool,
     stop_reason: Option<String>,
+    target_entity_index: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct RouteCaptureTarget {
+    kind: &'static str,
+    entity_index: u32,
+    pawn_handle_hex: String,
 }
 
 struct WorkerCompletion {
@@ -210,6 +221,7 @@ struct ActiveRecording {
     stop: mpsc::Sender<()>,
     completion: mpsc::Receiver<WorkerCompletion>,
     worker: JoinHandle<()>,
+    target_entity_index: Option<u32>,
 }
 
 enum RecorderState {
@@ -387,6 +399,14 @@ fn run_polling_input_fallback(
 static RECORDER: Mutex<RecorderState> = Mutex::new(RecorderState::Idle { last: None });
 
 pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
+    start_route_recording_for_target(None)
+}
+
+pub fn start_bot_route_recording(entity_index: u32) -> Result<RouteRecordingStatus, String> {
+    start_route_recording_for_target(Some(entity_index))
+}
+
+fn start_route_recording_for_target(target_entity_index: Option<u32>) -> Result<RouteRecordingStatus, String> {
     let startup_total = Instant::now();
 
     if super::ghost_playback::is_playing() {
@@ -426,12 +446,22 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     );
 
     let stage = Instant::now();
-    let resolution = pawn::resolve_local_pawn(
+    let local = pawn::resolve_local_pawn(
         pid,
         route_schema.local_flag_offset,
         route_schema.pawn_handle_offset,
         route_schema.identity_size,
     )?;
+    let resolution = match target_entity_index {
+        Some(index) => {
+            let selected = pawn::resolve_selected_pawn(pid, index, route_schema)?;
+            if selected.pawn == local.pawn {
+                return Err("Selected entity is your local player. Choose the controlled bot or use Local player mode.".to_string());
+            }
+            selected
+        }
+        None => local,
+    };
     println!(
         "[SPLIT][RouteRecorder][StartTiming] resolve_local_pawn={:.2}ms",
         stage.elapsed().as_secs_f64() * 1_000.0
@@ -443,7 +473,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
 
     let stage = Instant::now();
     let first = {
-        let reader = pawn::PawnTelemetryReader::new(pid, resolution, route_schema)?;
+        let reader = pawn::PawnTelemetryReader::new_for_capture(pid, resolution, route_schema, target_entity_index.is_some())?;
         let buttons = capture_route_buttons(key_codes);
         read_verified_sample(&reader, started_at, buttons, None)?
     };
@@ -459,10 +489,10 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     let worker = thread::Builder::new()
         .name("split-route-recorder".to_string())
         .spawn(move || {
-            let reader = match pawn::PawnTelemetryReader::new(pid, resolution, route_schema) {
+            let reader = match pawn::PawnTelemetryReader::new_for_capture(pid, resolution, route_schema, target_entity_index.is_some()) {
                 Ok(reader) => reader,
                 Err(error) => {
-                    let recording = finish_recording(
+                    let mut recording = finish_recording(
                         started_at_text,
                         started_at.elapsed().as_secs_f64() * 1_000.0,
                         vec![first],
@@ -471,6 +501,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
                         Some(error.clone()),
                         0,
                     );
+                    mark_capture_target(&mut recording, resolution, target_entity_index);
                     eprintln!("[SPLIT][RouteRecorder] aborted reason={error}");
                     let _ = completion_tx.send(WorkerCompletion { recording });
                     return;
@@ -480,6 +511,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
                 pid,
                 resolution,
                 route_schema,
+                target_entity_index,
                 reader,
                 key_codes,
                 first,
@@ -506,6 +538,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
     // The scan is still available as a standalone diagnostic helper in
     // pawn.rs, but it must never run on the normal recording path.
     println!("[SPLIT][RouteRecorder] pawn=0x{:016X}", resolution.pawn);
+    println!("[SPLIT][RouteRecorder] target={:?} full_handle=0x{:08X}", target_entity_index, resolution.pawn_handle);
     println!("[SPLIT][RouteRecorder] sampling target={TARGET_SAMPLE_RATE_HZ}Hz");
 
     *state = RecorderState::Recording(ActiveRecording {
@@ -514,6 +547,7 @@ pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
         stop: stop_tx,
         completion: completion_rx,
         worker,
+        target_entity_index,
     });
     status_from_state(&state)
 }
@@ -620,6 +654,7 @@ fn run_worker(
     pid: u32,
     resolution: pawn::PawnResolution,
     route_schema: schema::RouteSchema,
+    target_entity_index: Option<u32>,
     reader: pawn::PawnTelemetryReader,
     key_codes: RouteKeyCodes,
     first: RouteSample,
@@ -738,7 +773,7 @@ fn run_worker(
     let engine_thread = thread::Builder::new()
         .name("split-route-engine-inputs".to_string())
         .spawn(move || {
-            let reader = match pawn::PawnTelemetryReader::new(pid, resolution, route_schema) {
+            let reader = match pawn::PawnTelemetryReader::new_for_capture(pid, resolution, route_schema, target_entity_index.is_some()) {
                 Ok(reader) => reader,
                 Err(error) => {
                     if let Ok(mut capture) = engine_capture_worker.lock() {
@@ -813,10 +848,11 @@ fn run_worker(
             // Windows HANDLE is represented as *mut c_void and therefore the
             // PawnTelemetryReader itself is not Send; creating it here avoids
             // moving that handle across thread boundaries.
-            let Ok(camera_reader) = pawn::PawnTelemetryReader::new(
+            let Ok(camera_reader) = pawn::PawnTelemetryReader::new_for_capture(
                 pid,
                 resolution,
                 route_schema,
+                target_entity_index.is_some(),
             ) else {
                 return;
             };
@@ -933,6 +969,7 @@ fn run_worker(
         stop_reason.clone(),
         missed_deadlines,
     );
+    mark_capture_target(&mut recording, resolution, target_entity_index);
     if let Ok(mut capture) = engine_capture.lock() {
         recording.engine_input_events = std::mem::take(&mut capture.events);
         recording.engine_input_event_count = recording.engine_input_events.len();
@@ -1106,6 +1143,7 @@ fn finish_recording(
     RouteRecording {
         format: "split-route-debug",
         version: 9,
+        capture_target: None,
         started_at,
         duration_ms,
         target_sample_rate_hz: TARGET_SAMPLE_RATE_HZ,
@@ -1130,6 +1168,25 @@ fn finish_recording(
         sampling_stats,
         stop_reason,
         samples,
+    }
+}
+
+fn mark_capture_target(
+    recording: &mut RouteRecording,
+    resolution: pawn::PawnResolution,
+    target_entity_index: Option<u32>,
+) {
+    recording.capture_target = Some(RouteCaptureTarget {
+        kind: if target_entity_index.is_some() { "controlledBot" } else { "localPlayer" },
+        entity_index: resolution.pawn_handle & 0x7FFF,
+        pawn_handle_hex: format!("0x{:08X}", resolution.pawn_handle),
+    });
+    if target_entity_index.is_some() {
+        recording.version = 10;
+        recording.view_angles_source = "Selected bot reflected C_CitadelPlayerPawn::m_angEyeAngles (replicated); m_angClientCamera retained separately as a diagnostic. Not raw CUserCmd angles.";
+        recording.camera_event_source = "Dedicated ~2 ms selected bot m_angEyeAngles transition recorder; replicated client observations, not authoritative executed CUserCmd angles";
+        recording.buttons_source = "Physical keyboard snapshot from the operator controlling the native recorder bot; NOT verified bot-executed buttons";
+        recording.input_event_source = "Operator WH_KEYBOARD_LL press/release events with default physical bindings. Use while manually controlling the bot during native recording, NOT autonomous playback. These are physical keys, not an authoritative bot command stream; custom Deadlock binds are not synchronized.";
     }
 }
 
@@ -1222,6 +1279,7 @@ fn status_from_state(state: &RecorderState) -> Result<RouteRecordingStatus, Stri
             sample_count: active.sample_count.load(Ordering::Acquire),
             has_recording: false,
             stop_reason: None,
+            target_entity_index: active.target_entity_index,
         },
         RecorderState::Idle { last } => RouteRecordingStatus {
             recording: false,
@@ -1229,6 +1287,8 @@ fn status_from_state(state: &RecorderState) -> Result<RouteRecordingStatus, Stri
             sample_count: last.as_ref().map_or(0, |value| value.sample_count as u64),
             has_recording: last.is_some(),
             stop_reason: last.as_ref().and_then(|value| value.stop_reason.clone()),
+            target_entity_index: last.as_ref().and_then(|value| value.capture_target.as_ref())
+                .filter(|target| target.kind == "controlledBot").map(|target| target.entity_index),
         },
     })
 }
@@ -1297,6 +1357,46 @@ mod tests {
                 position_velocity_residual: None,
             },
         }
+    }
+
+    #[test]
+    fn controlled_bot_export_names_target_and_does_not_claim_executed_inputs() {
+        let mut recording = finish_recording(
+            "2026-10-19T13:00:00.000Z".to_string(), 16.0,
+            vec![valid_sample(0.0)], Vec::new(), Vec::new(), None, 0,
+        );
+        recording.engine_input_last_error = Some("schema member unavailable".to_string());
+        mark_capture_target(&mut recording, pawn::PawnResolution {
+            controller: 0x10000, pawn_handle: 0x0001_0CCD, pawn: 0x20000,
+        }, Some(3277));
+        let json = serde_json::to_value(&recording).unwrap();
+        assert_eq!(json["captureTarget"]["kind"], "controlledBot");
+        assert_eq!(json["captureTarget"]["entityIndex"], 3277);
+        assert_eq!(json["captureTarget"]["pawnHandleHex"], "0x00010CCD");
+        assert_eq!(json["version"], 10);
+        assert!(recording.view_angles_source.contains("m_angEyeAngles"));
+        assert!(recording.input_event_source.contains("physical keys"));
+        assert!(!recording.engine_input_schema_available);
+        assert_eq!(recording.engine_input_event_count, 0);
+        assert_eq!(json["engineInputLastError"], "schema member unavailable");
+        let status = status_from_state(&RecorderState::Idle { last: Some(recording) }).unwrap();
+        assert_eq!(status.target_entity_index, Some(3277));
+    }
+
+    #[test]
+    fn local_capture_keeps_local_angle_source_and_local_status() {
+        let mut recording = finish_recording(
+            "2026-10-19T13:00:00.000Z".to_string(), 16.0,
+            vec![valid_sample(0.0)], Vec::new(), Vec::new(), None, 0,
+        );
+        mark_capture_target(&mut recording, pawn::PawnResolution {
+            controller: 0x10000, pawn_handle: 0x0001_0012, pawn: 0x20000,
+        }, None);
+        assert_eq!(recording.version, 9);
+        assert!(recording.view_angles_source.contains("m_angClientCamera"));
+        assert_eq!(recording.capture_target.as_ref().unwrap().kind, "localPlayer");
+        let status = status_from_state(&RecorderState::Idle { last: Some(recording) }).unwrap();
+        assert_eq!(status.target_entity_index, None);
     }
 
     #[test]
