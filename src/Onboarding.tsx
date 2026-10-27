@@ -27,18 +27,18 @@ const steps: Step[] = [
 // Tour text is keyed by its original title so targeting and demo behavior remain unchanged.
 const frenchTour: Record<string, { title: string; description: string; tips?: string[] }> = {
   "Welcome to SPLIT": { title: "Bienvenue dans SPLIT", description: "Votre compagnon d’entraînement sur Deadlock. Cette visite interactive vous présente les outils essentiels. Aucune position ne sera enregistrée ou chargée pendant le tutoriel." },
-  "Your presets": { title: "Vos presets", description: "Organisez ici vos positions d’entraînement. Vous disposez de quatre presets de huit emplacements indépendants. Vous pouvez les renommer et passer de l’un à l’autre." },
-  "Save State slots": { title: "Emplacements de sauvegarde", description: "Chaque carte représente une position sauvegardée. Enregistrez votre position actuelle, puis rechargez-la pour y revenir dans Deadlock. Les emplacements peuvent avoir un nom, une couleur et une capture d’écran.", tips: ["Faites un clic droit sur l’aperçu de Mina pour tester l’affichage de la capture.", "Cliquez sur le nom de l’emplacement d’exemple pour essayer de le renommer."] },
-  "Slot actions": { title: "Actions des emplacements", description: "Ouvrez le menu à trois points d’un emplacement pour le renommer, le vider, copier une position ou lui attribuer une couleur. Cliquez sur le bouton mis en évidence sur l’exemple de Mina, puis choisissez une couleur pour tester le mode Tint." },
-  "Undo and redo": { title: "Annuler et rétablir", description: "Ces boutons permettent d’annuler ou de rétablir certaines modifications de vos positions sauvegardées. Leurs raccourcis clavier sont indiqués à côté." },
-  "Favorites": { title: "Favoris", description: "Le mode Favoris propose une banque distincte de huit emplacements, indépendante de vos quatre presets. Vous pouvez y accéder ici ou avec un raccourci clavier." },
-  "Settings": { title: "Paramètres", description: "Personnalisez SPLIT ici. Nous allons parcourir les principales sections des paramètres." },
-  "General settings": { title: "Paramètres généraux", description: "Personnalisez le comportement de l’application, son apparence, le son de démarrage et les autres préférences." },
-  "Quick access": { title: "Accès rapide", description: "Dans l’édition Borderless, activez l’interface d’accès rapide et réglez sa position ici. Elle permet de gérer les emplacements pendant que vous jouez à Deadlock." },
+  "Your presets": { title: "Vos presets", description: "Organisez vos slots ici. Vous avez quatre presets de huit slots chacun. Renommez-les et passez de l’un à l’autre quand vous voulez." },
+  "Save State slots": { title: "Emplacements de sauvegarde", description: "Chaque slot garde un endroit de la map en mémoire. Sauvegardez votre position, puis rechargez le slot pour y retourner dans Deadlock. Vous pouvez aussi lui donner un nom, une couleur et une capture d’écran.", tips: ["Faites un clic droit sur l’image de Mina pour voir la capture en grand.", "Cliquez sur le nom du slot pour le renommer."] },
+  "Slot actions": { title: "Actions des emplacements", description: "Le menu à trois points d’un slot permet de le renommer, de le vider, de copier sa position ou de changer sa couleur. Essayez sur le slot de Mina : cliquez sur les trois points, puis choisissez une couleur." },
+  "Undo and redo": { title: "Annuler et rétablir", description: "Une mauvaise manip ? Utilisez ces boutons pour annuler ou rétablir vos changements. Les raccourcis sont juste à côté." },
+  "Favorites": { title: "Favoris", description: "Les favoris, c’est huit slots en plus, séparés de vos quatre presets. Ouvrez-les ici ou avec un raccourci clavier." },
+  "Settings": { title: "Paramètres", description: "Réglez SPLIT à votre façon. On fait le tour des options principales." },
+  "General settings": { title: "Paramètres généraux", description: "Choisissez comment SPLIT se comporte sur votre PC : apparence, son de démarrage et autres options." },
+  "Quick access": { title: "Accès rapide", description: "En mode Borderless, activez l’accès rapide pour gérer vos slots sans quitter Deadlock. Vous pouvez aussi choisir où il s’affiche." },
   "Discord rich presence": { title: "Présence Discord", description: "Choisissez les informations affichées sur Discord dans le Hideout, Explore NYC, pendant la recherche de partie et en match. Personnalisez les portraits, les textes et les détails d’activité." },
-  "Keyboard shortcuts": { title: "Raccourcis clavier", description: "Personnalisez les raccourcis pour enregistrer et charger les emplacements, changer de preset, accéder aux favoris et annuler ou rétablir." },
+  "Keyboard shortcuts": { title: "Raccourcis clavier", description: "Choisissez vos touches pour sauvegarder ou charger un slot, changer de preset, ouvrir les favoris ou annuler une action." },
   "In-game notifications": { title: "Notifications en jeu", description: "Choisissez où les notifications apparaissent en jeu, leur durée d’affichage et si elles utilisent les couleurs des emplacements." },
-  "Diagnostics": { title: "Diagnostics", description: "Cette section n’est pas nécessaire au quotidien. Si une fonction ne marche plus, consultez les indicateurs d’état pour identifier le problème. Cliquez sur les icônes d’information pour obtenir des explications." },
+  "Diagnostics": { title: "Diagnostics", description: "Un truc ne marche pas ? Regardez les indicateurs ici pour voir ce qui coince. Cliquez sur les icônes d’info pour en savoir plus." },
   "You're ready!": { title: "Vous êtes prêt !", description: "Vous pourrez rouvrir ce tutoriel à tout moment depuis Paramètres > À propos. Bon entraînement !" },
 };
 
