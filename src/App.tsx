@@ -4263,14 +4263,14 @@ function App() {
       ? {
           tone: "error" as const,
           title: "SPLIT integration",
-          description: "The Deadlock integration needs repair.",
+          description: runtimeUiText("The Deadlock integration needs repair.", language),
         }
       : null,
     !status.hotkeysRunning
       ? {
           tone: "error" as const,
           title: "Hotkey hook",
-          description: "The Windows keyboard hook is not running.",
+          description: runtimeUiText("The Windows keyboard hook is not running.", language),
         }
       : null,
     status.deadlockRunning &&
@@ -4278,14 +4278,14 @@ function App() {
       ? {
           tone: "error" as const,
           title: "Console watcher",
-          description: "The Deadlock console watcher is not running.",
+          description: runtimeUiText("The Deadlock console watcher is not running.", language),
         }
       : null,
     status.presentationMaskActive
       ? {
           tone: "error" as const,
           title: "Presentation mask",
-          description: "Deadlock presentation may still be paused.",
+          description: runtimeUiText("Deadlock presentation may still be paused.", language),
         }
       : null,
     status.cameraRuntimeChecked &&
@@ -4293,7 +4293,7 @@ function App() {
       ? {
           tone: "error" as const,
           title: "Camera runtime",
-          description: "The tested camera runtime is unavailable.",
+          description: runtimeUiText("The tested camera runtime is unavailable.", language),
         }
       : null,
     !status.deadlockRunning
@@ -4308,7 +4308,7 @@ function App() {
       ? {
           tone: "warning" as const,
           title: "Console log",
-          description: "Deadlock's console log is unavailable.",
+          description: runtimeUiText("Deadlock's console log is unavailable.", language),
         }
       : null,
   ].filter((problem) => problem !== null);
