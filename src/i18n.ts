@@ -30,6 +30,13 @@ export function t(key: MessageKey, language = getLanguage()): string {
 // Shared visible labels. The original English text is the lookup key.
 export const uiLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "Setup progress": "Setup progress",
+    "Close screenshot": "Close screenshot",
+    "Close": "Close",
+    "Main navigation": "Main navigation",
+    "Preset actions": "Preset actions",
+    "Slot actions": "Slot actions",
+    "Deadlock diagnostics": "Deadlock diagnostics",
     "Press a shortcut…": "Press a shortcut…",
     "No, choose folder": "No, choose folder",
     "Setting up SPLIT integration…": "Setting up SPLIT integration…",
@@ -195,6 +202,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Adjust playback without changing Windows volume."
   },
   "fr": {
+    "Setup progress": "Progression de la configuration",
+    "Close screenshot": "Fermer la capture",
+    "Close": "Fermer",
+    "Main navigation": "Navigation principale",
+    "Preset actions": "Actions du preset",
+    "Slot actions": "Actions de l’emplacement",
+    "Deadlock diagnostics": "Diagnostics Deadlock",
     "Press a shortcut…": "Appuyez sur un raccourci…",
     "No, choose folder": "Non, choisir le dossier",
     "Setting up SPLIT integration…": "Configuration de l’intégration SPLIT…",
@@ -360,6 +374,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Régler le son sans modifier le volume de Windows."
   },
   "es": {
+    "Setup progress": "Progreso de configuración",
+    "Close screenshot": "Cerrar captura",
+    "Close": "Cerrar",
+    "Main navigation": "Navegación principal",
+    "Preset actions": "Acciones del preset",
+    "Slot actions": "Acciones de la ranura",
+    "Deadlock diagnostics": "Diagnóstico de Deadlock",
     "Press a shortcut…": "Pulsa un atajo…",
     "No, choose folder": "No, elegir carpeta",
     "Setting up SPLIT integration…": "Configurando integración SPLIT…",
@@ -525,6 +546,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Ajusta el sonido sin cambiar el volumen de Windows."
   },
   "de": {
+    "Setup progress": "Einrichtungsfortschritt",
+    "Close screenshot": "Screenshot schließen",
+    "Close": "Schließen",
+    "Main navigation": "Hauptnavigation",
+    "Preset actions": "Preset-Aktionen",
+    "Slot actions": "Slot-Aktionen",
+    "Deadlock diagnostics": "Deadlock-Diagnose",
     "Press a shortcut…": "Drücke ein Tastenkürzel…",
     "No, choose folder": "Nein, Ordner wählen",
     "Setting up SPLIT integration…": "SPLIT-Integration wird eingerichtet…",
@@ -690,6 +718,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Lautstärke ohne Änderung der Windows-Lautstärke anpassen."
   },
   "pt": {
+    "Setup progress": "Progresso da configuração",
+    "Close screenshot": "Fechar captura",
+    "Close": "Fechar",
+    "Main navigation": "Navegação principal",
+    "Preset actions": "Ações do preset",
+    "Slot actions": "Ações do slot",
+    "Deadlock diagnostics": "Diagnóstico do Deadlock",
     "Press a shortcut…": "Pressione um atalho…",
     "No, choose folder": "Não, escolher pasta",
     "Setting up SPLIT integration…": "Configurando integração SPLIT…",
@@ -855,6 +890,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Ajuste o som sem alterar o volume do Windows."
   },
   "ru": {
+    "Setup progress": "Ход настройки",
+    "Close screenshot": "Закрыть скриншот",
+    "Close": "Закрыть",
+    "Main navigation": "Основная навигация",
+    "Preset actions": "Действия с пресетом",
+    "Slot actions": "Действия со слотом",
+    "Deadlock diagnostics": "Диагностика Deadlock",
     "Press a shortcut…": "Нажмите сочетание клавиш…",
     "No, choose folder": "Нет, выбрать папку",
     "Setting up SPLIT integration…": "Настройка интеграции SPLIT…",
@@ -1020,6 +1062,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Настройка звука без изменения громкости Windows."
   },
   "ja": {
+    "Setup progress": "設定の進行状況",
+    "Close screenshot": "スクリーンショットを閉じる",
+    "Close": "閉じる",
+    "Main navigation": "メインナビゲーション",
+    "Preset actions": "プリセット操作",
+    "Slot actions": "スロット操作",
+    "Deadlock diagnostics": "Deadlock 診断",
     "Press a shortcut…": "ショートカットを押してください…",
     "No, choose folder": "いいえ、フォルダーを選択",
     "Setting up SPLIT integration…": "SPLIT 連携を設定中…",
@@ -1185,6 +1234,13 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Windows の音量を変えずに再生音量を調整します。"
   },
   "zh": {
+    "Setup progress": "设置进度",
+    "Close screenshot": "关闭截图",
+    "Close": "关闭",
+    "Main navigation": "主导航",
+    "Preset actions": "预设操作",
+    "Slot actions": "存档槽操作",
+    "Deadlock diagnostics": "Deadlock 诊断",
     "Press a shortcut…": "请按快捷键…",
     "No, choose folder": "否，选择文件夹",
     "Setting up SPLIT integration…": "正在配置 SPLIT 集成…",
