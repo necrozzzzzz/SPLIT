@@ -6394,8 +6394,7 @@ function App() {
                 </h2>
 
                 <p>
-                  Configure desktop behavior, Quick
-                  Access, appearance and warnings.
+                  {uiText("Configure desktop behavior, Quick Access, appearance and warnings.", language)}
                 </p>
               </div>
             </div>
@@ -6425,8 +6424,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Choose how assigned colors are
-                    displayed on savestate cards.
+                    {uiText("Choose how assigned colors are displayed on savestate cards.", language)}
                   </span>
                 </div>
 
@@ -6443,7 +6441,7 @@ function App() {
                     }
                   >
                     <span className="slot-color-style-preview tint" />
-                    Tint
+                    {uiText("Tint", language)}
                   </button>
 
                   <button
@@ -6458,7 +6456,7 @@ function App() {
                     }
                   >
                     <span className="slot-color-style-preview dot" />
-                    Dot
+                    {uiText("Dot", language)}
                   </button>
 
                   <button
@@ -6473,7 +6471,7 @@ function App() {
                     }
                   >
                     <span className="slot-color-style-preview accent" />
-                    Accent
+                    {uiText("Accent", language)}
                   </button>
                 </div>
               </div>  
