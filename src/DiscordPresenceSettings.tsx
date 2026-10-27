@@ -308,7 +308,7 @@ function PrefixSelector({
               onChange(preset.value);
             }}
           >
-            {discordUiText(preset.label, language)}
+            {preset.label === "None" ? uiText("None", language) : discordUiText(preset.label, language)}
           </button>
         ))}
         <button
@@ -850,7 +850,7 @@ export default function DiscordPresenceSettings() {
                   <div className="drp-preview-copy">
                     <strong>{preview.details}</strong>
                     {preview.state ? <span>{preview.state}</span> : null}
-                    {preview.party ? <span>1 of 6</span> : null}
+                    {preview.party ? <span>{discordUiText("1 of 6", language)}</span> : null}
                     {config.global.showElapsedTime ? <span>{d("02:14 elapsed")}</span> : null}
                   </div>
                 </div>
