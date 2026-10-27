@@ -329,7 +329,7 @@ function HotkeyKeys({
   if (capturing) {
     return (
       <kbd className="hotkey-binding capturing">
-        Press a shortcut…
+        {uiText("Press a shortcut…", getLanguage())}
       </kbd>
     );
   }
