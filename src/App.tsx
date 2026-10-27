@@ -4237,7 +4237,7 @@ function App() {
 
                 <div>
                   <strong>
-                    SPLIT integration
+                    {uiText("SPLIT integration", language)}
                   </strong>
 
                   <small>
@@ -6487,7 +6487,7 @@ function App() {
                   <div>
                     <strong>{uiText("Startup sound", language)}</strong>
                     <span>
-                      Play the SPLIT startup sound when the app launches.
+                      {uiText("Play the SPLIT startup sound when the app launches.", language)}
                     </span>
                   </div>
 
@@ -7248,7 +7248,7 @@ function App() {
       >
         <section className="diagnostics-group">
           <h2 className="diagnostics-group-title">
-            Runtime
+            {uiText("Runtime", language)}
           </h2>
 
           <div className="diagnostics-grid diagnostics-runtime-grid">
@@ -7257,7 +7257,7 @@ function App() {
             <StatusDot ok />
 
             <span>
-              SPLIT edition
+              {uiText("SPLIT edition", language)}
             </span>
             <DiagnosticInfo language={language} text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen uses keyboard shortcuts."} fix={"If this is not the edition you expected, launch the intended SPLIT executable."} />
           </div>
@@ -7280,7 +7280,7 @@ function App() {
             />
 
             <span>
-              SPLIT integration
+              {uiText("SPLIT integration", language)}
             </span>
             <DiagnosticInfo language={language} text={"Checks whether SPLIT's Deadlock integration is configured correctly."} fix={"Click Repair integration, then Refresh. If it still fails, check the Deadlock installation path."} />
           </div>
