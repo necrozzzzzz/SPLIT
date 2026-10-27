@@ -760,7 +760,7 @@ export default function QuickAccess() {
       ? ""
       : (
           viewerMetadata?.name?.trim() ||
-          `Slot ${viewerSlot}`
+          `${q("Slot")} ${viewerSlot}`
         );
 
 
@@ -803,7 +803,7 @@ export default function QuickAccess() {
 
             const name =
               info?.name?.trim() ||
-              `Slot ${slot}`;
+              `${q("Slot")} ${slot}`;
 
             const hotkey =
               position
@@ -908,7 +908,7 @@ export default function QuickAccess() {
                         />
                         ) : (
                         <span>
-                            SAVED
+                            {q("SAVED")}
                         </span>
                         )}
                     </div>
@@ -926,7 +926,7 @@ export default function QuickAccess() {
                         ref={renameInputRef}
                         className="quick-access-slot-name-input"
                         value={editingName}
-                        aria-label={`Rename slot ${slot}`}
+                        aria-label={`${q("Rename slot")} ${slot}`}
                         onChange={(event) =>
                           setEditingName(
                             event.target.value,
@@ -1004,7 +1004,7 @@ export default function QuickAccess() {
                         <button
                           type="button"
                           className="quick-access-slot-actions-button"
-                          aria-label={`Slot ${slot} actions`}
+                          aria-label={`${q("Slot")} ${slot} ${q("Slot actions")}`}
                           aria-haspopup="menu"
                           aria-expanded={
                             openMenuSlot === slot
@@ -1032,7 +1032,7 @@ export default function QuickAccess() {
                                 : ""
                             }`}
                             role="menu"
-                            aria-label={`Slot ${slot} actions`}
+                            aria-label={`${q("Slot")} ${slot} ${q("Slot actions")}`}
                             onClick={(event) => {
                               event.stopPropagation();
                             }}
@@ -1236,7 +1236,7 @@ export default function QuickAccess() {
                 }
               >
                 <strong>
-                  SAVE {viewerSlot} / {viewerName}
+                  {q("SAVE")} {viewerSlot} / {viewerName}
                 </strong>
 
                 <button

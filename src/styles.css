@@ -7906,3 +7906,9 @@ select:hover:not(:disabled) {
 .drp-preview-copy { min-width: 0; }
 .drp-preview-copy strong, .drp-preview-copy span { overflow-wrap: anywhere; }
 .drp-section-nav button { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+
+/* Quick Access: support translated labels, screen readers and longer names. */
+.quick-access-slot-copy, .quick-access-slot-title-row { min-width: 0; }
+.quick-access-slot-copy > span, .quick-access-slot-name { overflow-wrap: anywhere; }
+.quick-access-viewer-header strong { min-width: 0; overflow-wrap: anywhere; }
+.quick-access-footer, .quick-access-slot-menu { overflow-wrap: anywhere; }
