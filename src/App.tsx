@@ -5326,7 +5326,7 @@ function App() {
               )
             }
           >
-            {uiText("Discord Presence", language)}
+            {uiText("Discord Rich Presence", language)}
           </button>
 
           <button
