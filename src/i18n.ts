@@ -2770,6 +2770,9 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "The current preset will be replaced by the imported preset.": "The current preset will be replaced by the imported preset.",
+    "All savestates in this preset will be cleared.": "All savestates in this preset will be cleared.",
+    "8 savestate slots": "8 savestate slots",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "The complete save will be copied, including position, camera, name, timestamp and color.",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.",
     "Choose a Favorite slot for": "Choose a Favorite slot for",
@@ -2900,6 +2903,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "The current preset will be replaced by the imported preset.": "Le preset actuel sera remplacé par le preset importé.",
+    "All savestates in this preset will be cleared.": "Toutes les sauvegardes de ce preset seront effacées.",
+    "8 savestate slots": "8 emplacements de sauvegarde",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "La sauvegarde complète sera copiée, avec la position, la caméra, le nom, la date et la couleur.",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Cet emplacement contient déjà un favori. Voulez-vous le remplacer par la sauvegarde sélectionnée ?",
     "Choose a Favorite slot for": "Choisir un emplacement favori pour",
@@ -3030,6 +3036,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "The current preset will be replaced by the imported preset.": "El ajuste actual será reemplazado por el importado.",
+    "All savestates in this preset will be cleared.": "Se borrarán todas las partidas guardadas de este ajuste.",
+    "8 savestate slots": "8 espacios de guardado",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "Se copiará toda la partida, incluidos posición, cámara, nombre, fecha y color.",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Este espacio ya contiene un favorito. ¿Quieres reemplazarlo por la partida seleccionada?",
     "Choose a Favorite slot for": "Elige un espacio favorito para",
@@ -3160,6 +3169,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "The current preset will be replaced by the imported preset.": "Die aktuelle Voreinstellung wird durch die importierte ersetzt.",
+    "All savestates in this preset will be cleared.": "Alle Spielstände dieser Voreinstellung werden gelöscht.",
+    "8 savestate slots": "8 Speicherplätze",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "Der gesamte Spielstand wird kopiert, einschließlich Position, Kamera, Name, Zeitstempel und Farbe.",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Dieser Platz enthält bereits einen Favoriten. Soll er durch den ausgewählten Spielstand ersetzt werden?",
     "Choose a Favorite slot for": "Favoritenplatz auswählen für",
@@ -3290,6 +3302,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "The current preset will be replaced by the imported preset.": "A predefinição atual será substituída pela importada.",
+    "All savestates in this preset will be cleared.": "Todos os salvamentos desta predefinição serão apagados.",
+    "8 savestate slots": "8 espaços de salvamento",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "O salvamento completo será copiado, incluindo posição, câmera, nome, data e cor.",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Este espaço já contém um favorito. Deseja substituí-lo pelo salvamento selecionado?",
     "Choose a Favorite slot for": "Escolha um espaço favorito para",
@@ -3420,6 +3435,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "The current preset will be replaced by the imported preset.": "Текущий пресет будет заменён импортированным.",
+    "All savestates in this preset will be cleared.": "Все сохранения этого пресета будут удалены.",
+    "8 savestate slots": "8 слотов сохранения",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "Будет скопировано всё сохранение: позиция, камера, имя, время и цвет.",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Этот слот уже занят. Заменить его выбранным сохранением?",
     "Choose a Favorite slot for": "Выберите слот избранного для",
@@ -3550,6 +3568,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "The current preset will be replaced by the imported preset.": "現在のプリセットはインポートしたプリセットに置き換わります。",
+    "All savestates in this preset will be cleared.": "このプリセットの保存データはすべて消去されます。",
+    "8 savestate slots": "保存スロット8個",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "位置、カメラ、名前、日時、色を含む保存データ全体がコピーされます。",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "このスロットにはお気に入りが保存されています。選択したセーブデータで置き換えますか？",
     "Choose a Favorite slot for": "お気に入りの保存先を選択：",
@@ -3680,6 +3701,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "The current preset will be replaced by the imported preset.": "当前预设将被导入的预设替换。",
+    "All savestates in this preset will be cleared.": "此预设中的所有存档将被清空。",
+    "8 savestate slots": "8 个存档槽位",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "将复制完整存档，包括位置、摄像机、名称、时间戳和颜色。",
     "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "此槽位已有收藏。是否使用所选存档替换？",
     "Choose a Favorite slot for": "选择收藏槽位：",
