@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isBorderlessEdition } from "./edition";
-import { getLanguage, tourTitle, tourControl, tourDescription } from "./i18n";
+import { getLanguage, tourTitle, tourControl, tourDescription, tourDemoText } from "./i18n";
 import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
@@ -73,7 +73,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const [language, setTourLanguage] = useState(getLanguage);
   useEffect(() => { const update = () => setTourLanguage(getLanguage()); window.addEventListener("split-language-change", update); return () => window.removeEventListener("split-language-change", update); }, []);
   const translated = language === "fr" ? frenchTour[step.title] : undefined;
-  const label = (en: string, fr: string) => language === "fr" && tourControl(en, language) === en ? fr : tourControl(en, language);
+  const label = (en: string, _fr: string) => tourDemoText(en, language) !== en ? tourDemoText(en, language) : tourControl(en, language);
   useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName("Slot 1"); setDemoDraft("Slot 1"); setDemoRenaming(false); }, [index]);
   useEffect(() => {
     if (!demoOpen) return;
@@ -208,16 +208,16 @@ export default function Onboarding({ onClose, navigate }: Props) {
           {demoColor && <div className="tour-demo-slot-tint" style={{ backgroundColor: demoColor }} />}
           <span>01</span>
         </div>
-        <div className="tour-demo-slot-footer"><strong>Example · Mina</strong><small>{demoColor ? "Tint applied! Try another color." : "Try the slot actions above"}</small></div>
+        <div className="tour-demo-slot-footer"><strong>{tourDemoText("Example · Mina", language)}</strong><small>{tourDemoText(demoColor ? "Tint applied! Try another color." : "Try the slot actions above", language)}</small></div>
         {!demoMenuOpen && <span className="tour-demo-slot-hint">{label("CLICK ··· TO TRY COLORS", "CLIQUEZ SUR ··· POUR TESTER LES COULEURS")}</span>}
         <button className="tour-demo-slot-menu-trigger" type="button" aria-label="Open example slot actions" aria-expanded={demoMenuOpen} onClick={() => setDemoMenuOpen(v => !v)}>···</button>
         {demoMenuOpen && <div className="slot-card-menu-panel tour-demo-slot-menu">
-          <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>Rename <span>Example</span></button>
-          <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>View screenshot <span>Right click</span></button>
+          <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>{tourDemoText("Rename", language)} <span>{tourDemoText("Example", language)}</span></button>
+          <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>{tourDemoText("View screenshot", language)} <span>{tourDemoText("Right click", language)}</span></button>
           <div className="slot-menu-divider" />
-          <span className="slot-menu-label">Color</span>
+          <span className="slot-menu-label">{tourDemoText("Color", language)}</span>
           <div className="slot-menu-colors">
-            {([["None", null], ["Cyan", "#4fd1c5"], ["Yellow", "#ffd166"], ["Red", "#d98c8c"], ["Purple", "#9b8cff"], ["Green", "#62ff8f"]] as const).map(([label, color]) => <button key={label} type="button" className={`slot-menu-color ${demoColor === color ? "active" : ""}`} title={label} aria-label={`${label} slot color`} onClick={() => { setDemoColor(color); setDemoMenuOpen(false); }}><span style={{ width: 11, height: 11, borderRadius: 3, background: color ?? "#344b4b", display: "block" }} /></button>)}
+            {([["None", null], ["Cyan", "#4fd1c5"], ["Yellow", "#ffd166"], ["Red", "#d98c8c"], ["Purple", "#9b8cff"], ["Green", "#62ff8f"]] as const).map(([label, color]) => <button key={label} type="button" className={`slot-menu-color ${demoColor === color ? "active" : ""}`} title={tourDemoText(label, language)} aria-label={`${tourDemoText(label, language)} slot color`} onClick={() => { setDemoColor(color); setDemoMenuOpen(false); }}><span style={{ width: 11, height: 11, borderRadius: 3, background: color ?? "#344b4b", display: "block" }} /></button>)}
           </div>
           <small className="tour-demo-disclaimer">{label("Demo only — no saved data changes", "Démonstration : aucune sauvegarde modifiée")}</small>
         </div>}
@@ -225,7 +225,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
       {step.title === "Save State slots" && demoOpen && <div className="screenshot-viewer-backdrop tour-example-viewer" onClick={() => setDemoOpen(false)}>
         <section className="screenshot-viewer" role="dialog" aria-modal="true" aria-label="Example screenshot for Mina" onClick={(event) => event.stopPropagation()}>
           <header className="screenshot-viewer-header">
-            <div><strong>Example slot · Mina</strong><span>{label("Example screenshot", "Capture d’écran d’exemple")}</span></div>
+            <div><strong>{tourDemoText("Example slot · Mina", language)}</strong><span>{label("Example screenshot", "Capture d’écran d’exemple")}</span></div>
             <button type="button" aria-label="Close screenshot" title="Close" onClick={() => setDemoOpen(false)}>×</button>
           </header>
           <div className="screenshot-viewer-image"><img src="/tutorial-mina.jpg" alt="Deadlock gameplay screenshot featuring Mina" draggable={false} /></div>
