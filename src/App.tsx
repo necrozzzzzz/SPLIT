@@ -5417,7 +5417,7 @@ function App() {
 
           <div>
             <span className="label">
-              SYSTEM HEALTH
+              {t("systemHealth", language).toUpperCase()}
             </span>
 
             <strong>
@@ -8009,7 +8009,7 @@ function App() {
           <p className="label">ABOUT</p>
           <h2 id="about-settings-title">SPLIT</h2>
         </div>
-        <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>{language === "fr" ? "Revoir le tutoriel de démarrage" : "Replay getting started guide"}</button>
+        <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>{t("replayGuide", language)}</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
             <span>{language === "fr" ? "Version" : "Version"}</span>
