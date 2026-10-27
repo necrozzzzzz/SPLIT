@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isBorderlessEdition } from "./edition";
-import { getLanguage, tourTitle } from "./i18n";
+import { getLanguage, tourTitle, tourControl } from "./i18n";
 import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
@@ -73,7 +73,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const [language, setTourLanguage] = useState(getLanguage);
   useEffect(() => { const update = () => setTourLanguage(getLanguage()); window.addEventListener("split-language-change", update); return () => window.removeEventListener("split-language-change", update); }, []);
   const translated = language === "fr" ? frenchTour[step.title] : undefined;
-  const label = (en: string, fr: string) => language === "fr" ? fr : en;
+  const label = (en: string, _fr: string) => tourControl(en, language);
   useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName("Slot 1"); setDemoDraft("Slot 1"); setDemoRenaming(false); }, [index]);
   useEffect(() => {
     if (!demoOpen) return;
@@ -233,7 +233,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
         </section>
       </div>}
       <section ref={popoverRef} className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
-        <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>{label("Skip guide", "Passer le tutoriel")}</button></div>
+        <div className="tour-heading"><strong>SPLIT <small>{tourControl("GUIDE", language)}</small></strong><button type="button" onClick={finish}>{label("Skip guide", "Passer le tutoriel")}</button></div>
         <div className="tour-progress">{steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}</div>
         <p className="tour-counter">{label("STEP", "ÉTAPE")} {index + 1} {label("OF", "SUR")} {steps.length}</p>
         <h2 id="tour-title">{translated?.title ?? tourTitle(step.title, language)}</h2>
