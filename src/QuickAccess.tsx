@@ -1043,7 +1043,7 @@ export default function QuickAccess() {
                                 );
                               }}
                             >
-                              Overwrite
+                              {q("Overwrite")}
                             </button>
 
                             <div className="quick-access-slot-menu-divider" />
