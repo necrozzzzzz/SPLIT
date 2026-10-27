@@ -118,6 +118,13 @@ function formatHotkey(
 
 
 export default function QuickAccess() {
+  const [language, setCurrentLanguage] = useState(getLanguage);
+  useEffect(() => {
+    const update = () => setCurrentLanguage(getLanguage());
+    window.addEventListener("split-language-change", update);
+    return () => window.removeEventListener("split-language-change", update);
+  }, []);
+  const q = (english: string) => quickAccessText(english, language);
   const [
     slots,
     setSlots,
