@@ -372,13 +372,9 @@ fn run_polling_input_fallback(
 ) {
     let mut previous = capture_route_buttons(key_codes);
 
-    if let Ok(mut events) = input_events.lock() {
-        events.push(RouteInputEvent {
-            t_ms: started_at.elapsed().as_secs_f64() * 1_000.0,
-            buttons: previous,
-        });
-    }
-
+    // The hook thread already recorded the initial state before attempting
+    // installation. Do not append it a second time on fallback: duplicate
+    // initial events can produce ambiguous transitions for downstream readers.
     while input_running.load(Ordering::Acquire) {
         let buttons = capture_route_buttons(key_codes);
 
