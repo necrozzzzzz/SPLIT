@@ -2507,7 +2507,7 @@ function App() {
               if (!trimmed) {
                 setEditingSlotName(previousName);
                 setError(
-                  "Slot name cannot be empty",
+                  runtimeErrorText("Slot name cannot be empty", getLanguage()),
                 );
                 return;
               }
