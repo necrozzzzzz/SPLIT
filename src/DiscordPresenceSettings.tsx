@@ -228,10 +228,12 @@ function ToggleRow({
 }
 
 function PartyDisplayRow({
+  language = getLanguage(),
   helper,
   onChange,
   value,
 }: {
+  language?: ReturnType<typeof getLanguage>;
   helper?: string;
   onChange: (value: PartyDisplay) => void;
   value: PartyDisplay;
@@ -266,12 +268,14 @@ function compactState(state: string, display: PartyDisplay): string {
 }
 
 function PrefixSelector({
+  language = getLanguage(),
   disabled = false,
   label,
   onChange,
   onPreviewChange,
   value,
 }: {
+  language?: ReturnType<typeof getLanguage>;
   disabled?: boolean;
   label: string;
   onChange: (value: string) => void;
