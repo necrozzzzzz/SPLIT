@@ -6390,7 +6390,7 @@ function App() {
                 </p>
 
                 <h2>
-                  {t("general", language)} settings
+                  {language === "en" ? "General settings" : t("general", language)}
                 </h2>
 
                 <p>
