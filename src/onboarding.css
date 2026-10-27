@@ -23,11 +23,11 @@
 .tour-demo-viewer p{font-size:10px;color:#aebdd1;margin:9px 0 0}
 
 /* Real-grid screenshot tutorial: visual overlay only; no saved slot mutation. */
-.tour-live-preview{z-index:3;overflow:hidden;border-radius:8px;cursor:context-menu;background:#101a27;box-sizing:border-box}
+.tour-live-preview{pointer-events:auto;z-index:3;overflow:hidden;border-radius:8px;cursor:context-menu;background:#101a27;box-sizing:border-box}
 .tour-live-preview img{width:100%;height:100%;object-fit:cover;display:block}
 .tour-live-preview-number{position:absolute;top:8px;left:9px;color:#fff;font-size:13px;font-weight:800;text-shadow:0 1px 5px #000}
 .tour-live-preview-hint{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:4px 7px;background:#121d2bdb;border:1px solid #9ebbe1;border-radius:4px;font-size:9px;color:#e1edff;letter-spacing:.06em;font-weight:700}
-.tour-live-viewer-backdrop{position:fixed;inset:0;z-index:12;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
+.tour-live-viewer-backdrop{pointer-events:auto;position:fixed;inset:0;z-index:12;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
 .tour-live-viewer{width:min(900px,94vw);max-height:92vh;overflow:auto;padding:14px;background:#171e2c;border:1px solid #8398b8;border-radius:12px;box-shadow:0 15px 60px #000b}
 .tour-live-viewer-header{display:flex;align-items:center;justify-content:space-between;color:#f4f6fb;margin-bottom:10px}
 .tour-live-viewer-header button{border:0;background:none;color:#f4f6fb;font-size:26px;cursor:pointer}
