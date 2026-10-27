@@ -7874,3 +7874,8 @@ select:hover:not(:disabled) {
 .diagnostic-info-content p { margin: 5px 0 0; font-weight: 400; color: #d5e6e2; }
 .diagnostic-info-label { font-size: 10px; font-weight: 800; letter-spacing: .085em; color: #72d8cf; }
 .diagnostic-info-separator { height: 1px; margin: 12px 0 10px; background: rgba(112,183,180,.2); }
+
+/* Flexible sizing for translated interface labels */
+.general-toggle-group { width: 170px; max-width: 35%; }
+.general-toggle-group .general-toggle { min-height: 32px; height: auto; padding: 6px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.drp-prefix-presets button { min-width: 0; height: auto; padding: 6px 2px; white-space: normal; overflow-wrap: anywhere; }
