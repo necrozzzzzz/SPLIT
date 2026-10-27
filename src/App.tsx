@@ -3990,7 +3990,7 @@ function App() {
 
               <div>
                 <h1>
-                  Detecting Deadlock
+                  {uiText("Detecting Deadlock", language)}
                 </h1>
 
                 <p className="setup-description">
@@ -4003,7 +4003,7 @@ function App() {
             <div className="setup-scan-status">
               <div className="setup-scan-status-header">
                 <span>INSTALLATION SCAN</span>
-                <strong>Searching…</strong>
+                <strong>{uiText("Searching…", language)}</strong>
               </div>
 
               <div className="setup-scan-track">
@@ -4038,7 +4038,7 @@ function App() {
               </p>
 
               <h1>
-                Deadlock installation
+                {uiText("Deadlock installation", language)}
               </h1>
 
               {detected ? (
@@ -4122,7 +4122,7 @@ function App() {
                       <span>MANUAL SELECTION</span>
 
                       <strong>
-                        Select your Deadlock folder
+                        {uiText("Select your Deadlock folder", language)}
                       </strong>
 
                       <p>
@@ -4143,7 +4143,7 @@ function App() {
                       disabled={setupWorking}
                       onClick={() => void chooseFolder()}
                     >
-                      Choose Deadlock folder
+                      {uiText("Choose Deadlock folder", language)}
                     </button>
 
                     <button
@@ -4152,7 +4152,7 @@ function App() {
                       disabled={setupWorking}
                       onClick={() => void rescan()}
                     >
-                      Scan again
+                      {uiText("Scan again", language)}
                     </button>
                   </div>
                 </>
@@ -4479,7 +4479,7 @@ function App() {
                 disabled={setupWorking}
                 onClick={() => void chooseReminderFolder()}
               >
-                Choose another folder
+                {uiText("Choose another folder", language)}
               </button>
               <button
                 className="primary-button"
@@ -4487,7 +4487,7 @@ function App() {
                 disabled={setupWorking}
                 onClick={() => setFolderReminder(null)}
               >
-                Yes, keep this folder
+                {uiText("Yes, keep this folder", language)}
               </button>
             </div>
           </section>
@@ -4554,7 +4554,7 @@ function App() {
               />
 
               <span>
-                Don't remind me again
+                {uiText("Don't remind me again", language)}
               </span>
             </label>
 
@@ -4564,7 +4564,7 @@ function App() {
                 type="button"
                 onClick={cancelGameplayHotkey}
               >
-                Cancel
+                {uiText("Cancel", language)}
               </button>
 
               <button
@@ -4613,12 +4613,12 @@ function App() {
 
                 <div className="favorite-mode-summary">
                   <div>
-                    <span>Presets</span>
-                    <strong>Disabled</strong>
+                    <span>{uiText("Presets", language)}</span>
+                    <strong>{uiText("Disabled", language)}</strong>
                   </div>
 
                   <div>
-                    <span>Favorites</span>
+                    <span>{uiText("Favorites", language)}</span>
                     <strong>8 shared slots</strong>
                   </div>
                 </div>
@@ -4642,7 +4642,7 @@ function App() {
               />
 
               <span>
-                Don't remind me again
+                {uiText("Don't remind me again", language)}
               </span>
             </label>
 
@@ -4662,7 +4662,7 @@ function App() {
                 type="button"
                 onClick={continueFavoriteMode}
               >
-                Continue
+                {uiText("Continue", language)}
               </button>
             </div>
           </section>
@@ -4765,7 +4765,7 @@ function App() {
                 disabled={favoriteCopyWorking}
                 onClick={cancelFavoriteCopy}
               >
-                Cancel
+                {uiText("Cancel", language)}
               </button>
             </div>
           </section>
@@ -4805,7 +4805,7 @@ function App() {
 
                 <div className="favorite-overwrite-comparison">
                   <div>
-                    <span>Current</span>
+                    <span>{uiText("Current", language)}</span>
 
                     <strong>
                       {pendingFavoriteOverwrite.target.name}
@@ -4883,7 +4883,7 @@ function App() {
                   id="import-preset-title"
                   className="confirmation-title"
                 >
-                  Import preset?
+                  {uiText("Import preset?", language)}
                 </h3>
 
                 <p className="confirmation-description">
@@ -4893,7 +4893,7 @@ function App() {
 
                 <div className="preset-import-comparison">
                   <div>
-                    <span>Current</span>
+                    <span>{uiText("Current", language)}</span>
 
                     <strong>
                       {pendingImportPreset.currentName}
@@ -4908,7 +4908,7 @@ function App() {
                   </span>
 
                   <div>
-                    <span>Import</span>
+                    <span>{uiText("Import", language)}</span>
 
                     <strong>
                       {pendingImportPreset.importedName}
@@ -4928,7 +4928,7 @@ function App() {
                 type="button"
                 onClick={cancelPresetImport}
               >
-                Cancel
+                {uiText("Cancel", language)}
               </button>
 
               <button
@@ -4966,7 +4966,7 @@ function App() {
                   id="clear-preset-title"
                   className="confirmation-title"
                 >
-                  Clear preset?
+                  {uiText("Clear preset?", language)}
                 </h3>
 
                 <p className="confirmation-description">
@@ -5006,7 +5006,7 @@ function App() {
               />
 
               <span>
-                Don't ask me again
+                {uiText("Don't ask me again", language)}
               </span>
             </label>
 
@@ -5018,7 +5018,7 @@ function App() {
                   cancelClearPreset
                 }
               >
-                Cancel
+                {uiText("Cancel", language)}
               </button>
 
               <button
@@ -5070,7 +5070,7 @@ function App() {
               id="rename-preset-title"
               className="confirmation-title"
             >
-              Rename preset
+              {uiText("Rename preset", language)}
             </h3>
 
             <p className="confirmation-description">
@@ -5078,7 +5078,7 @@ function App() {
             </p>
 
             <label className="preset-rename-field">
-              <span>Preset name</span>
+              <span>{uiText("Preset name", language)}</span>
               <input
                 ref={presetRenameInputRef}
                 type="text"
@@ -5111,7 +5111,7 @@ function App() {
                 disabled={renamingPreset}
                 onClick={() => setPendingPresetRename(null)}
               >
-                Cancel
+                {uiText("Cancel", language)}
               </button>
 
               <button
@@ -5141,7 +5141,7 @@ function App() {
               if (favoriteMode) void leaveFavoriteMode();
             }}
           >
-            <span>Presets</span>
+            <span>{uiText("Presets", language)}</span>
           </button>
           <button
             type="button"
@@ -5156,7 +5156,7 @@ function App() {
               if (!favoriteMode) void toggleFavorites();
             }}
           >
-            <span>Favorites</span>
+            <span>{uiText("Favorites", language)}</span>
             <kbd>
               {formatHotkey(
                 hotkeySettings.favoriteMode,
@@ -5934,7 +5934,7 @@ function App() {
                       ) : (
                         <div className="slot-preview-placeholder">
                           <span>
-                            Position captured
+                            {uiText("Position captured", language)}
                           </span>
 
                           <code>
@@ -5984,11 +5984,11 @@ function App() {
                       </span>
 
                       <span>
-                        Empty slot
+                        {uiText("Empty slot", language)}
                       </span>
 
                       <small>
-                        Save current position
+                        {uiText("Save current position", language)}
                       </small>
                     </button>
                   )}
@@ -6035,7 +6035,7 @@ function App() {
                             );
                           }}
                         >
-                          Copy position
+                          {uiText("Copy position", language)}
                         </button>
 
 
@@ -6089,10 +6089,10 @@ function App() {
                             });
                           }}
                         >
-                          View screenshot
+                          {uiText("View screenshot", language)}
 
                           <span>
-                            Right click
+                            {uiText("Right click", language)}
                           </span>
                         </button>
                       )}
@@ -6144,7 +6144,7 @@ function App() {
                         );
                       }}
                     >
-                      Rename
+                      {uiText("Rename", language)}
                     </button>
 
                     {!favoriteMode && position && (
@@ -6168,7 +6168,7 @@ function App() {
                           );
                         }}
                       >
-                        Save to Favorite
+                        {uiText("Save to Favorite", language)}
                       </button>
                     )}
 
@@ -6177,7 +6177,7 @@ function App() {
                         <div className="slot-menu-divider" />
 
                         <span className="slot-menu-label">
-                          Color
+                          {uiText("Color", language)}
                         </span>
 
                         <div className="slot-menu-colors">
@@ -6255,7 +6255,7 @@ function App() {
                         );
                       }}
                     >
-                      Clear
+                      {uiText("Clear", language)}
                     </button>
                   </div>
                 </details>
@@ -6549,7 +6549,7 @@ function App() {
                       type="button"
                       onClick={() => void previewStartupSound()}
                     >
-                      Preview
+                      {uiText("Preview", language)}
                     </button>
                   </div>
                 </div>
@@ -6612,14 +6612,14 @@ function App() {
                   type="button"
                   onClick={() => setActiveSettingsSection("discord")}
                 >
-                  Configure
+                  {uiText("Configure", language)}
                 </button>
               </div>
 
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Launch with Windows
+                    {uiText("Launch with Windows", language)}
                   </strong>
 
                   <span>
@@ -6656,7 +6656,7 @@ function App() {
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Start minimized to tray
+                    {uiText("Start minimized to tray", language)}
                   </strong>
 
                   <span>
@@ -6697,7 +6697,7 @@ function App() {
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Close button behavior
+                    {uiText("Close button behavior", language)}
                   </strong>
 
                   <span>
@@ -6722,7 +6722,7 @@ function App() {
                       void updateCloseBehavior(true)
                     }
                   >
-                    Minimize to tray
+                    {uiText("Minimize to tray", language)}
                   </button>
 
                   <button
@@ -6740,7 +6740,7 @@ function App() {
                       void updateCloseBehavior(false)
                     }
                   >
-                    Quit SPLIT
+                    {uiText("Quit SPLIT", language)}
                   </button>
                 </div>
               </div>
@@ -6748,7 +6748,7 @@ function App() {
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Window size & position
+                    {uiText("Window size & position", language)}
                   </strong>
 
                   <span>
@@ -6787,7 +6787,7 @@ function App() {
                   <div>
                     <strong>{uiText("Enabled", language)}</strong>
                     <span>
-                      Show the Quick Access overlay in Deadlock.
+                      {uiText("Show the Quick Access overlay in Deadlock.", language)}
                     </span>
                   </div>
 
@@ -6867,7 +6867,7 @@ function App() {
                   <div>
                     <strong>{uiText("Position", language)}</strong>
                     <span>
-                      Anchor the overlay inside the Deadlock window.
+                      {uiText("Anchor the overlay inside the Deadlock window.", language)}
                     </span>
                   </div>
 
@@ -7338,7 +7338,7 @@ function App() {
             />
 
             <span>
-              Hotkey hook
+              {uiText("Hotkey hook", language)}
             </span>
             <DiagnosticInfo language={language} text={"Listens for SPLIT keyboard shortcuts."} fix={"If shortcuts stop working, close duplicate SPLIT instances and restart SPLIT. If Deadlock runs as administrator, match its privileges. Additional troubleshooting appears when the hook is Down."} />
           </div>
@@ -7374,7 +7374,7 @@ function App() {
                   </li>
 
                   <li>
-                    Completely restart SPLIT.
+                    {uiText("Completely restart SPLIT.", language)}
                   </li>
 
                   <li>
@@ -7423,7 +7423,7 @@ function App() {
             />
 
             <span>
-              Console watcher
+              {uiText("Console watcher", language)}
             </span>
             <DiagnosticInfo language={language} text={"Reads Deadlock's console log for activity and position responses."} fix={"If the watcher stops working, check the Deadlock installation path and restart the game. Then use Retry watcher, which appears when an issue is detected."} />
           </div>
@@ -7472,7 +7472,7 @@ function App() {
                   </li>
 
                   <li>
-                    Click Retry watcher below.
+                    {uiText("Click Retry watcher below.", language)}
                   </li>
 
                   <li>
@@ -7506,7 +7506,7 @@ function App() {
 
         <section className="diagnostics-group">
           <h2 className="diagnostics-group-title">
-            Gameplay readiness
+            {uiText("Gameplay readiness", language)}
           </h2>
 
           <div className="diagnostics-grid diagnostics-gameplay-grid">
@@ -7523,12 +7523,12 @@ function App() {
             />
 
             <span>
-              Teleport helper
+              {uiText("Teleport helper", language)}
             </span>
             <DiagnosticInfo language={language} text={"Optional teleport point preparation. SPLIT normally prepares these automatically when needed."} />
           </div>
 
-          <strong>Optional feature</strong>
+          <strong>{uiText("Optional feature", language)}</strong>
 
           {!status.teleportsReady && (
             <div className="diagnostic-details">
@@ -7556,7 +7556,7 @@ function App() {
 
                 <ol>
                   <li>
-                    Make sure Deadlock is running.
+                    {uiText("Make sure Deadlock is running.", language)}
                   </li>
 
                   <li>
@@ -7595,7 +7595,7 @@ function App() {
 
                 {!status.deadlockRunning && (
                   <span className="diagnostic-action-hint">
-                    Start Deadlock first.
+                    {uiText("Start Deadlock first.", language)}
                   </span>
                 )}
               </div>
@@ -7772,7 +7772,7 @@ function App() {
 
                     <ol>
                       <li>
-                        Make sure Deadlock is running.
+                        {uiText("Make sure Deadlock is running.", language)}
                       </li>
 
                       <li>
@@ -7815,7 +7815,7 @@ function App() {
 
                 {!status.deadlockRunning && (
                   <span className="diagnostic-action-hint">
-                    Start Deadlock first.
+                    {uiText("Start Deadlock first.", language)}
                   </span>
                 )}
               </div>
@@ -7828,7 +7828,7 @@ function App() {
 
         <section className="diagnostics-group">
           <h2 className="diagnostics-group-title">
-            Configuration
+            {uiText("Configuration", language)}
           </h2>
 
           <div className="diagnostics-grid diagnostics-configuration-grid">
@@ -7840,7 +7840,7 @@ function App() {
             />
 
             <span>
-              Game folder
+              {uiText("Game folder", language)}
             </span>
             <DiagnosticInfo language={language} text={"The detected Deadlock installation path."} />
           </div>
@@ -7941,7 +7941,7 @@ function App() {
 
         <section className="diagnostics-group">
           <h2 className="diagnostics-group-title">
-            Debug data
+            {uiText("Debug data", language)}
           </h2>
 
           <div className="diagnostics-grid diagnostics-debug-grid">
@@ -7952,7 +7952,7 @@ function App() {
             />
 
             <span>
-              Console log
+              {uiText("Console log", language)}
             </span>
             <DiagnosticInfo language={language} text={"Game console output that SPLIT monitors for events and positions."} />
           </div>
@@ -7973,7 +7973,7 @@ function App() {
             />
 
             <span>
-              Last parsed position
+              {uiText("Last parsed position", language)}
             </span>
             <DiagnosticInfo language={language} text={"Most recent coordinates successfully read from Deadlock's console log."} />
           </div>
