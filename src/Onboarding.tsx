@@ -70,10 +70,34 @@ export default function Onboarding({ onClose, navigate }: Props) {
   };
   const w = window.innerWidth, h = window.innerHeight;
   const tipWidth = Math.min(370, w - 32);
-  const tipLeft = rect ? Math.max(16, Math.min(w - tipWidth - 16, rect.left)) : Math.max(16, (w - tipWidth) / 2);
   const usableHeight = Math.min(popoverHeight, h - 32);
-  const desiredTop = rect ? (rect.bottom + usableHeight + 18 < h ? rect.bottom + 18 : rect.top >= usableHeight + 34 ? rect.top - usableHeight - 18 : 16) : (h - usableHeight) / 2;
-  const tipTop = Math.max(16, Math.min(h - usableHeight - 16, desiredTop));
+  const gap = 18;
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+  const fits = (left: number, top: number) => !rect ||
+    left + tipWidth + gap <= rect.left ||
+    left >= rect.right + gap ||
+    top + usableHeight + gap <= rect.top ||
+    top >= rect.bottom + gap;
+  const preferredLeft = rect ? clamp(rect.left, 16, w - tipWidth - 16) : (w - tipWidth) / 2;
+  const preferredTop = rect ? clamp(rect.top, 16, h - usableHeight - 16) : (h - usableHeight) / 2;
+  const candidates: Array<[number, number]> = rect ? [
+    [rect.right + gap, preferredTop],
+    [rect.left - tipWidth - gap, preferredTop],
+    [preferredLeft, rect.bottom + gap],
+    [preferredLeft, rect.top - usableHeight - gap],
+    [16, 16],
+    [w - tipWidth - 16, 16],
+    [16, h - usableHeight - 16],
+    [w - tipWidth - 16, h - usableHeight - 16],
+  ] : [[preferredLeft, preferredTop]];
+  const valid = candidates.filter(([left, top]) =>
+    left >= 16 && top >= 16 && left + tipWidth <= w - 16 &&
+    top + usableHeight <= h - 16 && fits(left, top)
+  );
+  const [tipLeft, tipTop] = valid[0] ?? [
+    clamp(preferredLeft, 16, w - tipWidth - 16),
+    clamp(preferredTop, 16, h - usableHeight - 16),
+  ];
   return (
     <div className="tour-root" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       {rect ? <>
