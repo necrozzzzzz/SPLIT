@@ -664,6 +664,7 @@ function App() {
     }
   };
   useEffect(() => { document.documentElement.lang = language; }, [language]);
+  useEffect(() => { void invoke("set_notification_language", { language }).catch(() => undefined); }, [language]);
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingCompleted());
   const [activeView, setActiveView] =
     useState<AppView>("slots");
