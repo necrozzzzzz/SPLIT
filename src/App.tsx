@@ -5432,7 +5432,7 @@ function App() {
                 <li key={problem.title}>
                   <StatusDot tone={problem.tone} />
                   <div>
-                    <strong>{problem.title}</strong>
+                    <strong>{uiText(problem.title, language)}</strong>
                     <span>{problem.description}</span>
                   </div>
                 </li>
