@@ -9,7 +9,7 @@ const steps: Step[] = [
   { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
   { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click a saved slot’s preview to view its screenshot (when available).", "Click a slot name to rename it."] },
-  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, copying a saved position, and assigning a color. Try opening the example slot menu and choosing a color.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
+  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, copying a saved position, and assigning a color. Click the highlighted three-dot button on Mina’s example slot, then choose a color to try it in Tint mode.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
   { title: "Undo and redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
   { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
   { title: "Settings", description: "This is where you customize SPLIT. We'll walk through the main settings sections next.", target: ".sidebar-nav button:nth-child(3)", view: "settings", section: "general" },
@@ -171,12 +171,14 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <span className="tour-live-preview-number">01</span>
         <span className="tour-live-preview-hint">RIGHT-CLICK TO PREVIEW</span>
       </div>}
-      {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height, borderColor: demoColor ?? undefined }}>
-        <div className="tour-demo-slot-image" style={{ boxShadow: demoColor ? `inset 0 0 0 3px ${demoColor}` : undefined }}>
+      {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height }}>
+        <div className="tour-demo-slot-image">
           <img src="/tutorial-mina.jpg" alt="Example Deadlock save state featuring Mina" />
+          {demoColor && <div className="tour-demo-slot-tint" style={{ backgroundColor: `${demoColor}45` }} />}
           <span>01</span>
         </div>
-        <div className="tour-demo-slot-footer"><strong>Example · Mina</strong><small>Try changing its color</small></div>
+        <div className="tour-demo-slot-footer"><strong>Example · Mina</strong><small>{demoColor ? "Tint applied! Try another color." : "Try the slot actions above"}</small></div>
+        {!demoMenuOpen && <span className="tour-demo-slot-hint">CLICK ··· TO TRY COLORS</span>}
         <button className="tour-demo-slot-menu-trigger" type="button" aria-label="Open example slot actions" aria-expanded={demoMenuOpen} onClick={() => setDemoMenuOpen(v => !v)}>···</button>
         {demoMenuOpen && <div className="slot-card-menu-panel tour-demo-slot-menu">
           <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>Rename <span>Example</span></button>
