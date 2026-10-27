@@ -632,6 +632,15 @@ function StatusDot({
   );
 }
 
+function DiagnosticInfo({ text }: { text: string }) {
+  return (
+    <details className="diagnostic-info">
+      <summary aria-label="What does this diagnostic mean?" title="What does this mean?">i</summary>
+      <div className="diagnostic-info-content">{text}</div>
+    </details>
+  );
+}
+
 function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingCompleted());
   const [activeView, setActiveView] =
@@ -7949,7 +7958,7 @@ function App() {
           <p className="label">ABOUT</p>
           <h2 id="about-settings-title">SPLIT</h2>
         </div>
-        <button type="button" className="preset-button" onClick={() => setShowOnboarding(true)}>Replay getting started guide</button>
+        <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>Replay getting started guide</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
             <span>Version</span>
