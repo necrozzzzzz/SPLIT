@@ -244,10 +244,10 @@ function PartyDisplayRow({
         <strong>{uiText("Party display", language)}</strong>
         <small>
           {value === "compact"
-            ? "Shows 1/6 inline"
+            ? discordUiText("Shows 1/6 inline", language)
             : value === "discord"
-              ? "Uses Discord's native party display"
-              : "Hides party size"}
+              ? discordUiText("Uses Discord's native party display", language)
+              : discordUiText("Hides party size", language)}
         </small>
         {helper ? <small>{helper}</small> : null}
       </span>
@@ -308,7 +308,7 @@ function PrefixSelector({
               onChange(preset.value);
             }}
           >
-            {preset.label}
+            {discordUiText(preset.label, language)}
           </button>
         ))}
         <button
@@ -679,6 +679,7 @@ export default function DiscordPresenceSettings() {
                     }
                   />
                   <PrefixSelector
+                    language={language}
                     label="State prefix"
                     value={config.global.previewPrefix}
                     onChange={(previewPrefix) => updateSection("global", { previewPrefix })}
@@ -698,8 +699,9 @@ export default function DiscordPresenceSettings() {
                     }
                   />
                   <ToggleRow label="Show hero image" checked={config.hideout.showHeroImage} onChange={(showHeroImage) => updateSection("hideout", { showHeroImage })} />
-                  <PartyDisplayRow value={config.hideout.partyDisplay} onChange={(partyDisplay) => updateSection("hideout", { partyDisplay })} />
+                  <PartyDisplayRow language={language} value={config.hideout.partyDisplay} onChange={(partyDisplay) => updateSection("hideout", { partyDisplay })} />
                   <PrefixSelector
+                    language={language}
                     label="State prefix"
                     value={config.hideout.statePrefix}
                     onChange={(statePrefix) => updateSection("hideout", { statePrefix })}
@@ -724,6 +726,7 @@ export default function DiscordPresenceSettings() {
                     }
                   />
                   <PrefixSelector
+                    language={language}
                     label="Hero text prefix"
                     value={config.sandbox.statePrefix}
                     onChange={(statePrefix) => updateSection("sandbox", { statePrefix })}
@@ -737,8 +740,9 @@ export default function DiscordPresenceSettings() {
                   <ToggleRow label="Show hero in activity text" checked={config.exploreNyc.showHeroInDetails} onChange={(showHeroInDetails) => updateSection("exploreNyc", { showHeroInDetails })} />
                   <ToggleRow label="Show district" checked={config.exploreNyc.showDistrict} onChange={(showDistrict) => updateSection("exploreNyc", { showDistrict })} />
                   <ToggleRow label="Show district image" checked={config.exploreNyc.showDistrictImage} disabled={districtControlsDisabled} onChange={(showDistrictImage) => updateSection("exploreNyc", { showDistrictImage })} />
-                  <PartyDisplayRow value={config.exploreNyc.partyDisplay} onChange={(partyDisplay) => updateSection("exploreNyc", { partyDisplay })} />
+                  <PartyDisplayRow language={language} value={config.exploreNyc.partyDisplay} onChange={(partyDisplay) => updateSection("exploreNyc", { partyDisplay })} />
                   <PrefixSelector
+                    language={language}
                     label="District prefix"
                     value={config.exploreNyc.districtPrefix}
                     disabled={districtControlsDisabled}
@@ -758,8 +762,9 @@ export default function DiscordPresenceSettings() {
               {activeSection === "mainMenu" ? (
                 <>
                   <ToggleRow label="Use Deadlock logo" checked={config.mainMenu.useDeadlockLogo} onChange={(useDeadlockLogo) => updateSection("mainMenu", { useDeadlockLogo })} />
-                  <PartyDisplayRow value={config.mainMenu.partyDisplay} onChange={(partyDisplay) => updateSection("mainMenu", { partyDisplay })} />
+                  <PartyDisplayRow language={language} value={config.mainMenu.partyDisplay} onChange={(partyDisplay) => updateSection("mainMenu", { partyDisplay })} />
                   <PrefixSelector
+                    language={language}
                     label="State prefix"
                     value={config.mainMenu.statePrefix}
                     onChange={(statePrefix) => updateSection("mainMenu", { statePrefix })}
@@ -770,8 +775,9 @@ export default function DiscordPresenceSettings() {
 
               {activeSection === "matchmaking" ? (
                 <>
-                  <PartyDisplayRow value={config.matchmaking.partyDisplay} onChange={(partyDisplay) => updateSection("matchmaking", { partyDisplay })} />
+                  <PartyDisplayRow language={language} value={config.matchmaking.partyDisplay} onChange={(partyDisplay) => updateSection("matchmaking", { partyDisplay })} />
                   <PrefixSelector
+                    language={language}
                     label="State prefix"
                     value={config.matchmaking.statePrefix}
                     onChange={(statePrefix) => updateSection("matchmaking", { statePrefix })}
@@ -782,8 +788,9 @@ export default function DiscordPresenceSettings() {
               {activeSection === "match" ? (
                 <>
                   <ToggleRow label="Show hero image" checked={config.match.showHeroImage} onChange={(showHeroImage) => updateSection("match", { showHeroImage })} />
-                  <PartyDisplayRow value={config.match.partyDisplay} onChange={(partyDisplay) => updateSection("match", { partyDisplay })} />
+                  <PartyDisplayRow language={language} value={config.match.partyDisplay} onChange={(partyDisplay) => updateSection("match", { partyDisplay })} />
                   <PrefixSelector
+                    language={language}
                     label="Hero text prefix"
                     value={config.match.statePrefix}
                     onChange={(statePrefix) => updateSection("match", { statePrefix })}
@@ -795,6 +802,7 @@ export default function DiscordPresenceSettings() {
                 <>
                   <ToggleRow label="Show match ID" checked={config.spectating.showMatchId} onChange={(showMatchId) => updateSection("spectating", { showMatchId })} />
                   <PrefixSelector
+                    language={language}
                     label="Match ID prefix"
                     value={config.spectating.matchIdPrefix}
                     onChange={(matchIdPrefix) => updateSection("spectating", { matchIdPrefix })}
@@ -804,8 +812,9 @@ export default function DiscordPresenceSettings() {
               ) : null}
               {activeSection === "postMatch" ? (
                 <>
-                  <PartyDisplayRow value={config.postMatch.partyDisplay} onChange={(partyDisplay) => updateSection("postMatch", { partyDisplay })} />
+                  <PartyDisplayRow language={language} value={config.postMatch.partyDisplay} onChange={(partyDisplay) => updateSection("postMatch", { partyDisplay })} />
                   <PrefixSelector
+                    language={language}
                     label="State prefix"
                     value={config.postMatch.statePrefix}
                     onChange={(statePrefix) => updateSection("postMatch", { statePrefix })}
