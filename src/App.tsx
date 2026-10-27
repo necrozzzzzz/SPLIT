@@ -4087,7 +4087,7 @@ function App() {
                         void chooseFolder()
                       }
                     >
-                      No, choose folder
+                      {uiText("No, choose folder", language)}
                     </button>
                   </div>
                 </>
@@ -4160,7 +4160,7 @@ function App() {
 
               {setupWorking && (
                 <p className="setup-working">
-                  Setting up SPLIT integration…
+                  {uiText("Setting up SPLIT integration…", language)}
                 </p>
               )}
 
@@ -4192,7 +4192,7 @@ function App() {
 
                 <div>
                   <strong>
-                    Deadlock detection
+                    {uiText("Deadlock detection", language)}
                   </strong>
 
                   <small>
@@ -4399,7 +4399,7 @@ function App() {
                 </strong>
 
                 <span>
-                  Saved screenshot
+                  {uiText("Saved screenshot", language)}
                 </span>
               </div>
 
@@ -4449,7 +4449,7 @@ function App() {
             </div>
 
             <footer className="screenshot-viewer-footer">
-              Right click a saved slot to open its screenshot · Esc to close
+              {uiText("Right click a saved slot to open its screenshot · Esc to close", language)}
             </footer>
           </section>
         </div>
@@ -4464,10 +4464,10 @@ function App() {
             aria-labelledby="folder-reminder-title"
           >
             <h3 id="folder-reminder-title" className="confirmation-title">
-              It's been a while since you last opened SPLIT.
+              {uiText("It's been a while since you last opened SPLIT.", language)}
             </h3>
             <p className="confirmation-message">
-              Is this still your Deadlock folder?
+              {uiText("Is this still your Deadlock folder?", language)}
             </p>
             <code className="folder-reminder-path">
               {folderReminder.configuredPath}
@@ -4515,7 +4515,7 @@ function App() {
                   id="gameplay-hotkey-warning-title"
                   className="confirmation-title"
                 >
-                  This shortcut may interfere with gameplay
+                  {uiText("This shortcut may interfere with gameplay", language)}
                 </h3>
 
                 <p className="confirmation-description">
@@ -4524,7 +4524,7 @@ function App() {
                 </p>
 
                 <div className="gameplay-hotkey-selected">
-                  <span>Selected shortcut</span>
+                  <span>{uiText("Selected shortcut", language)}</span>
 
                   <strong>
                     {formatHotkey(
@@ -4574,7 +4574,7 @@ function App() {
                   void confirmGameplayHotkey()
                 }
               >
-                Use anyway
+                {uiText("Use anyway", language)}
               </button>
             </div>
           </section>
@@ -4603,7 +4603,7 @@ function App() {
                   id="favorite-mode-warning-title"
                   className="confirmation-title"
                 >
-                  Enter Favorite Mode?
+                  {uiText("Enter Favorite Mode?", language)}
                 </h3>
 
                 <p className="confirmation-description">
@@ -4654,7 +4654,7 @@ function App() {
                   void leaveFavoriteMode()
                 }
               >
-                Leave Favorites
+                {uiText("Leave Favorites", language)}
               </button>
 
               <button
@@ -4820,7 +4820,7 @@ function App() {
                   </span>
 
                   <div>
-                    <span>Replace with</span>
+                    <span>{uiText("Replace with", language)}</span>
 
                     <strong>
                       {pendingFavoriteOverwrite.sourceName}
@@ -4829,7 +4829,7 @@ function App() {
                 </div>
 
                 <p className="favorite-overwrite-undo">
-                  This change can be undone afterwards.
+                  {uiText("This change can be undone afterwards.", language)}
                 </p>
               </div>
             </div>
@@ -4917,7 +4917,7 @@ function App() {
                 </div>
 
                 <p className="preset-import-undo">
-                  This change can be undone afterwards.
+                  {uiText("This change can be undone afterwards.", language)}
                 </p>
               </div>
             </div>
@@ -4938,7 +4938,7 @@ function App() {
                   void confirmPresetImport()
                 }
               >
-                Import preset
+                {uiText("Import preset", language)}
               </button>
             </div>
           </section>
@@ -4975,7 +4975,7 @@ function App() {
                 </p>
 
                 <div className="clear-preset-target">
-                  <span>Preset</span>
+                  <span>{uiText("Preset", language)}</span>
 
                   <strong>
                     {pendingClearPreset.name}
@@ -4987,7 +4987,7 @@ function App() {
                 </div>
 
                 <p className="clear-preset-undo">
-                  This change can be undone afterwards.
+                  {uiText("This change can be undone afterwards.", language)}
                 </p>
               </div>
             </div>
@@ -5028,7 +5028,7 @@ function App() {
                   void confirmClearPreset()
                 }
               >
-                Clear preset
+                {uiText("Clear preset", language)}
               </button>
             </div>
           </section>
@@ -6569,7 +6569,7 @@ function App() {
                   <div>
                     <strong>{uiText("Focus Deadlock when SPLIT starts", language)}</strong>
                     <span>
-                      Brings the Deadlock window to the foreground when SPLIT starts.
+                      {uiText("Brings the Deadlock window to the foreground when SPLIT starts.", language)}
                     </span>
                   </div>
 
@@ -6601,9 +6601,9 @@ function App() {
 
               <div className="general-setting-row">
                 <div>
-                  <strong>Discord Rich Presence</strong>
+                  <strong>{uiText("Discord Rich Presence", language)}</strong>
                   <span>
-                    Share your current Deadlock activity on Discord.
+                    {uiText("Share your current Deadlock activity on Discord.", language)}
                   </span>
                 </div>
 
@@ -6919,7 +6919,7 @@ function App() {
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Clear preset confirmation
+                    {uiText("Clear preset confirmation", language)}
                   </strong>
 
                   <span>
@@ -6944,7 +6944,7 @@ function App() {
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Gameplay hotkey warning
+                    {uiText("Gameplay hotkey warning", language)}
                   </strong>
 
                   <span>
@@ -6969,7 +6969,7 @@ function App() {
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Favorite Mode warning
+                    {uiText("Favorite Mode warning", language)}
                   </strong>
 
                   <span>
@@ -7017,7 +7017,7 @@ function App() {
         </div>
 
         <p className="hotkey-settings-note">
-          Customize the shortcuts used while Deadlock is focused.
+          {uiText("Customize the shortcuts used while Deadlock is focused.", language)}
         </p>
 
         <div className="hotkey-categories">
@@ -7108,7 +7108,7 @@ function App() {
             </p>
 
             <h2>
-              In-Game notifications
+              {uiText("In-Game notifications", language)}
             </h2>
 
             <p>
@@ -7309,7 +7309,7 @@ function App() {
             />
 
             <span>
-              Deadlock process
+              {uiText("Deadlock process", language)}
             </span>
             <DiagnosticInfo language={language} text={"Shows whether SPLIT detects Deadlock. Not running is normal when the game is closed."} fix={"If Deadlock is open but not detected, restart SPLIT, check the installation path, then Refresh."} />
           </div>
@@ -7560,11 +7560,11 @@ function App() {
                   </li>
 
                   <li>
-                    Enter "Explore NYC".
+                    {uiText("Enter \"Explore NYC\".", language)}
                   </li>
 
                   <li>
-                    Click Prepare now.
+                    {uiText("Click Prepare now.", language)}
                   </li>
                 </ol>
               </div>
@@ -7620,7 +7620,7 @@ function App() {
             />
 
             <span>
-              Presentation mask
+              {uiText("Presentation mask", language)}
             </span>
             <DiagnosticInfo language={language} text={"Optional visual support during position loading."} />
           </div>
@@ -7652,7 +7652,7 @@ function App() {
 
                 <ol>
                   <li>
-                    Click Resume presentation below.
+                    {uiText("Click Resume presentation below.", language)}
                   </li>
 
                   <li>
@@ -7693,7 +7693,7 @@ function App() {
 
                 {!status.deadlockRunning && (
                   <span className="diagnostic-action-hint">
-                    Deadlock is not running.
+                    {uiText("Deadlock is not running.", language)}
                   </span>
                 )}
               </div>
@@ -7723,7 +7723,7 @@ function App() {
             />
 
             <span>
-              Camera runtime
+              {uiText("Camera runtime", language)}
             </span>
             <DiagnosticInfo language={language} text={"Checks camera-related runtime support used by position operations."} />
           </div>
@@ -7781,7 +7781,7 @@ function App() {
                       </li>
 
                       <li>
-                        Click Retry camera below.
+                        {uiText("Click Retry camera below.", language)}
                       </li>
 
                       <li>
@@ -7989,7 +7989,7 @@ function App() {
             </code>
           ) : (
             <strong>
-              Waiting for a new getpos response…
+              {uiText("Waiting for a new getpos response…", language)}
             </strong>
           )}
         </article>
