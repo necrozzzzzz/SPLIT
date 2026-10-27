@@ -3065,6 +3065,11 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Screenshot for": "Screenshot for",
+    "Open actions for": "Open actions for",
+    "Rename slot": "Rename slot",
+    "Choose the Deadlock installation folder": "Choose the Deadlock installation folder",
+    "Slot color": "Slot color",
     "CFG directory": "CFG directory",
     "Invalid": "Invalid",
     "Missing SPLIT entry": "Missing SPLIT entry",
@@ -3227,6 +3232,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Screenshot for": "Capture d’écran de",
+    "Open actions for": "Ouvrir les actions de",
+    "Rename slot": "Renommer l’emplacement",
+    "Choose the Deadlock installation folder": "Choisir le dossier d’installation de Deadlock",
+    "Slot color": "Couleur de l’emplacement",
     "CFG directory": "Dossier CFG",
     "Invalid": "Invalide",
     "Missing SPLIT entry": "Entrée SPLIT manquante",
@@ -3389,6 +3399,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Screenshot for": "Captura de pantalla de",
+    "Open actions for": "Abrir acciones de",
+    "Rename slot": "Renombrar espacio",
+    "Choose the Deadlock installation folder": "Seleccionar la carpeta de instalación de Deadlock",
+    "Slot color": "Color del espacio",
     "CFG directory": "Carpeta CFG",
     "Invalid": "No válido",
     "Missing SPLIT entry": "Falta la entrada SPLIT",
@@ -3551,6 +3566,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Screenshot for": "Screenshot von",
+    "Open actions for": "Aktionen öffnen für",
+    "Rename slot": "Platz umbenennen",
+    "Choose the Deadlock installation folder": "Deadlock-Installationsordner auswählen",
+    "Slot color": "Platzfarbe",
     "CFG directory": "CFG-Ordner",
     "Invalid": "Ungültig",
     "Missing SPLIT entry": "SPLIT-Eintrag fehlt",
@@ -3713,6 +3733,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Screenshot for": "Captura de tela de",
+    "Open actions for": "Abrir ações de",
+    "Rename slot": "Renomear espaço",
+    "Choose the Deadlock installation folder": "Selecionar a pasta de instalação do Deadlock",
+    "Slot color": "Cor do espaço",
     "CFG directory": "Pasta CFG",
     "Invalid": "Inválido",
     "Missing SPLIT entry": "Entrada SPLIT ausente",
@@ -3875,6 +3900,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Screenshot for": "Скриншот для",
+    "Open actions for": "Открыть действия для",
+    "Rename slot": "Переименовать слот",
+    "Choose the Deadlock installation folder": "Выбрать папку установки Deadlock",
+    "Slot color": "Цвет слота",
     "CFG directory": "Папка CFG",
     "Invalid": "Недействительно",
     "Missing SPLIT entry": "Нет записи SPLIT",
@@ -4037,6 +4067,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Screenshot for": "スクリーンショット：",
+    "Open actions for": "操作を開く：",
+    "Rename slot": "スロット名を変更",
+    "Choose the Deadlock installation folder": "Deadlock のインストール先を選択",
+    "Slot color": "スロットの色",
     "CFG directory": "CFG フォルダー",
     "Invalid": "無効",
     "Missing SPLIT entry": "SPLIT の設定がありません",
@@ -4199,6 +4234,11 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Screenshot for": "截图：",
+    "Open actions for": "打开操作：",
+    "Rename slot": "重命名槽位",
+    "Choose the Deadlock installation folder": "选择 Deadlock 安装文件夹",
+    "Slot color": "槽位颜色",
     "CFG directory": "CFG 文件夹",
     "Invalid": "无效",
     "Missing SPLIT entry": "缺少 SPLIT 配置项",

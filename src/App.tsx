@@ -3880,7 +3880,7 @@ function App() {
           directory: true,
           multiple: false,
           title:
-            "Choose the Deadlock installation folder",
+            runtimeUiText("Choose the Deadlock installation folder", language),
         });
 
       if (
@@ -3899,7 +3899,7 @@ function App() {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Choose the Deadlock installation folder",
+        title: runtimeUiText("Choose the Deadlock installation folder", language),
       });
       if (selected === null || Array.isArray(selected)) return;
 
@@ -4352,7 +4352,7 @@ function App() {
             className="screenshot-viewer"
             role="dialog"
             aria-modal="true"
-            aria-label={`Screenshot for ${screenshotViewer.name}`}
+            aria-label={`${runtimeUiText("Screenshot for", language)} ${screenshotViewer.name}`}
             onClick={(event) =>
               event.stopPropagation()
             }
@@ -4386,7 +4386,7 @@ function App() {
                   screenshotViewerFullPath ??
                     screenshotViewer.thumbnailPath,
                 )}
-                alt={`Screenshot for ${screenshotViewer.name}`}
+                alt={`${runtimeUiText("Screenshot for", language)} ${screenshotViewer.name}`}
                 draggable={false}
                 onError={(event) => {
                   /*
@@ -5939,7 +5939,7 @@ function App() {
 
                 <details className="slot-card-menu">
                   <summary
-                    aria-label={`Open actions for ${displayName}`}
+                    aria-label={`${runtimeUiText("Open actions for", language)} ${displayName}`}
                     title={uiText("Slot actions", getLanguage())}
                   >
                     ···
@@ -6210,7 +6210,7 @@ function App() {
                         ref={slotRenameInputRef}
                         className="slot-card-name-input"
                         value={editingSlotName}
-                        aria-label={`Rename slot ${slot}`}
+                        aria-label={`${runtimeUiText("Rename slot", language)} ${slot}`}
                         onChange={(event) =>
                           setEditingSlotName(
                             event.target.value,

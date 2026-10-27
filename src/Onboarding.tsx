@@ -222,7 +222,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
           <div className="slot-menu-divider" />
           <span className="slot-menu-label">{tourDemoText("Color", language)}</span>
           <div className="slot-menu-colors">
-            {([["None", null], ["Cyan", "#4fd1c5"], ["Yellow", "#ffd166"], ["Red", "#d98c8c"], ["Purple", "#9b8cff"], ["Green", "#62ff8f"]] as const).map(([label, color]) => <button key={label} type="button" className={`slot-menu-color ${demoColor === color ? "active" : ""}`} title={tourDemoText(label, language)} aria-label={`${tourDemoText(label, language)} slot color`} onClick={() => { setDemoColor(color); setDemoMenuOpen(false); }}><span style={{ width: 11, height: 11, borderRadius: 3, background: color ?? "#344b4b", display: "block" }} /></button>)}
+            {([["None", null], ["Cyan", "#4fd1c5"], ["Yellow", "#ffd166"], ["Red", "#d98c8c"], ["Purple", "#9b8cff"], ["Green", "#62ff8f"]] as const).map(([label, color]) => <button key={label} type="button" className={`slot-menu-color ${demoColor === color ? "active" : ""}`} title={tourDemoText(label, language)} aria-label={`${tourDemoText(label, language)} · ${runtimeUiText("Slot color", language)}`} onClick={() => { setDemoColor(color); setDemoMenuOpen(false); }}><span style={{ width: 11, height: 11, borderRadius: 3, background: color ?? "#344b4b", display: "block" }} /></button>)}
           </div>
           <small className="tour-demo-disclaimer">{label("Demo only — no saved data changes", "Démonstration : aucune sauvegarde modifiée")}</small>
         </div>}
@@ -231,7 +231,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <section className="screenshot-viewer" role="dialog" aria-modal="true" aria-label={tourDemoText("Example screenshot for Mina", language)} onClick={(event) => event.stopPropagation()}>
           <header className="screenshot-viewer-header">
             <div><strong>{tourDemoText("Example slot · Mina", language)}</strong><span>{label("Example screenshot", "Capture d’écran d’exemple")}</span></div>
-            <button type="button" aria-label={tourDemoText("Close screenshot", language)} title="Close" onClick={() => setDemoOpen(false)}>×</button>
+            <button type="button" aria-label={tourDemoText("Close screenshot", language)} title={tourDemoText("Close", language)} onClick={() => setDemoOpen(false)}>×</button>
           </header>
           <div className="screenshot-viewer-image"><img src="/tutorial-mina.jpg" alt={tourDemoText("Deadlock gameplay screenshot featuring Mina", language)} draggable={false} /></div>
           <footer className="screenshot-viewer-footer">{label("Example only — your saved positions are unchanged · Esc to close", "Exemple uniquement : vos sauvegardes restent intactes · Échap pour fermer")}</footer>
