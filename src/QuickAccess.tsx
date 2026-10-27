@@ -1125,8 +1125,8 @@ export default function QuickAccess() {
                               }}
                             >
                               {confirmClearSlot === slot
-                                ? "Confirm clear"
-                                : "Clear"}
+                                ? q("Confirm clear")
+                                : q("Clear")}
                             </button>
                           </div>
                         )}
@@ -1144,11 +1144,11 @@ export default function QuickAccess() {
                     <span>
                         {workingSlot === slot
                         ? position
-                            ? "Loading…"
-                            : "Saving…"
+                            ? q("Loading…")
+                            : q("Saving…")
                         : position
-                            ? "Load position"
-                            : "Save current position"}
+                            ? q("Load position")
+                            : q("Save current position")}
                     </span>
                     </div>
 
