@@ -5187,7 +5187,7 @@ function App() {
         <div>
           <h1>
             {activeView === "settings"
-              ? "Settings"
+              ? t("settings", language)
               : favoriteMode
                 ? "Favorites"
                 : "Savestates"}
@@ -5196,7 +5196,7 @@ function App() {
           {(activeView === "settings" || !favoriteMode) && (
             <p className="subtitle">
               {activeView === "settings"
-                ? "Preferences, shortcuts and diagnostics"
+                ? t("preferences", language)
                 : presetNames[activePreset - 1] ?? `Preset ${activePreset}`}
             </p>
           )}
@@ -5334,7 +5334,7 @@ function App() {
               )
             }
           >
-            Discord Presence
+            {language === "fr" ? "Présence Discord" : "Discord Presence"}
           </button>
 
           <button
@@ -5350,7 +5350,7 @@ function App() {
               )
             }
           >
-            Hotkeys
+            {language === "fr" ? "Raccourcis clavier" : "Hotkeys"}
           </button>
 
           {isBorderlessEdition && (
@@ -5368,7 +5368,7 @@ function App() {
                 )
               }
             >
-              In-Game Notifications
+              {language === "fr" ? "Notifications en jeu" : "In-Game Notifications"}
             </button>
           )}
 
@@ -5386,7 +5386,7 @@ function App() {
               )
             }
           >
-            Diagnostics
+            {language === "fr" ? "Diagnostics" : "Diagnostics"}
           </button>
 
           <button
@@ -5400,7 +5400,7 @@ function App() {
               setActiveSettingsSection("about")
             }
           >
-            About
+            {language === "fr" ? "À propos" : "About"}
           </button>
         </nav>
       )}
@@ -8009,10 +8009,10 @@ function App() {
           <p className="label">ABOUT</p>
           <h2 id="about-settings-title">SPLIT</h2>
         </div>
-        <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>Replay getting started guide</button>
+        <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>{language === "fr" ? "Revoir le tutoriel de démarrage" : "Replay getting started guide"}</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
-            <span>Version</span>
+            <span>{language === "fr" ? "Version" : "Version"}</span>
             <strong>{appVersion ?? "Loading…"}</strong>
           </div>
         </div>
