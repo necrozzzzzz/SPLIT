@@ -2770,6 +2770,15 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Installation found": "Installation found",
+    "Not detected automatically": "Not detected automatically",
+    "Confirm folder": "Confirm folder",
+    "Choose folder": "Choose folder",
+    "Installation path verified": "Installation path verified",
+    "Verify the installation path": "Verify the installation path",
+    "Configuring Deadlock…": "Configuring Deadlock…",
+    "Configure Deadlock automatically": "Configure Deadlock automatically",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "SPLIT will configure the required Deadlock integration automatically after confirmation.",
     "CONFIRMATIONS & WARNINGS": "CONFIRMATIONS & WARNINGS",
     "Show the confirmation dialog before clearing an entire preset.": "Show the confirmation dialog before clearing an entire preset.",
     "Warn when a shortcut may interfere with Deadlock controls.": "Warn when a shortcut may interfere with Deadlock controls.",
@@ -2862,6 +2871,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Installation found": "Installation trouvée",
+    "Not detected automatically": "Non détecté automatiquement",
+    "Confirm folder": "Confirmer le dossier",
+    "Choose folder": "Choisir un dossier",
+    "Installation path verified": "Chemin d'installation vérifié",
+    "Verify the installation path": "Vérifier le chemin d'installation",
+    "Configuring Deadlock…": "Configuration de Deadlock…",
+    "Configure Deadlock automatically": "Configurer Deadlock automatiquement",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "SPLIT configurera automatiquement l'intégration nécessaire avec Deadlock après confirmation.",
     "CONFIRMATIONS & WARNINGS": "CONFIRMATIONS ET AVERTISSEMENTS",
     "Show the confirmation dialog before clearing an entire preset.": "Afficher une confirmation avant d'effacer un preset entier.",
     "Warn when a shortcut may interfere with Deadlock controls.": "Avertir lorsqu'un raccourci risque de gêner les commandes de Deadlock.",
@@ -2954,6 +2972,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Installation found": "Instalación encontrada",
+    "Not detected automatically": "No detectado automáticamente",
+    "Confirm folder": "Confirmar carpeta",
+    "Choose folder": "Elegir carpeta",
+    "Installation path verified": "Ruta de instalación verificada",
+    "Verify the installation path": "Verificar ruta de instalación",
+    "Configuring Deadlock…": "Configurando Deadlock…",
+    "Configure Deadlock automatically": "Configurar Deadlock automáticamente",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "SPLIT configurará automáticamente la integración necesaria con Deadlock tras la confirmación.",
     "CONFIRMATIONS & WARNINGS": "CONFIRMACIONES Y ADVERTENCIAS",
     "Show the confirmation dialog before clearing an entire preset.": "Mostrar una confirmación antes de borrar un ajuste completo.",
     "Warn when a shortcut may interfere with Deadlock controls.": "Avisar si un atajo puede interferir con los controles de Deadlock.",
@@ -3046,6 +3073,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Installation found": "Installation gefunden",
+    "Not detected automatically": "Nicht automatisch erkannt",
+    "Confirm folder": "Ordner bestätigen",
+    "Choose folder": "Ordner auswählen",
+    "Installation path verified": "Installationspfad überprüft",
+    "Verify the installation path": "Installationspfad überprüfen",
+    "Configuring Deadlock…": "Deadlock wird eingerichtet…",
+    "Configure Deadlock automatically": "Deadlock automatisch einrichten",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "SPLIT richtet nach der Bestätigung die erforderliche Deadlock-Integration automatisch ein.",
     "CONFIRMATIONS & WARNINGS": "BESTÄTIGUNGEN UND WARNUNGEN",
     "Show the confirmation dialog before clearing an entire preset.": "Vor dem Löschen einer gesamten Voreinstellung nachfragen.",
     "Warn when a shortcut may interfere with Deadlock controls.": "Warnen, wenn ein Kürzel die Deadlock-Steuerung stören könnte.",
@@ -3138,6 +3174,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Installation found": "Instalação encontrada",
+    "Not detected automatically": "Não detectado automaticamente",
+    "Confirm folder": "Confirmar pasta",
+    "Choose folder": "Escolher pasta",
+    "Installation path verified": "Caminho de instalação verificado",
+    "Verify the installation path": "Verificar caminho de instalação",
+    "Configuring Deadlock…": "Configurando Deadlock…",
+    "Configure Deadlock automatically": "Configurar Deadlock automaticamente",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "O SPLIT configurará automaticamente a integração necessária com Deadlock após a confirmação.",
     "CONFIRMATIONS & WARNINGS": "CONFIRMAÇÕES E AVISOS",
     "Show the confirmation dialog before clearing an entire preset.": "Exibir confirmação antes de apagar uma predefinição inteira.",
     "Warn when a shortcut may interfere with Deadlock controls.": "Avisar quando um atalho puder interferir nos controles do Deadlock.",
@@ -3230,6 +3275,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Installation found": "Установка найдена",
+    "Not detected automatically": "Автоматически не обнаружено",
+    "Confirm folder": "Подтвердить папку",
+    "Choose folder": "Выбрать папку",
+    "Installation path verified": "Путь установки проверен",
+    "Verify the installation path": "Проверить путь установки",
+    "Configuring Deadlock…": "Настройка Deadlock…",
+    "Configure Deadlock automatically": "Настроить Deadlock автоматически",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "После подтверждения SPLIT автоматически настроит необходимую интеграцию с Deadlock.",
     "CONFIRMATIONS & WARNINGS": "ПОДТВЕРЖДЕНИЯ И ПРЕДУПРЕЖДЕНИЯ",
     "Show the confirmation dialog before clearing an entire preset.": "Показывать подтверждение перед удалением всего пресета.",
     "Warn when a shortcut may interfere with Deadlock controls.": "Предупреждать, если сочетание клавиш мешает управлению Deadlock.",
@@ -3322,6 +3376,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Installation found": "インストール先が見つかりました",
+    "Not detected automatically": "自動検出できませんでした",
+    "Confirm folder": "フォルダーを確認",
+    "Choose folder": "フォルダーを選択",
+    "Installation path verified": "インストール先を確認しました",
+    "Verify the installation path": "インストール先を確認",
+    "Configuring Deadlock…": "Deadlock を設定中…",
+    "Configure Deadlock automatically": "Deadlock を自動設定",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "確認後、SPLIT が Deadlock との連携に必要な設定を自動で行います。",
     "CONFIRMATIONS & WARNINGS": "確認と警告",
     "Show the confirmation dialog before clearing an entire preset.": "プリセット全体を消去する前に確認画面を表示します。",
     "Warn when a shortcut may interfere with Deadlock controls.": "ショートカットが Deadlock の操作に干渉する場合に警告します。",
@@ -3414,6 +3477,15 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Installation found": "已找到安装目录",
+    "Not detected automatically": "未能自动检测",
+    "Confirm folder": "确认文件夹",
+    "Choose folder": "选择文件夹",
+    "Installation path verified": "安装路径已验证",
+    "Verify the installation path": "验证安装路径",
+    "Configuring Deadlock…": "正在配置 Deadlock…",
+    "Configure Deadlock automatically": "自动配置 Deadlock",
+    "SPLIT will configure the required Deadlock integration automatically after confirmation.": "确认后，SPLIT 将自动完成所需的 Deadlock 集成配置。",
     "CONFIRMATIONS & WARNINGS": "确认与警告",
     "Show the confirmation dialog before clearing an entire preset.": "清空整个预设前显示确认对话框。",
     "Warn when a shortcut may interfere with Deadlock controls.": "快捷键可能干扰 Deadlock 操作时发出警告。",
