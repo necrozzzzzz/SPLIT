@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isBorderlessEdition } from "./edition";
-import { getLanguage, tourTitle, tourControl, tourDescription, tourDemoText, tourTips } from "./i18n";
+import { getLanguage, tourTitle, tourControl, tourDescription, tourDemoText, tourTips, runtimeUiText } from "./i18n";
 import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
@@ -54,9 +54,9 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const [demoCardRect, setDemoCardRect] = useState<Rect | null>(null);
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const [demoColor, setDemoColor] = useState<string | null>(null);
-  const [demoName, setDemoName] = useState("Slot 1");
+  const [demoName, setDemoName] = useState(() => `${runtimeUiText("Slot", getLanguage())} 1`);
   const [demoRenaming, setDemoRenaming] = useState(false);
-  const [demoDraft, setDemoDraft] = useState("Slot 1");
+  const [demoDraft, setDemoDraft] = useState(() => `${runtimeUiText("Slot", getLanguage())} 1`);
   const [rect, setRect] = useState<Rect | null>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const [popoverHeight, setPopoverHeight] = useState(300);
@@ -79,7 +79,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
     const control = tourControl(en, language);
     return language === "fr" && control === en ? fr : control;
   };
-  useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName("Slot 1"); setDemoDraft("Slot 1"); setDemoRenaming(false); }, [index]);
+  useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName(`${runtimeUiText("Slot", language)} 1`); setDemoDraft(`${runtimeUiText("Slot", language)} 1`); setDemoRenaming(false); }, [index, language]);
   useEffect(() => {
     if (!demoOpen) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopImmediatePropagation(); setDemoOpen(false); } };
@@ -204,7 +204,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <span className="tour-live-preview-hint">{label("RIGHT-CLICK TO PREVIEW", "CLIC DROIT POUR AFFICHER")}</span>
       </div>}
       {step.title === "Save State slots" && demoCardRect && <div className="tour-live-rename" style={{ position: "fixed", left: demoCardRect.left, top: demoSlotRect ? demoSlotRect.bottom : demoCardRect.bottom - 56, width: demoCardRect.width, height: demoSlotRect ? Math.max(42, demoCardRect.bottom - demoSlotRect.bottom) : 56 }}>
-        {demoRenaming ? <input autoFocus aria-label={tourDemoText("Rename example slot", language)} maxLength={40} value={demoDraft} onChange={event => setDemoDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); } if (event.key === "Escape") { event.stopPropagation(); setDemoRenaming(false); setDemoDraft(demoName); } }} onBlur={() => { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); }} /> : <button type="button" className="tour-live-rename-button" onClick={() => { setDemoDraft(demoName); setDemoRenaming(true); }} title={tourDemoText("Click to rename this example slot", language)}>{demoName}</button>}
+        {demoRenaming ? <input autoFocus aria-label={tourDemoText("Rename example slot", language)} maxLength={40} value={demoDraft} onChange={event => setDemoDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { setDemoName(demoDraft.trim() || `${runtimeUiText("Slot", language)} 1`); setDemoRenaming(false); } if (event.key === "Escape") { event.stopPropagation(); setDemoRenaming(false); setDemoDraft(demoName); } }} onBlur={() => { setDemoName(demoDraft.trim() || `${runtimeUiText("Slot", language)} 1`); setDemoRenaming(false); }} /> : <button type="button" className="tour-live-rename-button" onClick={() => { setDemoDraft(demoName); setDemoRenaming(true); }} title={tourDemoText("Click to rename this example slot", language)}>{demoName}</button>}
         <small>{demoRenaming ? tourDemoText("Press Enter to confirm · Esc to cancel", language) : tourDemoText("CLICK THE NAME TO TRY RENAMING", language)}</small>
       </div>}
       {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height }}>
