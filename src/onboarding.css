@@ -48,3 +48,10 @@
 .tour-demo-slot-menu-trigger{position:absolute;top:8px;right:8px;cursor:pointer;color:#d7f0ec;background:#102324;border:1px solid #547674;border-radius:5px;width:29px;height:29px;font-weight:800}
 .tour-demo-slot-menu{position:absolute;z-index:5;top:39px;right:4px;width:210px;pointer-events:auto}
 .tour-demo-disclaimer{display:block;padding:5px 7px;color:#9cb3b1;font-size:9px;line-height:1.4}
+
+/* Make the demo's clickable action as obvious as the screenshot preview step. */
+.tour-demo-slot-tint{position:absolute;inset:0;pointer-events:none;z-index:1}
+.tour-demo-slot-image>span{z-index:2}
+.tour-demo-slot-hint{position:absolute;bottom:29%;left:50%;transform:translateX(-50%);white-space:nowrap;pointer-events:none;z-index:2;background:#172c37;border:1px solid #b5d0f5;border-radius:5px;color:#e9f3ff;font-size:9px;font-weight:800;letter-spacing:.02em;padding:5px 7px;box-shadow:0 2px 9px #0009}
+.tour-demo-slot-menu-trigger{z-index:4;border:2px solid #b5d0f5;box-shadow:0 0 0 3px #b5d0f533,0 0 14px #b5d0f588}
+.tour-demo-slot-menu{z-index:6}
