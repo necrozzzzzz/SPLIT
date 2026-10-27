@@ -30,6 +30,7 @@ export function t(key: MessageKey, language = getLanguage()): string {
 // Shared visible labels. The original English text is the lookup key.
 export const uiLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "Overwrite": "Overwrite",
     "Setup progress": "Setup progress",
     "Close screenshot": "Close screenshot",
     "Close": "Close",
@@ -201,6 +202,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Adjust playback without changing Windows volume."
   },
   "fr": {
+    "Overwrite": "Écraser",
     "Setup progress": "Progression de la configuration",
     "Close screenshot": "Fermer la capture",
     "Close": "Fermer",
@@ -372,6 +374,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Régler le son sans modifier le volume de Windows."
   },
   "es": {
+    "Overwrite": "Sobrescribir",
     "Setup progress": "Progreso de configuración",
     "Close screenshot": "Cerrar captura",
     "Close": "Cerrar",
@@ -543,6 +546,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Ajusta el sonido sin cambiar el volumen de Windows."
   },
   "de": {
+    "Overwrite": "Überschreiben",
     "Setup progress": "Einrichtungsfortschritt",
     "Close screenshot": "Screenshot schließen",
     "Close": "Schließen",
@@ -714,6 +718,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Lautstärke ohne Änderung der Windows-Lautstärke anpassen."
   },
   "pt": {
+    "Overwrite": "Sobrescrever",
     "Setup progress": "Progresso da configuração",
     "Close screenshot": "Fechar captura",
     "Close": "Fechar",
@@ -885,6 +890,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Ajuste o som sem alterar o volume do Windows."
   },
   "ru": {
+    "Overwrite": "Перезаписать",
     "Setup progress": "Ход настройки",
     "Close screenshot": "Закрыть скриншот",
     "Close": "Закрыть",
@@ -1056,6 +1062,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Настройка звука без изменения громкости Windows."
   },
   "ja": {
+    "Overwrite": "上書き",
     "Setup progress": "設定の進行状況",
     "Close screenshot": "スクリーンショットを閉じる",
     "Close": "閉じる",
@@ -1227,6 +1234,7 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Windows の音量を変えずに再生音量を調整します。"
   },
   "zh": {
+    "Overwrite": "覆盖",
     "Setup progress": "设置进度",
     "Close screenshot": "关闭截图",
     "Close": "关闭",
