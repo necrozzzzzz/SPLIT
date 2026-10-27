@@ -33,3 +33,7 @@
 .tour-live-viewer-header button{border:0;background:none;color:#f4f6fb;font-size:26px;cursor:pointer}
 .tour-live-viewer img{display:block;width:100%;height:auto;border-radius:6px}
 .tour-live-viewer p{margin:10px 0 0;font-size:12px;color:#aebbd0}
+
+/* Tour root disables pointer events by default; restore them on the native viewer. */
+.tour-example-viewer{pointer-events:auto}
+.tour-example-viewer .screenshot-viewer{pointer-events:auto}
