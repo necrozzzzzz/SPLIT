@@ -467,6 +467,7 @@ function previewFor(
 export default function DiscordPresenceSettings() {
   const [language, setCurrentLanguage] = useState(getLanguage);
   useEffect(() => { const update = () => setCurrentLanguage(getLanguage()); window.addEventListener("split-language-change", update); return () => window.removeEventListener("split-language-change", update); }, []);
+  const d = (english: string) => discordUiText(english, language);
   const [config, setConfig] = useState<DiscordPresenceConfig | null>(null);
   const [activeSection, setActiveSection] = useState<PresenceSection>("global");
   const [error, setError] = useState<string | null>(null);
@@ -490,7 +491,7 @@ export default function DiscordPresenceSettings() {
       })
       .catch((reason) => {
         if (!disposed) {
-          setError(`Could not load Discord Presence settings: ${errorMessage(reason)}`);
+          setError(`${discordUiText("Could not load Discord Presence settings: ", getLanguage())}${errorMessage(reason)}`);
         }
       });
     return () => {
@@ -530,7 +531,7 @@ export default function DiscordPresenceSettings() {
             configRef.current = confirmed;
             setConfig(confirmed);
           }
-          setError(`Could not save Discord Presence settings: ${errorMessage(reason)}`);
+          setError(`${discordUiText("Could not save Discord Presence settings: ", getLanguage())}${errorMessage(reason)}`);
         }
       })
       .finally(() => setPendingSaves((count) => Math.max(0, count - 1)));
@@ -567,7 +568,7 @@ export default function DiscordPresenceSettings() {
       confirmedConfigRef.current = saved;
       setConfig(saved);
     } catch (reason) {
-      setError(`Could not reset Discord Presence settings: ${errorMessage(reason)}`);
+      setError(`${discordUiText("Could not reset Discord Presence settings: ", getLanguage())}${errorMessage(reason)}`);
     } finally {
       resettingRef.current = false;
       setResetting(false);
@@ -579,7 +580,7 @@ export default function DiscordPresenceSettings() {
       <section className="drp-settings-shell" aria-busy="true">
         <div className="drp-loading">
           <span className="drp-spinner" aria-hidden="true" />
-          <strong>Loading Discord Presence settings...</strong>
+          <strong>{d("Loading Discord Presence settings...")}</strong>
           {error ? <p role="alert">{error}</p> : null}
         </div>
       </section>
@@ -602,10 +603,10 @@ export default function DiscordPresenceSettings() {
         <div className="drp-header-actions">
           <span className="drp-save-status" role="status" aria-live="polite">
             {resetting
-              ? "Resetting..."
+              ? d("Resetting...")
               : pendingSaves > 0
-                ? "Saving..."
-                : "Changes save automatically"}
+                ? d("Saving...")
+                : d("Changes save automatically")}
           </span>
           <button
             className="drp-reset-all"
@@ -613,20 +614,20 @@ export default function DiscordPresenceSettings() {
             disabled={resetting}
             onClick={() => void reset(null)}
           >
-            Reset all DRP settings
+            {d("Reset all DRP settings")}
           </button>
         </div>
       </header>
 
       {error ? (
         <div className="drp-error" role="alert">
-          <strong>Discord Presence settings were not updated.</strong>
+          <strong>{d("Discord Presence settings were not updated.")}</strong>
           <span>{error}</span>
         </div>
       ) : null}
 
       <div className="drp-layout">
-        <nav className="drp-section-nav" aria-label="Discord Presence contexts">
+        <nav className="drp-section-nav" aria-label={d("Discord Presence contexts")}>
           {SECTIONS.map((section) => (
             <button
               key={section.key}
@@ -638,7 +639,7 @@ export default function DiscordPresenceSettings() {
                 setActiveSection(section.key);
               }}
             >
-              {section.label}
+              {d(section.label)}
             </button>
           ))}
         </nav>
@@ -651,14 +652,14 @@ export default function DiscordPresenceSettings() {
             <div className="drp-context-heading">
               <div>
                 <span>{uiText("CONTEXT", language)}</span>
-                <h3>{activeLabel}</h3>
+                <h3>{d(activeLabel)}</h3>
               </div>
               <button
                 type="button"
                 disabled={resetting}
                 onClick={() => void reset(activeSection)}
               >
-                Reset section
+                {d("Reset section")}
               </button>
             </div>
 
@@ -815,7 +816,7 @@ export default function DiscordPresenceSettings() {
             </div>
           </div>
 
-          <aside className="drp-preview-panel" aria-label={`${activeLabel} preview`}>
+          <aside className="drp-preview-panel" aria-label={`${d(activeLabel)} ${d("preview")}`}>
             <div className="drp-preview-label">
               <span>{uiText("LIVE PREVIEW", language)}</span>
               <em>{uiText("Example only", language)}</em>
@@ -840,7 +841,7 @@ export default function DiscordPresenceSettings() {
                     <strong>{preview.details}</strong>
                     {preview.state ? <span>{preview.state}</span> : null}
                     {preview.party ? <span>1 of 6</span> : null}
-                    {config.global.showElapsedTime ? <span>02:14 elapsed</span> : null}
+                    {config.global.showElapsedTime ? <span>{d("02:14 elapsed")}</span> : null}
                   </div>
                 </div>
               ) : <p className="drp-preview-disabled">{uiText("Rich Presence is disabled.", language)}</p>}
