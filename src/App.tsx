@@ -50,7 +50,7 @@ import {
 } from "./startupSound";
 
 import DiscordPresenceSettings from "./DiscordPresenceSettings";
-import { getLanguage, setLanguage, languages, languageNames, t, type Language } from "./i18n";
+import { getLanguage, setLanguage, languages, languageNames, t, uiText, type Language } from "./i18n";
 import Onboarding, { isOnboardingCompleted } from "./Onboarding";
 
 type DeadlockStatus = {
@@ -6416,12 +6416,12 @@ function App() {
           </div>
 
           <div className="general-settings-group">
-                <h3>APPEARANCE</h3>
+                <h3>{uiText("APPEARANCE", language)}</h3>
 
               <div className="general-setting-row">
                 <div>
                   <strong>
-                    Slot color style
+                    {uiText("Slot color style", language)}
                   </strong>
 
                   <span>
@@ -6481,11 +6481,11 @@ function App() {
 
             <div className="general-settings-list">
               <div className="general-settings-group">
-                <h3>STARTUP</h3>
+                <h3>{uiText("STARTUP", language)}</h3>
 
                 <div className="general-setting-row">
                   <div>
-                    <strong>Startup sound</strong>
+                    <strong>{uiText("Startup sound", language)}</strong>
                     <span>
                       Play the SPLIT startup sound when the app launches.
                     </span>
@@ -6506,8 +6506,8 @@ function App() {
 
                 <div className="general-setting-row startup-sound-volume-row">
                   <div>
-                    <strong id="startup-sound-volume-label">Volume</strong>
-                    <span>Adjust playback without changing Windows volume.</span>
+                    <strong id="startup-sound-volume-label">{uiText("Volume", language)}</strong>
+                    <span>{uiText("Adjust playback without changing Windows volume.", language)}</span>
                   </div>
 
                   <div className="startup-sound-volume-control">
@@ -6572,7 +6572,7 @@ function App() {
 
                 <div className="general-setting-row">
                   <div>
-                    <strong>Focus Deadlock when SPLIT starts</strong>
+                    <strong>{uiText("Focus Deadlock when SPLIT starts", language)}</strong>
                     <span>
                       Brings the Deadlock window to the foreground when SPLIT starts.
                     </span>
@@ -6602,7 +6602,7 @@ function App() {
               </div>
 
               <div className="general-settings-group">
-                <h3>DESKTOP</h3>
+                <h3>{uiText("DESKTOP", language)}</h3>
 
               <div className="general-setting-row">
                 <div>
@@ -6786,11 +6786,11 @@ function App() {
                     : "disabled"
                 }`}
               >
-                <h3>QUICK ACCESS</h3>
+                <h3>{uiText("QUICK ACCESS", language)}</h3>
 
                 <div className="general-setting-row">
                   <div>
-                    <strong>Enabled</strong>
+                    <strong>{uiText("Enabled", language)}</strong>
                     <span>
                       Show the Quick Access overlay in Deadlock.
                     </span>
@@ -6822,8 +6822,8 @@ function App() {
 
                 <div className="general-setting-row quick-access-dependent-setting">
                   <div>
-                    <strong>Shortcut</strong>
-                    <span>Hold shortcut to interact</span>
+                    <strong>{uiText("Shortcut", language)}</strong>
+                    <span>{uiText("Hold shortcut to interact", language)}</span>
                   </div>
 
                   <div className="quick-access-shortcut-control">
@@ -6870,7 +6870,7 @@ function App() {
 
                 <div className="general-setting-row quick-access-dependent-setting">
                   <div>
-                    <strong>Position</strong>
+                    <strong>{uiText("Position", language)}</strong>
                     <span>
                       Anchor the overlay inside the Deadlock window.
                     </span>
@@ -7008,8 +7008,8 @@ function App() {
       <section className="hotkey-settings-section">
         <div className="hotkey-settings-heading">
           <div>
-            <p className="label">HOTKEYS</p>
-            <h2>Keyboard shortcuts</h2>
+            <p className="label">{uiText("HOTKEYS", language)}</p>
+            <h2>{uiText("Keyboard shortcuts", language)}</h2>
           </div>
           <button
             className="preset-button"
@@ -7059,7 +7059,7 @@ function App() {
           ))}
 
           <div className="hotkey-category hotkey-actions-category">
-            <h3>ACTIONS</h3>
+            <h3>{uiText("ACTIONS", language)}</h3>
             {([
               ["Undo", "undo", hotkeySettings.undo],
               ["Redo", "redo", hotkeySettings.redo],
@@ -7156,7 +7156,7 @@ function App() {
 
         <div className="notification-settings-grid">
           <label className="notification-setting-row">
-            <span>Enabled</span>
+            <span>{uiText("Enabled", language)}</span>
             <button
               className={`notification-toggle ${
                 notificationSettings.enabled
@@ -7179,7 +7179,7 @@ function App() {
           </label>
 
           <label className="notification-setting-row">
-            <span>Position</span>
+            <span>{uiText("Position", language)}</span>
             <select
               value={notificationSettings.position}
               disabled={notificationSettingsSaving}
@@ -7190,15 +7190,15 @@ function App() {
                 })
               }
             >
-              <option value="topLeft">Top Left</option>
-              <option value="topRight">Top Right</option>
-              <option value="bottomLeft">Bottom Left</option>
-              <option value="bottomRight">Bottom Right</option>
+              <option value="topLeft">{uiText("Top Left", language)}</option>
+              <option value="topRight">{uiText("Top Right", language)}</option>
+              <option value="bottomLeft">{uiText("Bottom Left", language)}</option>
+              <option value="bottomRight">{uiText("Bottom Right", language)}</option>
             </select>
           </label>
 
           <label className="notification-setting-row">
-            <span>Duration</span>
+            <span>{uiText("Duration", language)}</span>
             <select
               value={notificationSettings.durationMs}
               disabled={notificationSettingsSaving}
@@ -7218,7 +7218,7 @@ function App() {
           </label>
 
           <label className="notification-setting-row">
-            <span>Use slot color</span>
+            <span>{uiText("Use slot color", language)}</span>
             <button
               className={`notification-toggle ${
                 notificationSettings.useSlotColor ? "active" : ""
