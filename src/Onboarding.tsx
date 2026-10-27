@@ -4,19 +4,20 @@ import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
 type Section = "general" | "discord" | "hotkeys" | "notifications" | "diagnostics" | "about";
-type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section; tips?: string[] };
+type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section; demo?: boolean };
 const steps: Step[] = [
   { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
-  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click a saved slot’s preview to view its screenshot (when available).", "Click a slot name to rename it."] },
-  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots", tips: ["The three-dot menu also includes View screenshot when a screenshot is available."] },
+  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots" },
+  { title: "Try the screenshot preview", description: "Right-click the example slot preview below to see how screenshots open. This is only a demonstration — your saved slots won't be changed.", target: "", view: "slots", demo: true },
+  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
   { title: "Undo and redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
   { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
   { title: "Settings", description: "This is where you customize SPLIT. We'll walk through the main settings sections next.", target: ".sidebar-nav button:nth-child(3)", view: "settings", section: "general" },
   { title: "General settings", description: "Customize desktop behavior, appearance, startup sound, and other preferences here.", target: ".general-settings-section", view: "settings", section: "general" },
   ...(isBorderlessEdition ? [{ title: "Quick access", description: "In the Borderless edition, enable the Quick Access overlay and configure its position here. It lets you work with slots while in Deadlock.", target: ".quick-access-settings-group", view: "settings" as const, section: "general" as const }] : []),
   { title: "Discord rich presence", description: "Choose what Discord displays for your Hideout, Explore NYC, matchmaking, and matches. Customize hero images, text, and activity details.", target: ".drp-settings-shell", view: "settings", section: "discord" },
-  { title: "Keyboard shortcuts", description: "Customize shortcuts for saving and loading slots, switching presets, favorites, and undo / redo.", tips: ["Some actions use mouse gestures instead of configurable hotkeys. Right-click a saved slot preview to open its screenshot."], target: ".settings-view", view: "settings", section: "hotkeys" },
+  { title: "Keyboard shortcuts", description: "Customize shortcuts for saving and loading slots, switching presets, favorites, and undo / redo.", target: ".settings-view", view: "settings", section: "hotkeys" },
   ...(isBorderlessEdition ? [{ title: "In-game notifications", description: "Choose where in-game notifications appear, how long they remain visible, and whether they use slot colors.", target: ".settings-view", view: "settings" as const, section: "notifications" as const }] : []),
   { title: "Diagnostics", description: "You don't need this section for everyday use. If something stops working, check these status indicators to identify the problem. Select the info icons on individual cards to learn what each one means.", target: ".settings-view", view: "settings", section: "diagnostics" },
   { title: "You're ready!", description: "You can reopen this guide at any time from Settings > About. Have fun practicing!", target: ".about-settings-section", view: "settings", section: "about" },
@@ -29,6 +30,7 @@ type Props = { onClose: () => void; navigate: (view: "slots" | "settings", secti
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 export default function Onboarding({ onClose, navigate }: Props) {
   const [index, setIndex] = useState(0);
+  const [demoOpen, setDemoOpen] = useState(false);
   const [rect, setRect] = useState<Rect | null>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const [popoverHeight, setPopoverHeight] = useState(300);
@@ -42,6 +44,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
     return () => observer.disconnect();
   }, [index]);
   const step = steps[index];
+  useEffect(() => { setDemoOpen(false); }, [index]);
   useLayoutEffect(() => { navigate(step.view, step.section); }, [index, navigate, step.view, step.section]);
   useEffect(() => {
     let frame = 0;
@@ -151,7 +154,14 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <p className="tour-counter">STEP {index + 1} OF {steps.length}</p>
         <h2 id="tour-title">{step.title}</h2>
         <p className="tour-description">{step.description}</p>
-        {step.tips && <div className="tour-tips">{step.tips.map((tip, i) => <p key={i}><span className="tour-tip-label">TIP</span>{tip}</p>)}</div>}
+        {step.demo && <div className="tour-demo">
+          <div className="tour-demo-preview" role="button" tabIndex={0} aria-label="Example slot screenshot, right-click to view" onContextMenu={(event) => { event.preventDefault(); setDemoOpen(true); }} onClick={() => setDemoOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDemoOpen(true); } }}>
+            <div className="tour-demo-scene"><span className="tour-demo-building left" /><span className="tour-demo-building right" /><span className="tour-demo-road" /><span className="tour-demo-crosshair">+</span></div>
+            <span className="tour-demo-slot-number">01</span>
+          </div>
+          <div className="tour-demo-caption"><strong>Example slot</strong><span>Right-click the preview to try it</span></div>
+          {demoOpen && <div className="tour-demo-viewer" role="dialog" aria-label="Example screenshot"><div className="tour-demo-viewer-heading"><strong>Example screenshot</strong><button type="button" onClick={() => setDemoOpen(false)} aria-label="Close example screenshot">×</button></div><div className="tour-demo-scene tour-demo-large"><span className="tour-demo-building left" /><span className="tour-demo-building right" /><span className="tour-demo-road" /><span className="tour-demo-crosshair">+</span></div><p>This is a sample preview, not one of your saved screenshots.</p></div>}
+        </div>}
         <div className="tour-actions"><span>{index + 1} / {steps.length}</span><div>{index > 0 && <button type="button" className="tour-back" onClick={() => setIndex(i => i - 1)}>Back</button>}<button type="button" className="tour-next" onClick={() => index === steps.length - 1 ? finish() : setIndex(i => i + 1)}>{index === steps.length - 1 ? "Finish" : "Next"}</button></div></div>
       </section>
     </div>
