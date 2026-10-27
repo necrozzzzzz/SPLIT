@@ -45,6 +45,12 @@ export default function Onboarding({ onClose, navigate }: Props) {
   }, [index]);
   const step = steps[index];
   useEffect(() => { setDemoOpen(false); }, [index]);
+  useEffect(() => {
+    if (!demoOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopImmediatePropagation(); setDemoOpen(false); } };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [demoOpen]);
   useLayoutEffect(() => { navigate(step.view, step.section); }, [index, navigate, step.view, step.section]);
   useEffect(() => {
     let frame = 0;
@@ -160,12 +166,15 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <span className="tour-live-preview-number">01</span>
         <span className="tour-live-preview-hint">RIGHT-CLICK TO PREVIEW</span>
       </div>}
-      {step.title === "Save State slots" && demoOpen && <div className="tour-live-viewer-backdrop" onClick={() => setDemoOpen(false)}>
-        <div className="tour-live-viewer" role="dialog" aria-label="Example screenshot" onClick={(event) => event.stopPropagation()}>
-          <div className="tour-live-viewer-header"><strong>Example screenshot · Mina</strong><button type="button" onClick={() => setDemoOpen(false)} aria-label="Close screenshot">×</button></div>
-          <img src="/tutorial-mina.jpg" alt="Deadlock gameplay screenshot featuring Mina" />
-          <p>Example only — your saved positions are unchanged.</p>
-        </div>
+      {step.title === "Save State slots" && demoOpen && <div className="screenshot-viewer-backdrop tour-example-viewer" onClick={() => setDemoOpen(false)}>
+        <section className="screenshot-viewer" role="dialog" aria-modal="true" aria-label="Example screenshot for Mina" onClick={(event) => event.stopPropagation()}>
+          <header className="screenshot-viewer-header">
+            <div><strong>Example slot · Mina</strong><span>Example screenshot</span></div>
+            <button type="button" aria-label="Close screenshot" title="Close" onClick={() => setDemoOpen(false)}>×</button>
+          </header>
+          <div className="screenshot-viewer-image"><img src="/tutorial-mina.jpg" alt="Deadlock gameplay screenshot featuring Mina" draggable={false} /></div>
+          <footer className="screenshot-viewer-footer">Example only — your saved positions are unchanged · Esc to close</footer>
+        </section>
       </div>}
       <section ref={popoverRef} className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
         <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>Skip guide</button></div>
