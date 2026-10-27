@@ -5089,7 +5089,7 @@ function App() {
                 type="submit"
                 disabled={renamingPreset}
               >
-                {renamingPreset ? "Renamingâ€¦" : "Rename"}
+                {renamingPreset ? "Renaming…" : "Rename"}
               </button>
             </div>
           </form>
