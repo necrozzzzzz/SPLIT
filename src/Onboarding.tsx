@@ -4,12 +4,11 @@ import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
 type Section = "general" | "discord" | "hotkeys" | "notifications" | "diagnostics" | "about";
-type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section; demo?: boolean; tips?: string[] };
+type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section; tips?: string[] };
 const steps: Step[] = [
   { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
   { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click a saved slot’s preview to view its screenshot (when available).", "Click a slot name to rename it."] },
-  { title: "Try the screenshot preview", description: "Right-click the example slot preview below to see how screenshots open. This is only a demonstration — your saved slots won't be changed.", target: "", view: "slots", demo: true },
   { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
   { title: "Undo and redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
   { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
@@ -31,6 +30,7 @@ type Rect = { top: number; left: number; right: number; bottom: number; width: n
 export default function Onboarding({ onClose, navigate }: Props) {
   const [index, setIndex] = useState(0);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [demoSlotRect, setDemoSlotRect] = useState<Rect | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const [popoverHeight, setPopoverHeight] = useState(300);
@@ -51,6 +51,13 @@ export default function Onboarding({ onClose, navigate }: Props) {
     let attempts = 0;
     const update = () => {
       const el = step.target ? document.querySelector<HTMLElement>(step.target) : null;
+      if (step.title === "Save State slots") {
+        const preview = document.querySelector<HTMLElement>(".slots-grid .slot-card:first-child .slot-preview");
+        if (preview) {
+          const pr = preview.getBoundingClientRect();
+          setDemoSlotRect({ top: pr.top, left: pr.left, right: pr.right, bottom: pr.bottom, width: pr.width, height: pr.height });
+        } else setDemoSlotRect(null);
+      } else setDemoSlotRect(null);
       if (el) {
         if (attempts === 0) el.scrollIntoView({ block: "nearest", behavior: "instant" });
         let r = el.getBoundingClientRect();
@@ -148,6 +155,18 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <div className="tour-shade" style={{ left: rect.right, top: rect.top, width: w - rect.right, height: rect.bottom - rect.top }} />
         <div className="tour-highlight" style={{ top: rect.top, left: rect.left, width: rect.right - rect.left, height: rect.bottom - rect.top }} />
       </> : <div className="tour-shade" style={{ inset: 0 }} />}
+      {step.title === "Save State slots" && demoSlotRect && <div className="tour-live-preview" style={{ position: "fixed", left: demoSlotRect.left, top: demoSlotRect.top, width: demoSlotRect.width, height: demoSlotRect.height }} onContextMenu={(event) => { event.preventDefault(); setDemoOpen(true); }} title="Right-click to view the example screenshot">
+        <img src="/tutorial-mina.jpg" alt="Example Deadlock screenshot featuring Mina" />
+        <span className="tour-live-preview-number">01</span>
+        <span className="tour-live-preview-hint">RIGHT-CLICK TO PREVIEW</span>
+      </div>}
+      {step.title === "Save State slots" && demoOpen && <div className="tour-live-viewer-backdrop" onClick={() => setDemoOpen(false)}>
+        <div className="tour-live-viewer" role="dialog" aria-label="Example screenshot" onClick={(event) => event.stopPropagation()}>
+          <div className="tour-live-viewer-header"><strong>Example screenshot · Mina</strong><button type="button" onClick={() => setDemoOpen(false)} aria-label="Close screenshot">×</button></div>
+          <img src="/tutorial-mina.jpg" alt="Deadlock gameplay screenshot featuring Mina" />
+          <p>Example only — your saved positions are unchanged.</p>
+        </div>
+      </div>}
       <section ref={popoverRef} className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
         <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>Skip guide</button></div>
         <div className="tour-progress">{steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}</div>
@@ -155,14 +174,6 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <h2 id="tour-title">{step.title}</h2>
         <p className="tour-description">{step.description}</p>
         {step.tips && <div className="tour-tips">{step.tips.map((tip, i) => <p key={i}><span className="tour-tip-label">TIP</span>{tip}</p>)}</div>}
-        {step.demo && <div className="tour-demo">
-          <div className="tour-demo-preview" role="button" tabIndex={0} aria-label="Example slot screenshot, right-click to view" onContextMenu={(event) => { event.preventDefault(); setDemoOpen(true); }} onClick={() => setDemoOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDemoOpen(true); } }}>
-            <div className="tour-demo-scene"><span className="tour-demo-building left" /><span className="tour-demo-building right" /><span className="tour-demo-road" /><span className="tour-demo-crosshair">+</span></div>
-            <span className="tour-demo-slot-number">01</span>
-          </div>
-          <div className="tour-demo-caption"><strong>Example slot</strong><span>Right-click the preview to try it</span></div>
-          {demoOpen && <div className="tour-demo-viewer" role="dialog" aria-label="Example screenshot"><div className="tour-demo-viewer-heading"><strong>Example screenshot</strong><button type="button" onClick={() => setDemoOpen(false)} aria-label="Close example screenshot">×</button></div><div className="tour-demo-scene tour-demo-large"><span className="tour-demo-building left" /><span className="tour-demo-building right" /><span className="tour-demo-road" /><span className="tour-demo-crosshair">+</span></div><p>This is a sample preview, not one of your saved screenshots.</p></div>}
-        </div>}
         <div className="tour-actions"><span>{index + 1} / {steps.length}</span><div>{index > 0 && <button type="button" className="tour-back" onClick={() => setIndex(i => i - 1)}>Back</button>}<button type="button" className="tour-next" onClick={() => index === steps.length - 1 ? finish() : setIndex(i => i + 1)}>{index === steps.length - 1 ? "Finish" : "Next"}</button></div></div>
       </section>
     </div>
