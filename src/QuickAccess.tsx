@@ -1168,7 +1168,7 @@ export default function QuickAccess() {
         ) : interactionMode ? (
           <>
             <span className="quick-access-interaction-label">
-              INTERACTION MODE
+              {q("INTERACTION MODE")}
             </span>
 
             <span className="quick-access-footer-key">
@@ -1176,7 +1176,7 @@ export default function QuickAccess() {
             </span>
 
             <span>
-              Back to game
+              {q("Back to game")}
             </span>
           </>
         ) : (
@@ -1188,11 +1188,11 @@ export default function QuickAccess() {
             </span>
 
             <span>
-                Close
+                {q("Close")}
             </span>
 
             <span className="quick-access-footer-hint">
-                Hold CapsLock to interact
+                {q("Hold CapsLock to interact")}
             </span>
 
             <span className="quick-access-footer-key">
@@ -1200,7 +1200,7 @@ export default function QuickAccess() {
             </span>
 
             <span>
-                Close
+                {q("Close")}
             </span>
           </>
         )}
@@ -1233,8 +1233,8 @@ export default function QuickAccess() {
 
                 <button
                   type="button"
-                  aria-label="Close screenshot"
-                  title="Close"
+                  aria-label={q("Close screenshot")}
+                  title={q("Close")}
                   onClick={() => {
                     void closeViewer();
                   }}
@@ -1280,7 +1280,7 @@ export default function QuickAccess() {
                   event.stopPropagation()
                 }
               >
-                Click outside the image to close
+                {q("Click outside the image to close")}
               </footer>
             </section>
           </div>
