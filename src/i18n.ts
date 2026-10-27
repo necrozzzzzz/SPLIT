@@ -233,3 +233,121 @@ export const uiLabels: Record<Language, Record<string, string>> = {
 export function uiText(english: string, language: Language = getLanguage()): string {
   return uiLabels[language][english] ?? english;
 }
+
+export const tourTitles: Partial<Record<Language, Record<string, string>>> = {
+  "en": {
+    "Welcome to SPLIT": "Welcome to SPLIT",
+    "Your presets": "Your presets",
+    "Save State slots": "Save State slots",
+    "Slot actions": "Slot actions",
+    "Undo and redo": "Undo and redo",
+    "Favorites": "Favorites",
+    "Settings": "Settings",
+    "General settings": "General settings",
+    "Quick access": "Quick access",
+    "Discord rich presence": "Discord rich presence",
+    "Keyboard shortcuts": "Keyboard shortcuts",
+    "In-game notifications": "In-game notifications",
+    "Diagnostics": "Diagnostics",
+    "You're ready!": "You're ready!"
+  },
+  "es": {
+    "Welcome to SPLIT": "Bienvenido a SPLIT",
+    "Your presets": "Tus presets",
+    "Save State slots": "Ranuras de guardado",
+    "Slot actions": "Acciones de ranura",
+    "Undo and redo": "Deshacer y rehacer",
+    "Favorites": "Favoritos",
+    "Settings": "Configuración",
+    "General settings": "Ajustes generales",
+    "Quick access": "Acceso rápido",
+    "Discord rich presence": "Presencia en Discord",
+    "Keyboard shortcuts": "Atajos de teclado",
+    "In-game notifications": "Notificaciones en el juego",
+    "Diagnostics": "Diagnóstico",
+    "You're ready!": "¡Todo listo!"
+  },
+  "de": {
+    "Welcome to SPLIT": "Willkommen bei SPLIT",
+    "Your presets": "Deine Presets",
+    "Save State slots": "Speicherplätze",
+    "Slot actions": "Slot-Aktionen",
+    "Undo and redo": "Rückgängig und Wiederholen",
+    "Favorites": "Favoriten",
+    "Settings": "Einstellungen",
+    "General settings": "Allgemeine Einstellungen",
+    "Quick access": "Schnellzugriff",
+    "Discord rich presence": "Discord-Präsenz",
+    "Keyboard shortcuts": "Tastenkürzel",
+    "In-game notifications": "Benachrichtigungen im Spiel",
+    "Diagnostics": "Diagnose",
+    "You're ready!": "Alles bereit!"
+  },
+  "pt": {
+    "Welcome to SPLIT": "Bem-vindo ao SPLIT",
+    "Your presets": "Seus presets",
+    "Save State slots": "Slots de salvamento",
+    "Slot actions": "Ações dos slots",
+    "Undo and redo": "Desfazer e refazer",
+    "Favorites": "Favoritos",
+    "Settings": "Configurações",
+    "General settings": "Configurações gerais",
+    "Quick access": "Acesso rápido",
+    "Discord rich presence": "Presença no Discord",
+    "Keyboard shortcuts": "Atalhos de teclado",
+    "In-game notifications": "Notificações no jogo",
+    "Diagnostics": "Diagnóstico",
+    "You're ready!": "Tudo pronto!"
+  },
+  "ru": {
+    "Welcome to SPLIT": "Добро пожаловать в SPLIT",
+    "Your presets": "Ваши пресеты",
+    "Save State slots": "Слоты сохранений",
+    "Slot actions": "Действия со слотами",
+    "Undo and redo": "Отмена и повтор",
+    "Favorites": "Избранное",
+    "Settings": "Настройки",
+    "General settings": "Общие настройки",
+    "Quick access": "Быстрый доступ",
+    "Discord rich presence": "Статус Discord",
+    "Keyboard shortcuts": "Горячие клавиши",
+    "In-game notifications": "Уведомления в игре",
+    "Diagnostics": "Диагностика",
+    "You're ready!": "Всё готово!"
+  },
+  "ja": {
+    "Welcome to SPLIT": "SPLIT へようこそ",
+    "Your presets": "プリセット",
+    "Save State slots": "セーブスロット",
+    "Slot actions": "スロットの操作",
+    "Undo and redo": "元に戻す・やり直す",
+    "Favorites": "お気に入り",
+    "Settings": "設定",
+    "General settings": "一般設定",
+    "Quick access": "クイックアクセス",
+    "Discord rich presence": "Discord プレゼンス",
+    "Keyboard shortcuts": "キーボードショートカット",
+    "In-game notifications": "ゲーム内通知",
+    "Diagnostics": "診断",
+    "You're ready!": "準備完了！"
+  },
+  "zh": {
+    "Welcome to SPLIT": "欢迎使用 SPLIT",
+    "Your presets": "你的预设",
+    "Save State slots": "存档槽",
+    "Slot actions": "存档槽操作",
+    "Undo and redo": "撤销与重做",
+    "Favorites": "收藏",
+    "Settings": "设置",
+    "General settings": "常规设置",
+    "Quick access": "快速访问",
+    "Discord rich presence": "Discord 状态",
+    "Keyboard shortcuts": "键盘快捷键",
+    "In-game notifications": "游戏内通知",
+    "Diagnostics": "诊断",
+    "You're ready!": "准备就绪！"
+  }
+};
+export function tourTitle(english: string, language: Language): string {
+  return tourTitles[language]?.[english] ?? english;
+}
