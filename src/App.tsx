@@ -5189,8 +5189,8 @@ function App() {
             {activeView === "settings"
               ? t("settings", language)
               : favoriteMode
-                ? "Favorites"
-                : "Savestates"}
+                ? t("favorites", language)
+                : t("savestates", language)}
           </h1>
 
           {(activeView === "settings" || !favoriteMode) && (
