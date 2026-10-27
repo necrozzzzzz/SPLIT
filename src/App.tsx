@@ -633,7 +633,7 @@ function StatusDot({
   );
 }
 
-function DiagnosticInfo({ text, fix }: { text: string; fix?: string }) {
+function DiagnosticInfo({ text, fix, language = "en" }: { text: string; fix?: string; language?: Language }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const close = (e: PointerEvent) => { if (ref.current?.open && !ref.current.contains(e.target as Node)) ref.current.open = false; };
@@ -642,8 +642,8 @@ function DiagnosticInfo({ text, fix }: { text: string; fix?: string }) {
   }, []);
   return (
     <details ref={ref} className="diagnostic-info">
-      <summary aria-label="What does this diagnostic mean?" title="What does this mean?">i</summary>
-      <div className="diagnostic-info-content"><div className="diagnostic-info-label">WHAT IT MEANS</div><p>{text}</p>{fix && <><div className="diagnostic-info-separator" /><div className="diagnostic-info-label">IF SOMETHING IS WRONG</div><p>{fix}</p></>}</div>
+      <summary aria-label={t("whatDoesItMean", language)} title={t("whatDoesItMean", language)}>i</summary>
+      <div className="diagnostic-info-content"><div className="diagnostic-info-label">{t("meaning", language).toUpperCase()}</div><p>{text}</p>{fix && <><div className="diagnostic-info-separator" /><div className="diagnostic-info-label">{t("troubleshooting", language).toUpperCase()}</div><p>{fix}</p></>}</div>
     </details>
   );
 }
@@ -7259,7 +7259,7 @@ function App() {
             <span>
               SPLIT edition
             </span>
-            <DiagnosticInfo text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen uses keyboard shortcuts."} fix={"If this is not the edition you expected, launch the intended SPLIT executable."} />
+            <DiagnosticInfo language={language} text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen uses keyboard shortcuts."} fix={"If this is not the edition you expected, launch the intended SPLIT executable."} />
           </div>
 
           <strong>
@@ -7282,7 +7282,7 @@ function App() {
             <span>
               SPLIT integration
             </span>
-            <DiagnosticInfo text={"Checks whether SPLIT's Deadlock integration is configured correctly."} fix={"Click Repair integration, then Refresh. If it still fails, check the Deadlock installation path."} />
+            <DiagnosticInfo language={language} text={"Checks whether SPLIT's Deadlock integration is configured correctly."} fix={"Click Repair integration, then Refresh. If it still fails, check the Deadlock installation path."} />
           </div>
 
           <strong>
@@ -7316,7 +7316,7 @@ function App() {
             <span>
               Deadlock process
             </span>
-            <DiagnosticInfo text={"Shows whether SPLIT detects Deadlock. Not running is normal when the game is closed."} fix={"If Deadlock is open but not detected, restart SPLIT, check the installation path, then Refresh."} />
+            <DiagnosticInfo language={language} text={"Shows whether SPLIT detects Deadlock. Not running is normal when the game is closed."} fix={"If Deadlock is open but not detected, restart SPLIT, check the installation path, then Refresh."} />
           </div>
 
           <strong>
@@ -7345,7 +7345,7 @@ function App() {
             <span>
               Hotkey hook
             </span>
-            <DiagnosticInfo text={"Listens for SPLIT keyboard shortcuts."} fix={"If shortcuts stop working, close duplicate SPLIT instances and restart SPLIT. If Deadlock runs as administrator, match its privileges. Additional troubleshooting appears when the hook is Down."} />
+            <DiagnosticInfo language={language} text={"Listens for SPLIT keyboard shortcuts."} fix={"If shortcuts stop working, close duplicate SPLIT instances and restart SPLIT. If Deadlock runs as administrator, match its privileges. Additional troubleshooting appears when the hook is Down."} />
           </div>
 
           <strong>
@@ -7430,7 +7430,7 @@ function App() {
             <span>
               Console watcher
             </span>
-            <DiagnosticInfo text={"Reads Deadlock's console log for activity and position responses."} fix={"If the watcher stops working, check the Deadlock installation path and restart the game. Then use Retry watcher, which appears when an issue is detected."} />
+            <DiagnosticInfo language={language} text={"Reads Deadlock's console log for activity and position responses."} fix={"If the watcher stops working, check the Deadlock installation path and restart the game. Then use Retry watcher, which appears when an issue is detected."} />
           </div>
 
           <strong>
@@ -7530,7 +7530,7 @@ function App() {
             <span>
               Teleport helper
             </span>
-            <DiagnosticInfo text={"Optional teleport point preparation. SPLIT normally prepares these automatically when needed."} />
+            <DiagnosticInfo language={language} text={"Optional teleport point preparation. SPLIT normally prepares these automatically when needed."} />
           </div>
 
           <strong>Optional feature</strong>
@@ -7627,7 +7627,7 @@ function App() {
             <span>
               Presentation mask
             </span>
-            <DiagnosticInfo text={"Optional visual support during position loading."} />
+            <DiagnosticInfo language={language} text={"Optional visual support during position loading."} />
           </div>
 
           <strong>
@@ -7730,7 +7730,7 @@ function App() {
             <span>
               Camera runtime
             </span>
-            <DiagnosticInfo text={"Checks camera-related runtime support used by position operations."} />
+            <DiagnosticInfo language={language} text={"Checks camera-related runtime support used by position operations."} />
           </div>
 
           <strong>
@@ -7847,7 +7847,7 @@ function App() {
             <span>
               Game folder
             </span>
-            <DiagnosticInfo text={"The detected Deadlock installation path."} />
+            <DiagnosticInfo language={language} text={"The detected Deadlock installation path."} />
           </div>
 
           <code
@@ -7868,7 +7868,7 @@ function App() {
             <span>
               CFG directory
             </span>
-            <DiagnosticInfo text={"Folder containing Deadlock configuration scripts."} />
+            <DiagnosticInfo language={language} text={"Folder containing Deadlock configuration scripts."} />
           </div>
 
           <strong>
@@ -7887,7 +7887,7 @@ function App() {
             <span>
               savestate.cfg
             </span>
-            <DiagnosticInfo text={"Game script used for SPLIT's save/load integration."} />
+            <DiagnosticInfo language={language} text={"Game script used for SPLIT's save/load integration."} />
           </div>
 
           <strong>
@@ -7908,7 +7908,7 @@ function App() {
             <span>
               savestate_prepare.cfg
             </span>
-            <DiagnosticInfo text={"Game script used to prepare position loading."} />
+            <DiagnosticInfo language={language} text={"Game script used to prepare position loading."} />
           </div>
 
           <strong>
@@ -7929,7 +7929,7 @@ function App() {
             <span>
               autoexec.cfg
             </span>
-            <DiagnosticInfo text={"Deadlock startup configuration used to initialize the integration."} />
+            <DiagnosticInfo language={language} text={"Deadlock startup configuration used to initialize the integration."} />
           </div>
 
           <strong>
@@ -7959,7 +7959,7 @@ function App() {
             <span>
               Console log
             </span>
-            <DiagnosticInfo text={"Game console output that SPLIT monitors for events and positions."} />
+            <DiagnosticInfo language={language} text={"Game console output that SPLIT monitors for events and positions."} />
           </div>
 
           <code
@@ -7980,7 +7980,7 @@ function App() {
             <span>
               Last parsed position
             </span>
-            <DiagnosticInfo text={"Most recent coordinates successfully read from Deadlock's console log."} />
+            <DiagnosticInfo language={language} text={"Most recent coordinates successfully read from Deadlock's console log."} />
           </div>
 
           {lastPosition ? (
