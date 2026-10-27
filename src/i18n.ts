@@ -2372,6 +2372,7 @@ export function diagnosticText(english: string, language: Language): string {
 
 export const discordUiLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "1 of 6": "1 of 6",
     "Resetting...": "Resetting...",
     "Saving...": "Saving...",
     "Changes save automatically": "Changes save automatically",
@@ -2413,6 +2414,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "preview"
   },
   "fr": {
+    "1 of 6": "1 sur 6",
     "Resetting...": "Réinitialisation…",
     "Saving...": "Enregistrement…",
     "Changes save automatically": "Modifications enregistrées automatiquement",
@@ -2454,6 +2456,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "aperçu"
   },
   "es": {
+    "1 of 6": "1 de 6",
     "Resetting...": "Restableciendo…",
     "Saving...": "Guardando…",
     "Changes save automatically": "Los cambios se guardan automáticamente",
@@ -2495,6 +2498,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "vista previa"
   },
   "de": {
+    "1 of 6": "1 von 6",
     "Resetting...": "Wird zurückgesetzt…",
     "Saving...": "Wird gespeichert…",
     "Changes save automatically": "Änderungen werden automatisch gespeichert",
@@ -2536,6 +2540,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "Vorschau"
   },
   "pt": {
+    "1 of 6": "1 de 6",
     "Resetting...": "Redefinindo…",
     "Saving...": "Salvando…",
     "Changes save automatically": "Alterações salvas automaticamente",
@@ -2577,6 +2582,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "prévia"
   },
   "ru": {
+    "1 of 6": "1 из 6",
     "Resetting...": "Сброс…",
     "Saving...": "Сохранение…",
     "Changes save automatically": "Изменения сохраняются автоматически",
@@ -2618,6 +2624,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "предпросмотр"
   },
   "ja": {
+    "1 of 6": "6人中1人",
     "Resetting...": "リセット中…",
     "Saving...": "保存中…",
     "Changes save automatically": "変更は自動保存されます",
@@ -2659,6 +2666,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "プレビュー"
   },
   "zh": {
+    "1 of 6": "6 人中的 1 人",
     "Resetting...": "正在重置…",
     "Saving...": "正在保存…",
     "Changes save automatically": "更改会自动保存",
