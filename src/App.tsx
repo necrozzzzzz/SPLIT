@@ -50,7 +50,7 @@ import {
 } from "./startupSound";
 
 import DiscordPresenceSettings from "./DiscordPresenceSettings";
-import { getLanguage, setLanguage, languages, languageNames, t, uiText, diagnosticText, type Language } from "./i18n";
+import { getLanguage, setLanguage, languages, languageNames, t, uiText, diagnosticText, runtimeErrorText, type Language } from "./i18n";
 import Onboarding, { isOnboardingCompleted } from "./Onboarding";
 
 type DeadlockStatus = {
@@ -1296,7 +1296,7 @@ function App() {
       .catch((reason) => {
         if (!disposed) {
           setError(
-            `Could not read startup setting: ${String(reason)}`,
+            `${runtimeErrorText("Could not read startup setting: ", getLanguage())}${String(reason)}`,
           );
         }
       })
@@ -1320,7 +1320,7 @@ function App() {
       })
       .catch((reason) => {
         if (!disposed) {
-          setError(`Could not read Deadlock startup focus setting: ${String(reason)}`);
+          setError(`${runtimeErrorText("Could not read Deadlock startup focus setting: ", getLanguage())}${String(reason)}`);
         }
       })
       .finally(() => {
@@ -1343,7 +1343,7 @@ function App() {
       });
       setFocusDeadlockOnStartup(saved);
     } catch (reason) {
-      setError(`Could not update Deadlock startup focus setting: ${String(reason)}`);
+      setError(`${runtimeErrorText("Could not update Deadlock startup focus setting: ", getLanguage())}${String(reason)}`);
     } finally {
       setFocusDeadlockOnStartupSaving(false);
     }
@@ -1446,7 +1446,7 @@ function App() {
       .catch((reason) => {
         if (!disposed) {
           setError(
-            `Could not read minimized startup setting: ${String(reason)}`,
+            `${runtimeErrorText("Could not read minimized startup setting: ", getLanguage())}${String(reason)}`,
           );
         }
       })
@@ -1497,7 +1497,7 @@ function App() {
         );
       } catch (reason) {
         setError(
-          `Could not update startup setting: ${String(reason)}`,
+          `${runtimeErrorText("Could not update startup setting: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setAutostartSaving(false);
@@ -1530,7 +1530,7 @@ function App() {
         );
       } catch (reason) {
         setError(
-          `Could not update minimized startup setting: ${String(reason)}`,
+          `${runtimeErrorText("Could not update minimized startup setting: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setStartMinimizedSaving(
@@ -1607,7 +1607,7 @@ function App() {
       .catch((reason) => {
         if (!disposed) {
           setError(
-            `Could not read close behavior: ${String(reason)}`,
+            `${runtimeErrorText("Could not read close behavior: ", getLanguage())}${String(reason)}`,
           );
         }
       })
@@ -1649,7 +1649,7 @@ function App() {
           setCloseToTray(result);
         } catch (reason) {
           setError(
-            `Could not update close behavior: ${String(reason)}`,
+            `${runtimeErrorText("Could not update close behavior: ", getLanguage())}${String(reason)}`,
           );
         } finally {
           setCloseBehaviorSaving(false);
@@ -1673,7 +1673,7 @@ function App() {
         );
       } catch (reason) {
         setError(
-          `Could not reset window: ${String(reason)}`,
+          `${runtimeErrorText("Could not reset window: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setResettingWindow(false);
@@ -1730,7 +1730,7 @@ function App() {
         }
       } catch (reason) {
         setError(
-          `Could not launch Deadlock: ${String(reason)}`,
+          `${runtimeErrorText("Could not launch Deadlock: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setLaunchingDeadlock(false);
@@ -1885,7 +1885,7 @@ function App() {
         }, 2000);
       } catch (reason) {
         setError(
-          `Could not copy diagnostic report: ${String(reason)}`,
+          `${runtimeErrorText("Could not copy diagnostic report: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setDiagnosticCopying(false);
@@ -1908,7 +1908,7 @@ function App() {
         setStatus(next);
       } catch (reason) {
         setError(
-          `Could not prepare teleport points: ${String(reason)}`,
+          `${runtimeErrorText("Could not prepare teleport points: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setTeleportPreparing(false);
@@ -1929,7 +1929,7 @@ function App() {
         setStatus(next);
       } catch (reason) {
         setError(
-          `Could not resume Deadlock presentation: ${String(reason)}`,
+          `${runtimeErrorText("Could not resume Deadlock presentation: ", getLanguage())}${String(reason)}`,
         );
       } finally {
         setPresentationResuming(false);
@@ -3385,7 +3385,7 @@ function App() {
           });
         } catch (reason) {
           setError(
-            `Could not load Favorites: ${String(reason)}`,
+            `${runtimeErrorText("Could not load Favorites: ", getLanguage())}${String(reason)}`,
           );
         } finally {
           setFavoriteCopyWorking(false);
@@ -3427,7 +3427,7 @@ function App() {
           setPendingFavoriteOverwrite(null);
         } catch (reason) {
           setError(
-            `Could not save to Favorites: ${String(reason)}`,
+            `${runtimeErrorText("Could not save to Favorites: ", getLanguage())}${String(reason)}`,
           );
         } finally {
           setFavoriteCopyWorking(false);
