@@ -4173,7 +4173,7 @@ function App() {
 
             <aside
               className="setup-progress-panel"
-              aria-label="Setup progress"
+              aria-label={uiText("Setup progress", getLanguage())}
             >
               <span className="setup-progress-label">
                 SETUP
@@ -4405,8 +4405,8 @@ function App() {
 
               <button
                 type="button"
-                aria-label="Close screenshot"
-                title="Close"
+                aria-label={uiText("Close screenshot", getLanguage())}
+                title={uiText("Close", getLanguage())}
                 onClick={() =>
                   setScreenshotViewer(null)
                 }
@@ -5131,7 +5131,7 @@ function App() {
           <strong>SPLIT</strong>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Main navigation">
+        <nav className="sidebar-nav" aria-label={uiText("Main navigation", getLanguage())}>
           <button
             type="button"
             className={activeView === "slots" && !favoriteMode ? "active" : ""}
@@ -5593,8 +5593,8 @@ function App() {
                         }}
                       >
                         <summary
-                          aria-label="Preset actions"
-                          title="Preset actions"
+                          aria-label={uiText("Preset actions", getLanguage())}
+                          title={uiText("Preset actions", getLanguage())}
                         >
                           ...
                         </summary>
@@ -5997,7 +5997,7 @@ function App() {
                 <details className="slot-card-menu">
                   <summary
                     aria-label={`Open actions for ${displayName}`}
-                    title="Slot actions"
+                    title={uiText("Slot actions", getLanguage())}
                   >
                     ···
                   </summary>
@@ -7239,7 +7239,7 @@ function App() {
     {activeSettingsSection === "diagnostics" && ( 
       <section
         className="diagnostics-groups"
-        aria-label="Deadlock diagnostics"
+        aria-label={uiText("Deadlock diagnostics", getLanguage())}
       >
         <section className="diagnostics-group">
           <h2 className="diagnostics-group-title">
