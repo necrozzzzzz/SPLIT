@@ -833,7 +833,7 @@ export default function DiscordPresenceSettings() {
               <em>{uiText("Example only", language)}</em>
             </div>
             <div className={`drp-preview-card ${!config.global.enabled ? "disabled" : ""}`}>
-              <strong className="drp-preview-app">Deadlock - SPLIT</strong>
+              <strong className="drp-preview-app">Deadlock</strong>
               {config.global.enabled ? (
                 <div
                   className={`drp-preview-activity ${
