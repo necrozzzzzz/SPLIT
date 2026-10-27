@@ -7229,7 +7229,7 @@ function App() {
             <span>
               SPLIT edition
             </span>
-            <DiagnosticInfo text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen keeps keyboard-driven controls."} />
+            <DiagnosticInfo text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen uses keyboard shortcuts. This is informational, not an error. Launch the intended edition if this is not the one you expected."} />
           </div>
 
           <strong>
@@ -7252,7 +7252,7 @@ function App() {
             <span>
               SPLIT integration
             </span>
-            <DiagnosticInfo text={"Checks whether the configuration SPLIT needs to work with Deadlock is healthy. Use Repair integration if prompted."} />
+            <DiagnosticInfo text={"Checks the configuration SPLIT uses to work with Deadlock. If Needs attention appears, click Repair integration, then Refresh. If repair fails, check your Deadlock installation path."} />
           </div>
 
           <strong>
@@ -7286,7 +7286,7 @@ function App() {
             <span>
               Deadlock process
             </span>
-            <DiagnosticInfo text={"Shows whether SPLIT detects Deadlock running. Not running is normal when the game is closed."} />
+            <DiagnosticInfo text={"Shows whether SPLIT detects Deadlock. Not running is normal if the game is closed. If Deadlock is open but not detected, restart SPLIT, check the game installation path, then click Refresh."} />
           </div>
 
           <strong>
@@ -7315,7 +7315,7 @@ function App() {
             <span>
               Hotkey hook
             </span>
-            <DiagnosticInfo text={"Windows keyboard listener for SPLIT shortcuts. If down, keyboard shortcuts may not respond."} />
+            <DiagnosticInfo text={"Listens for SPLIT shortcuts. If Down, close duplicate SPLIT instances and restart SPLIT. If Deadlock runs as administrator, try running SPLIT with the same privileges. Follow the HOW TO FIX steps below."} />
           </div>
 
           <strong>
@@ -7400,7 +7400,7 @@ function App() {
             <span>
               Console watcher
             </span>
-            <DiagnosticInfo text={"Reads Deadlock's console log to detect activity and position responses."} />
+            <DiagnosticInfo text={"Reads Deadlock's console log for game activity and position responses. If Down, verify the Deadlock installation path, start Deadlock once to create its log, then click Retry watcher. See HOW TO FIX below."} />
           </div>
 
           <strong>
