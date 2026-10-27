@@ -2770,6 +2770,17 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Deadlock is not currently running.": "Deadlock is not currently running.",
+    "Start SPLIT automatically when you sign in to Windows.": "Start SPLIT automatically when you sign in to Windows.",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Keep SPLIT hidden in the system tray when it starts with Windows.",
+    "Enable Launch with Windows to use this option.": "Enable Launch with Windows to use this option.",
+    "Choose what happens when you close the SPLIT window.": "Choose what happens when you close the SPLIT window.",
+    "Restore the default window size and center SPLIT on the screen.": "Restore the default window size and center SPLIT on the screen.",
+    "Resetting…": "Resetting…",
+    "Reset": "Reset",
+    "Saving…": "Saving…",
+    "Checking…": "Checking…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "If Deadlock is running as administrator, run SPLIT with the same privilege level.",
     "Temporarily disable software that intercepts global keyboard input and test again.": "Temporarily disable software that intercepts global keyboard input and test again.",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "If the issue persists, copy the diagnostic report before reporting the problem.",
@@ -2837,6 +2848,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Deadlock is not currently running.": "Deadlock n'est pas en cours d'exécution.",
+    "Start SPLIT automatically when you sign in to Windows.": "Démarrer automatiquement SPLIT à l'ouverture de session Windows.",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Garder SPLIT dans la zone de notification au démarrage de Windows.",
+    "Enable Launch with Windows to use this option.": "Activez le démarrage avec Windows pour utiliser cette option.",
+    "Choose what happens when you close the SPLIT window.": "Choisissez l'action effectuée à la fermeture de la fenêtre SPLIT.",
+    "Restore the default window size and center SPLIT on the screen.": "Rétablir la taille par défaut et centrer la fenêtre SPLIT à l'écran.",
+    "Resetting…": "Réinitialisation…",
+    "Reset": "Réinitialiser",
+    "Saving…": "Enregistrement…",
+    "Checking…": "Vérification…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "Si Deadlock est lancé en administrateur, lancez SPLIT avec les mêmes droits.",
     "Temporarily disable software that intercepts global keyboard input and test again.": "Désactivez temporairement les logiciels interceptant les touches du clavier, puis réessayez.",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "Si le problème persiste, copiez le rapport de diagnostic avant de le signaler.",
@@ -2904,6 +2926,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Deadlock is not currently running.": "Deadlock no se está ejecutando.",
+    "Start SPLIT automatically when you sign in to Windows.": "Iniciar SPLIT automáticamente al iniciar sesión en Windows.",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Mantener SPLIT oculto en la bandeja del sistema al iniciar Windows.",
+    "Enable Launch with Windows to use this option.": "Activa el inicio con Windows para usar esta opción.",
+    "Choose what happens when you close the SPLIT window.": "Elige qué sucede al cerrar la ventana de SPLIT.",
+    "Restore the default window size and center SPLIT on the screen.": "Restaurar el tamaño predeterminado y centrar SPLIT en la pantalla.",
+    "Resetting…": "Restableciendo…",
+    "Reset": "Restablecer",
+    "Saving…": "Guardando…",
+    "Checking…": "Comprobando…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "Si Deadlock se ejecuta como administrador, inicia SPLIT con los mismos permisos.",
     "Temporarily disable software that intercepts global keyboard input and test again.": "Desactiva temporalmente los programas que capturan teclas globales y vuelve a probar.",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "Si persiste, copia el informe de diagnóstico antes de informar del problema.",
@@ -2971,6 +3004,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Deadlock is not currently running.": "Deadlock läuft derzeit nicht.",
+    "Start SPLIT automatically when you sign in to Windows.": "SPLIT bei der Windows-Anmeldung automatisch starten.",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "SPLIT beim Windows-Start im Infobereich ausblenden.",
+    "Enable Launch with Windows to use this option.": "Aktiviere den Windows-Autostart für diese Option.",
+    "Choose what happens when you close the SPLIT window.": "Lege fest, was beim Schließen des SPLIT-Fensters geschieht.",
+    "Restore the default window size and center SPLIT on the screen.": "Standardfenstergröße wiederherstellen und SPLIT zentrieren.",
+    "Resetting…": "Wird zurückgesetzt…",
+    "Reset": "Zurücksetzen",
+    "Saving…": "Speichern…",
+    "Checking…": "Prüfen…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "Wenn Deadlock als Administrator läuft, starte SPLIT mit denselben Rechten.",
     "Temporarily disable software that intercepts global keyboard input and test again.": "Deaktiviere vorübergehend Programme, die globale Tastatureingaben abfangen, und teste erneut.",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "Wenn das Problem bleibt, kopiere vor dem Melden den Diagnosebericht.",
@@ -3038,6 +3082,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Deadlock is not currently running.": "Deadlock não está em execução.",
+    "Start SPLIT automatically when you sign in to Windows.": "Iniciar o SPLIT automaticamente ao entrar no Windows.",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Manter o SPLIT oculto na bandeja do sistema ao iniciar o Windows.",
+    "Enable Launch with Windows to use this option.": "Ative a inicialização com o Windows para usar esta opção.",
+    "Choose what happens when you close the SPLIT window.": "Escolha o que acontece ao fechar a janela do SPLIT.",
+    "Restore the default window size and center SPLIT on the screen.": "Restaurar o tamanho padrão da janela e centralizar o SPLIT na tela.",
+    "Resetting…": "Redefinindo…",
+    "Reset": "Redefinir",
+    "Saving…": "Salvando…",
+    "Checking…": "Verificando…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "Se Deadlock executar como administrador, inicie o SPLIT com as mesmas permissões.",
     "Temporarily disable software that intercepts global keyboard input and test again.": "Desative temporariamente programas que interceptam teclas globais e teste novamente.",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "Se persistir, copie o relatório de diagnóstico antes de informar o problema.",
@@ -3105,6 +3160,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Deadlock is not currently running.": "Deadlock сейчас не запущен.",
+    "Start SPLIT automatically when you sign in to Windows.": "Автоматически запускать SPLIT при входе в Windows.",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Скрывать SPLIT в системном трее при запуске Windows.",
+    "Enable Launch with Windows to use this option.": "Включите автозапуск с Windows для этой функции.",
+    "Choose what happens when you close the SPLIT window.": "Выберите действие при закрытии окна SPLIT.",
+    "Restore the default window size and center SPLIT on the screen.": "Восстановить размер окна и расположить SPLIT по центру экрана.",
+    "Resetting…": "Сброс…",
+    "Reset": "Сбросить",
+    "Saving…": "Сохранение…",
+    "Checking…": "Проверка…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "Если Deadlock запущен от администратора, запустите SPLIT с такими же правами.",
     "Temporarily disable software that intercepts global keyboard input and test again.": "Временно отключите программы, перехватывающие клавиши, и проверьте снова.",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "Если проблема осталась, скопируйте диагностический отчёт перед обращением.",
@@ -3172,6 +3238,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Deadlock is not currently running.": "Deadlock は現在起動していません。",
+    "Start SPLIT automatically when you sign in to Windows.": "Windows へのサインイン時に SPLIT を自動起動します。",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Windows 起動時に SPLIT をシステムトレイに隠します。",
+    "Enable Launch with Windows to use this option.": "この機能には Windows と同時に起動する設定が必要です。",
+    "Choose what happens when you close the SPLIT window.": "SPLIT のウィンドウを閉じたときの動作を選択します。",
+    "Restore the default window size and center SPLIT on the screen.": "ウィンドウの標準サイズに戻し、画面中央に配置します。",
+    "Resetting…": "リセット中…",
+    "Reset": "リセット",
+    "Saving…": "保存中…",
+    "Checking…": "確認中…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "Deadlock を管理者権限で実行している場合は、SPLIT も同じ権限で起動してください。",
     "Temporarily disable software that intercepts global keyboard input and test again.": "グローバルキー入力を取得するソフトを一時的に無効にして再試行してください。",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "問題が続く場合は、報告前に診断レポートをコピーしてください。",
@@ -3239,6 +3316,17 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Deadlock is not currently running.": "Deadlock 当前未运行。",
+    "Start SPLIT automatically when you sign in to Windows.": "登录 Windows 时自动启动 SPLIT。",
+    "Keep SPLIT hidden in the system tray when it starts with Windows.": "Windows 启动时将 SPLIT 隐藏到系统托盘。",
+    "Enable Launch with Windows to use this option.": "启用随 Windows 启动后才能使用此选项。",
+    "Choose what happens when you close the SPLIT window.": "选择关闭 SPLIT 窗口时的操作。",
+    "Restore the default window size and center SPLIT on the screen.": "恢复默认窗口大小并将 SPLIT 居中显示。",
+    "Resetting…": "正在重置…",
+    "Reset": "重置",
+    "Saving…": "正在保存…",
+    "Checking…": "正在检查…",
+
     "If Deadlock is running as administrator, run SPLIT with the same privilege level.": "如果 Deadlock 以管理员身份运行，请以相同权限运行 SPLIT。",
     "Temporarily disable software that intercepts global keyboard input and test again.": "暂时禁用拦截全局键盘输入的软件，然后重试。",
     "If the issue persists, copy the diagnostic report before reporting the problem.": "如果问题仍存在，请先复制诊断报告再反馈。",
