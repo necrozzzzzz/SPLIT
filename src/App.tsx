@@ -7223,6 +7223,7 @@ function App() {
             <span>
               SPLIT edition
             </span>
+            <DiagnosticInfo text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen keeps keyboard-driven controls."} />
           </div>
 
           <strong>
@@ -7245,6 +7246,7 @@ function App() {
             <span>
               SPLIT integration
             </span>
+            <DiagnosticInfo text={"Checks whether the configuration SPLIT needs to work with Deadlock is healthy. Use Repair integration if prompted."} />
           </div>
 
           <strong>
@@ -7278,6 +7280,7 @@ function App() {
             <span>
               Deadlock process
             </span>
+            <DiagnosticInfo text={"Shows whether SPLIT detects Deadlock running. Not running is normal when the game is closed."} />
           </div>
 
           <strong>
@@ -7306,6 +7309,7 @@ function App() {
             <span>
               Hotkey hook
             </span>
+            <DiagnosticInfo text={"Windows keyboard listener for SPLIT shortcuts. If down, keyboard shortcuts may not respond."} />
           </div>
 
           <strong>
@@ -7390,6 +7394,7 @@ function App() {
             <span>
               Console watcher
             </span>
+            <DiagnosticInfo text={"Reads Deadlock's console log to detect activity and position responses."} />
           </div>
 
           <strong>
@@ -7489,6 +7494,7 @@ function App() {
             <span>
               Teleport helper
             </span>
+            <DiagnosticInfo text={"Optional teleport point preparation. SPLIT normally prepares these automatically when needed."} />
           </div>
 
           <strong>Optional feature</strong>
@@ -7585,6 +7591,7 @@ function App() {
             <span>
               Presentation mask
             </span>
+            <DiagnosticInfo text={"Optional visual support during position loading."} />
           </div>
 
           <strong>
@@ -7687,6 +7694,7 @@ function App() {
             <span>
               Camera runtime
             </span>
+            <DiagnosticInfo text={"Checks camera-related runtime support used by position operations."} />
           </div>
 
           <strong>
@@ -7803,6 +7811,7 @@ function App() {
             <span>
               Game folder
             </span>
+            <DiagnosticInfo text={"The detected Deadlock installation path."} />
           </div>
 
           <code
@@ -7823,6 +7832,7 @@ function App() {
             <span>
               CFG directory
             </span>
+            <DiagnosticInfo text={"Folder containing Deadlock configuration scripts."} />
           </div>
 
           <strong>
@@ -7841,6 +7851,7 @@ function App() {
             <span>
               savestate.cfg
             </span>
+            <DiagnosticInfo text={"Game script used for SPLIT's save/load integration."} />
           </div>
 
           <strong>
@@ -7861,6 +7872,7 @@ function App() {
             <span>
               savestate_prepare.cfg
             </span>
+            <DiagnosticInfo text={"Game script used to prepare position loading."} />
           </div>
 
           <strong>
@@ -7881,6 +7893,7 @@ function App() {
             <span>
               autoexec.cfg
             </span>
+            <DiagnosticInfo text={"Deadlock startup configuration used to initialize the integration."} />
           </div>
 
           <strong>
@@ -7910,6 +7923,7 @@ function App() {
             <span>
               Console log
             </span>
+            <DiagnosticInfo text={"Game console output that SPLIT monitors for events and positions."} />
           </div>
 
           <code
@@ -7930,6 +7944,7 @@ function App() {
             <span>
               Last parsed position
             </span>
+            <DiagnosticInfo text={"Most recent coordinates successfully read from Deadlock's console log."} />
           </div>
 
           {lastPosition ? (
