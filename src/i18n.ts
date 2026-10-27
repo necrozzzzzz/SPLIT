@@ -573,3 +573,106 @@ export const tourControls: Record<Language, Record<string, string>> = {
 export function tourControl(english: string, language: Language): string {
   return tourControls[language][english] ?? english;
 }
+
+// Descriptions follow the canonical English step IDs; never use translated titles for control flow.
+export const tourDescriptions: Partial<Record<Language, Record<string, string>>> = {
+  "es": {
+    "Welcome to SPLIT": "SPLIT te ayuda a practicar en Deadlock. Esta visita interactiva te muestra las herramientas principales. No se guardará ni cargará nada durante la visita.",
+    "Your presets": "Organiza aquí tus posiciones de práctica. Hay cuatro presets, cada uno con ocho ranuras independientes. Puedes renombrarlos y cambiar entre ellos.",
+    "Save State slots": "Cada tarjeta representa una posición guardada. Guarda tu ubicación actual y cárgala para volver a ella. Las ranuras admiten nombres, colores y capturas de pantalla.",
+    "Slot actions": "Abre el menú de tres puntos de una ranura para renombrarla, vaciarla, copiar su posición o asignarle un color. Prueba el botón resaltado en el ejemplo de Mina y elige un color.",
+    "Undo and redo": "Estos botones deshacen o rehacen los cambios compatibles en tus posiciones guardadas. Los atajos aparecen junto a ellos.",
+    "Favorites": "El modo Favoritos ofrece ocho ranuras compartidas, separadas de los cuatro presets. Actívalo aquí o mediante un atajo.",
+    "Settings": "Aquí puedes personalizar SPLIT. A continuación veremos las principales secciones de ajustes.",
+    "General settings": "Configura el comportamiento del escritorio, la apariencia, el sonido de inicio y otras preferencias.",
+    "Quick access": "En la edición Borderless puedes activar el acceso rápido y ajustar su posición para gestionar ranuras mientras juegas.",
+    "Discord rich presence": "Elige lo que Discord muestra en Hideout, Explore NYC, la búsqueda de partida y las partidas. Personaliza imágenes, textos y detalles.",
+    "Keyboard shortcuts": "Personaliza los atajos para guardar y cargar ranuras, cambiar presets, abrir Favoritos y deshacer o rehacer.",
+    "In-game notifications": "Elige dónde aparecen las notificaciones en el juego, cuánto duran y si usan los colores de las ranuras.",
+    "Diagnostics": "No necesitas esta sección normalmente. Si algo falla, revisa los indicadores y pulsa los iconos de información para ver detalles.",
+    "You're ready!": "Puedes volver a abrir esta guía en Ajustes > Acerca de. ¡Que disfrutes practicando!"
+  },
+  "de": {
+    "Welcome to SPLIT": "SPLIT unterstützt dich beim Training in Deadlock. Diese interaktive Tour zeigt dir die wichtigsten Werkzeuge. Während der Tour wird nichts gespeichert oder geladen.",
+    "Your presets": "Organisiere hier deine Trainingspositionen. Es gibt vier Presets mit jeweils acht unabhängigen Slots. Du kannst sie umbenennen und wechseln.",
+    "Save State slots": "Jede Karte ist eine gespeicherte Position. Speichere deinen Standort und lade ihn, um dorthin zurückzukehren. Slots können Namen, Farben und Screenshots haben.",
+    "Slot actions": "Öffne das Drei-Punkte-Menü eines Slots, um ihn umzubenennen, zu leeren, eine Position zu kopieren oder eine Farbe zu wählen. Probiere das markierte Menü bei Mina aus.",
+    "Undo and redo": "Mit diesen Schaltflächen kannst du unterstützte Änderungen rückgängig machen oder wiederholen. Die Tastenkürzel stehen daneben.",
+    "Favorites": "Der Favoritenmodus hat acht gemeinsame Slots, unabhängig von deinen vier Presets. Aktiviere ihn hier oder per Tastenkürzel.",
+    "Settings": "Hier passt du SPLIT an. Als Nächstes sehen wir uns die wichtigsten Einstellungen an.",
+    "General settings": "Passe Desktop-Verhalten, Darstellung, Startton und weitere Einstellungen an.",
+    "Quick access": "In der Borderless-Version kannst du den Schnellzugriff aktivieren und positionieren, um Slots im Spiel zu verwalten.",
+    "Discord rich presence": "Lege fest, was Discord im Hideout, in Explore NYC, bei der Spielsuche und in Matches anzeigt. Passe Bilder, Texte und Details an.",
+    "Keyboard shortcuts": "Passe Tastenkürzel zum Speichern und Laden, Wechseln der Presets, Öffnen der Favoriten sowie Rückgängigmachen an.",
+    "In-game notifications": "Wähle Position, Anzeigedauer und Slot-Farben für Benachrichtigungen im Spiel.",
+    "Diagnostics": "Im Alltag brauchst du diesen Bereich nicht. Wenn etwas nicht funktioniert, prüfe die Statusanzeigen und klicke auf die Info-Symbole.",
+    "You're ready!": "Du kannst diese Anleitung jederzeit unter Einstellungen > Über erneut öffnen. Viel Spaß beim Training!"
+  },
+  "pt": {
+    "Welcome to SPLIT": "SPLIT ajuda você a treinar no Deadlock. Este guia interativo mostra as principais ferramentas. Nada será salvo ou carregado durante o guia.",
+    "Your presets": "Organize suas posições de treino aqui. São quatro presets com oito slots independentes cada. Você pode renomear e alternar entre eles.",
+    "Save State slots": "Cada cartão representa uma posição salva. Salve sua posição e carregue-a para voltar ao mesmo lugar. Slots podem ter nomes, cores e capturas de tela.",
+    "Slot actions": "Abra o menu de três pontos de um slot para renomear, limpar, copiar uma posição ou escolher uma cor. Teste o menu destacado no exemplo da Mina.",
+    "Undo and redo": "Use estes botões para desfazer ou refazer alterações compatíveis. Os atalhos aparecem ao lado.",
+    "Favorites": "O modo Favoritos oferece oito slots compartilhados, separados dos quatro presets. Ative aqui ou com um atalho.",
+    "Settings": "Personalize o SPLIT aqui. Vamos conhecer as principais seções de configuração.",
+    "General settings": "Ajuste o comportamento da área de trabalho, aparência, som inicial e outras preferências.",
+    "Quick access": "Na edição Borderless, ative e posicione o Acesso Rápido para gerenciar slots durante o jogo.",
+    "Discord rich presence": "Escolha o que o Discord mostra no Hideout, Explore NYC, busca de partidas e partidas. Personalize imagens, textos e detalhes.",
+    "Keyboard shortcuts": "Personalize atalhos para salvar e carregar slots, trocar presets, acessar Favoritos e desfazer ou refazer.",
+    "In-game notifications": "Escolha a posição, a duração e o uso das cores dos slots nas notificações do jogo.",
+    "Diagnostics": "Você não precisa desta seção no dia a dia. Se algo falhar, consulte os indicadores e clique nos ícones de informação.",
+    "You're ready!": "Você pode reabrir este guia em Configurações > Sobre. Bom treino!"
+  },
+  "ru": {
+    "Welcome to SPLIT": "SPLIT помогает тренироваться в Deadlock. Этот интерактивный обзор покажет основные инструменты. Во время обзора ничего не сохраняется и не загружается.",
+    "Your presets": "Здесь можно организовать тренировочные позиции. Доступны четыре пресета по восемь независимых слотов. Их можно переименовывать и переключать.",
+    "Save State slots": "Каждая карточка — сохранённая позиция. Сохраните текущее место, затем загрузите его, чтобы вернуться. Слотам можно задать имя, цвет и скриншот.",
+    "Slot actions": "Откройте меню с тремя точками, чтобы переименовать или очистить слот, скопировать позицию либо выбрать цвет. Попробуйте выделенное меню на примере Mina.",
+    "Undo and redo": "Эти кнопки отменяют и повторяют поддерживаемые изменения сохранений. Рядом указаны горячие клавиши.",
+    "Favorites": "Режим избранного содержит восемь общих слотов отдельно от четырёх пресетов. Включите его здесь или горячей клавишей.",
+    "Settings": "Здесь настраивается SPLIT. Далее рассмотрим основные разделы настроек.",
+    "General settings": "Настройте поведение приложения, оформление, звук запуска и другие параметры.",
+    "Quick access": "В версии Borderless можно включить и расположить панель быстрого доступа для управления слотами во время игры.",
+    "Discord rich presence": "Выберите, что Discord показывает в Hideout, Explore NYC, поиске матча и игре. Настройте изображения, текст и детали активности.",
+    "Keyboard shortcuts": "Настройте клавиши сохранения и загрузки слотов, смены пресетов, избранного, отмены и повтора.",
+    "In-game notifications": "Выберите расположение и длительность уведомлений в игре, а также использование цветов слотов.",
+    "Diagnostics": "Этот раздел не нужен каждый день. Если что-то перестало работать, проверьте индикаторы и нажмите значки информации.",
+    "You're ready!": "Это руководство можно снова открыть в Настройки > О программе. Удачных тренировок!"
+  },
+  "ja": {
+    "Welcome to SPLIT": "SPLIT は Deadlock の練習を支援します。このガイドでは主な機能を紹介します。ガイド中にセーブやロードは行われません。",
+    "Your presets": "ここで練習位置を整理できます。4 つのプリセットがあり、それぞれに独立した 8 個のスロットがあります。名前の変更や切り替えも可能です。",
+    "Save State slots": "各カードは保存した位置です。現在地を保存し、ロードするとその場所に戻れます。スロットには名前、色、スクリーンショットを設定できます。",
+    "Slot actions": "スロットの三点メニューから名前変更、消去、位置のコピー、色の指定ができます。Mina の例で強調表示されたメニューを開き、色を選んでみましょう。",
+    "Undo and redo": "対応する保存データの変更を元に戻したり、やり直したりできます。ショートカットはボタンの横に表示されます。",
+    "Favorites": "お気に入りモードには、4 つのプリセットとは別に共通の 8 スロットがあります。ここかショートカットから切り替えられます。",
+    "Settings": "ここで SPLIT をカスタマイズできます。続いて主な設定項目を見ていきます。",
+    "General settings": "デスクトップでの動作、外観、起動音などを設定できます。",
+    "Quick access": "Borderless 版ではクイックアクセスを有効にして位置を調整し、ゲーム中にスロットを操作できます。",
+    "Discord rich presence": "Hideout、Explore NYC、マッチ検索中や試合中に Discord に表示する情報を選べます。画像やテキストも変更できます。",
+    "Keyboard shortcuts": "セーブ、ロード、プリセット切り替え、お気に入り、元に戻す・やり直しのショートカットを設定できます。",
+    "In-game notifications": "ゲーム内通知の表示位置、表示時間、スロットの色を使うかどうかを設定できます。",
+    "Diagnostics": "普段は使わない項目です。問題が起きたら状態表示を確認し、情報アイコンで詳しい説明を見られます。",
+    "You're ready!": "このガイドは 設定 > このアプリについて からいつでも再表示できます。練習を楽しんでください！"
+  },
+  "zh": {
+    "Welcome to SPLIT": "SPLIT 是你的 Deadlock 练习助手。本交互式指南将介绍主要工具。指南期间不会保存或加载任何位置。",
+    "Your presets": "在这里整理练习位置。共有四组预设，每组有八个独立存档槽。你可以重命名或切换预设。",
+    "Save State slots": "每张卡片代表一个已保存的位置。保存当前位置，再加载即可返回。存档槽可以设置名称、颜色和截图。",
+    "Slot actions": "打开存档槽的三点菜单，可重命名、清空、复制位置或设置颜色。试试 Mina 示例中高亮的菜单，再选择一种颜色。",
+    "Undo and redo": "使用这些按钮撤销或重做受支持的存档更改。对应快捷键显示在按钮旁边。",
+    "Favorites": "收藏模式提供独立于四组预设的八个共享存档槽。可在这里或通过快捷键切换。",
+    "Settings": "在这里自定义 SPLIT。接下来将介绍主要设置页面。",
+    "General settings": "调整桌面行为、外观、启动音效及其他偏好。",
+    "Quick access": "Borderless 版本可以启用快速访问并设置位置，方便在游戏中管理存档槽。",
+    "Discord rich presence": "选择在 Hideout、Explore NYC、匹配中及比赛时向 Discord 展示的信息，并自定义图片、文字和活动详情。",
+    "Keyboard shortcuts": "自定义保存、加载、切换预设、收藏及撤销重做的快捷键。",
+    "In-game notifications": "设置游戏内通知的位置、持续时间以及是否使用存档槽颜色。",
+    "Diagnostics": "日常无需使用此页面。如果功能出现问题，请检查状态指示器并点击信息图标了解详情。",
+    "You're ready!": "你可以随时在 设置 > 关于 中重新打开指南。祝你练习愉快！"
+  }
+};
+export function tourDescription(englishTitle: string, original: string, language: Language): string {
+  return tourDescriptions[language]?.[englishTitle] ?? original;
+}
