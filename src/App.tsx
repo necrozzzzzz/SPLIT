@@ -4300,7 +4300,7 @@ function App() {
       ? {
           tone: "warning" as const,
           title: "Deadlock process",
-          description: "Deadlock is not currently running.",
+          description: runtimeUiText("Deadlock is not currently running.", language),
         }
       : null,
     status.deadlockRunning &&
@@ -6594,8 +6594,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Start SPLIT automatically when
-                    you sign in to Windows.
+                    {runtimeUiText("Start SPLIT automatically when you sign in to Windows.", language)}
                   </span>
                 </div>
 
@@ -6615,9 +6614,9 @@ function App() {
                   }
                 >
                   {autostartSaving
-                    ? "Saving…"
+                    ? runtimeUiText("Saving…", language)
                     : autostartLoading
-                      ? "Checking…"
+                      ? runtimeUiText("Checking…", language)
                       : autostartEnabled
                         ? uiText("On", language)
                         : uiText("Off", language)}
@@ -6632,8 +6631,8 @@ function App() {
 
                   <span>
                     {autostartEnabled
-                      ? "Keep SPLIT hidden in the system tray when it starts with Windows."
-                      : "Enable Launch with Windows to use this option."}
+                      ? runtimeUiText("Keep SPLIT hidden in the system tray when it starts with Windows.", language)
+                      : runtimeUiText("Enable Launch with Windows to use this option.", language)}
                   </span>
                 </div>
 
@@ -6656,9 +6655,9 @@ function App() {
                   }
                 >
                   {startMinimizedSaving
-                    ? "Saving…"
+                    ? runtimeUiText("Saving…", language)
                     : startMinimizedLoading
-                      ? "Checking…"
+                      ? runtimeUiText("Checking…", language)
                       : startMinimized
                         ? uiText("On", language)
                         : uiText("Off", language)}
@@ -6672,8 +6671,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Choose what happens when you close
-                    the SPLIT window.
+                    {runtimeUiText("Choose what happens when you close the SPLIT window.", language)}
                   </span>
                 </div>
 
@@ -6723,8 +6721,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Restore the default window size
-                    and center SPLIT on the screen.
+                    {runtimeUiText("Restore the default window size and center SPLIT on the screen.", language)}
                   </span>
                 </div>
 
@@ -6737,8 +6734,8 @@ function App() {
                   }
                 >
                   {resettingWindow
-                    ? "Resetting…"
-                    : "Reset"}
+                    ? runtimeUiText("Resetting…", language)
+                    : runtimeUiText("Reset", language)}
                 </button>
               </div>
 
@@ -7420,11 +7417,7 @@ function App() {
                   </li>
 
                   <li>
-                    Check that the
-                    {" "}
-                    <code>game\citadel</code>
-                    {" "}
-                    folder still exists.
+                    {runtimeUiText("Check that the game\\citadel folder still exists.", language)}
                   </li>
 
                   <li>
