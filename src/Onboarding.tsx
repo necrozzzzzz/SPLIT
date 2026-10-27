@@ -6,6 +6,7 @@ const KEY = "split.onboarding.v2.completed";
 type Section = "general" | "discord" | "hotkeys" | "notifications" | "diagnostics" | "about";
 type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section };
 const steps: Step[] = [
+  { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
   { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots" },
   { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
@@ -13,11 +14,11 @@ const steps: Step[] = [
   { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
   { title: "Settings", description: "This is where you customize SPLIT. We'll walk through the main settings sections next.", target: ".sidebar-nav button:nth-child(3)", view: "settings", section: "general" },
   { title: "General settings", description: "Customize desktop behavior, appearance, startup sound, and other preferences here.", target: ".general-settings-section", view: "settings", section: "general" },
-  ...(isBorderlessEdition ? [{ title: "Quick Access", description: "In the Borderless edition, enable the Quick Access overlay and configure its position here. It lets you work with slots while in Deadlock.", target: ".general-settings-section", view: "settings" as const, section: "general" as const }] : []),
+  ...(isBorderlessEdition ? [{ title: "Quick Access", description: "In the Borderless edition, enable the Quick Access overlay and configure its position here. It lets you work with slots while in Deadlock.", target: ".quick-access-settings-group", view: "settings" as const, section: "general" as const }] : []),
   { title: "Discord Rich Presence", description: "Choose what Discord displays for your Hideout, Explore NYC, matchmaking, and matches. Customize hero images, text, and activity details.", target: ".drp-settings-shell", view: "settings", section: "discord" },
   { title: "Keyboard shortcuts", description: "Customize shortcuts for saving and loading slots, switching presets, favorites, and Undo / Redo.", target: ".settings-view", view: "settings", section: "hotkeys" },
   ...(isBorderlessEdition ? [{ title: "In-game notifications", description: "Choose where in-game notifications appear, how long they remain visible, and whether they use slot colors.", target: ".settings-view", view: "settings" as const, section: "notifications" as const }] : []),
-  { title: "Diagnostics", description: "Check Deadlock detection and other technical information here if SPLIT isn't behaving as expected.", target: ".settings-view", view: "settings", section: "diagnostics" },
+  { title: "Diagnostics", description: "You don't need this section for everyday use. If something stops working, check these status indicators to identify the problem. Select the info icons on individual cards to learn what each one means.", target: ".settings-view", view: "settings", section: "diagnostics" },
   { title: "You're ready!", description: "You can reopen this guide at any time from Settings > About. Have fun practicing!", target: ".about-settings-section", view: "settings", section: "about" },
 ];
 
@@ -35,7 +36,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
     let frame = 0;
     let attempts = 0;
     const update = () => {
-      const el = document.querySelector<HTMLElement>(step.target);
+      const el = step.target ? document.querySelector<HTMLElement>(step.target) : null;
       if (el) {
         if (attempts === 0) el.scrollIntoView({ block: "nearest", behavior: "instant" });
         const r = el.getBoundingClientRect();
@@ -59,7 +60,8 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const w = window.innerWidth, h = window.innerHeight;
   const tipWidth = Math.min(370, w - 32);
   const tipLeft = rect ? Math.max(16, Math.min(w - tipWidth - 16, rect.left)) : Math.max(16, (w - tipWidth) / 2);
-  const tipTop = rect ? (rect.bottom + 245 < h ? rect.bottom + 18 : rect.top > 260 ? rect.top - 242 : Math.max(16, h - 255)) : Math.max(16, (h - 250) / 2);
+  const estimatedHeight = 270;
+  const tipTop = Math.max(16, Math.min(h - estimatedHeight - 16, rect ? (rect.bottom + estimatedHeight + 18 < h ? rect.bottom + 18 : rect.top > estimatedHeight + 30 ? rect.top - estimatedHeight - 18 : h - estimatedHeight - 16) : (h - estimatedHeight) / 2));
   return (
     <div className="tour-root" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       {rect ? <>
