@@ -3065,6 +3065,8 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Quick Access": "Quick Access",
+    "Version": "Version",
     "Load Slot": "Load Slot",
     "Save Slot": "Save Slot",
     " is already assigned to ": " is already assigned to ",
@@ -3236,6 +3238,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Quick Access": "Accès rapide",
+    "Version": "Version",
     "Load Slot": "Charger l’emplacement",
     "Save Slot": "Enregistrer l’emplacement",
     " is already assigned to ": " est déjà attribué à ",
@@ -3407,6 +3411,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Quick Access": "Acceso rápido",
+    "Version": "Versión",
     "Load Slot": "Cargar espacio",
     "Save Slot": "Guardar espacio",
     " is already assigned to ": " ya está asignado a ",
@@ -3578,6 +3584,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Quick Access": "Schnellzugriff",
+    "Version": "Version",
     "Load Slot": "Platz laden",
     "Save Slot": "Platz speichern",
     " is already assigned to ": " ist bereits zugewiesen an ",
@@ -3749,6 +3757,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Quick Access": "Acesso rápido",
+    "Version": "Versão",
     "Load Slot": "Carregar espaço",
     "Save Slot": "Salvar espaço",
     " is already assigned to ": " já está atribuído a ",
@@ -3920,6 +3930,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Quick Access": "Быстрый доступ",
+    "Version": "Версия",
     "Load Slot": "Загрузить слот",
     "Save Slot": "Сохранить слот",
     " is already assigned to ": " уже назначено для ",
@@ -4091,6 +4103,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Quick Access": "クイックアクセス",
+    "Version": "バージョン",
     "Load Slot": "スロットを読み込む",
     "Save Slot": "スロットを保存",
     " is already assigned to ": " はすでに次に割り当てられています: ",
@@ -4262,6 +4276,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Quick Access": "快速访问",
+    "Version": "版本",
     "Load Slot": "加载槽位",
     "Save Slot": "保存槽位",
     " is already assigned to ": " 已分配给 ",

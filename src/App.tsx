@@ -3688,7 +3688,7 @@ function App() {
         setHotkeySettingsSaving(false);
       }
     },
-    [hotkeySettings],
+    [hotkeySettings, language],
   );
 
   useEffect(() => {
