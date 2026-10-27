@@ -156,8 +156,9 @@ fn copy_slot_to_favorite(
 }
 
 #[tauri::command]
-fn set_notification_language(language: String) {
+fn set_notification_language(app: tauri::AppHandle, language: String) {
     notifications::set_language(&language);
+    tray::set_language(&app, &language);
 }
 
 #[tauri::command]
