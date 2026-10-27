@@ -5,8 +5,6 @@ pub(crate) mod console_phase;
 pub(crate) mod deadlock_state;
 pub(crate) mod district;
 mod history;
-mod ghost_playback;
-mod bot_replay_diagnostic;
 mod hotkeys;
 mod interfaces;
 pub(crate) mod match_safety;
@@ -15,17 +13,14 @@ mod paths;
 mod pawn;
 mod process;
 mod process_monitor;
-mod route_recorder;
 mod schema;
 mod screenshot;
 mod slots;
 mod watcher;
 pub use history::HistoryState;
-pub use ghost_playback::GhostPlaybackStatus;
 pub use hotkeys::HotkeySettings;
 pub use parser::PositionSnapshot;
 pub use paths::{LaunchFolderState, StartupSoundSettings};
-pub use route_recorder::RouteRecordingStatus;
 pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
 
 pub(crate) fn trace_startup(reset: bool, message: &str) {
@@ -1682,8 +1677,6 @@ pub fn start_process_monitor(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn shutdown_background_services() {
-    ghost_playback::shutdown();
-    route_recorder::shutdown();
     if let Err(error) = process_monitor::stop() {
         eprintln!("[SPLIT] Could not stop process monitor cleanly: {error}");
     }
@@ -1693,54 +1686,6 @@ pub fn shutdown_background_services() {
     if let Err(error) = watcher::stop() {
         eprintln!("[SPLIT] Could not stop console watcher cleanly: {error}");
     }
-}
-
-pub fn list_bot_replay_candidates() -> Result<Vec<u32>, String> {
-    bot_replay_diagnostic::list_bot_replay_candidates()
-}
-
-pub fn record_bot_replay_diagnostic(
-    entity_index: u32,
-    duration_ms: u64,
-    output_path: String,
-) -> Result<String, String> {
-    bot_replay_diagnostic::record_bot_replay_diagnostic(entity_index, duration_ms, output_path)
-}
-
-pub fn start_route_recording() -> Result<RouteRecordingStatus, String> {
-    route_recorder::start_route_recording()
-}
-
-pub fn start_bot_route_recording(entity_index: u32) -> Result<RouteRecordingStatus, String> {
-    route_recorder::start_bot_route_recording(entity_index)
-}
-
-pub fn stop_route_recording() -> Result<RouteRecordingStatus, String> {
-    route_recorder::stop_route_recording()
-}
-
-pub fn get_route_recording_status() -> Result<RouteRecordingStatus, String> {
-    route_recorder::get_route_recording_status()
-}
-
-pub fn save_route_recording_json(path: String) -> Result<(), String> {
-    route_recorder::save_route_recording_json(path)
-}
-
-pub fn load_ghost_route_json(path: String) -> Result<GhostPlaybackStatus, String> {
-    ghost_playback::load_route_json(path)
-}
-
-pub fn start_ghost_playback(looping: bool) -> Result<GhostPlaybackStatus, String> {
-    ghost_playback::start(looping)
-}
-
-pub fn stop_ghost_playback() -> Result<GhostPlaybackStatus, String> {
-    ghost_playback::stop()
-}
-
-pub fn get_ghost_playback_status() -> Result<GhostPlaybackStatus, String> {
-    ghost_playback::status()
 }
 
 pub fn cleanup_transport_on_true_quit() {
