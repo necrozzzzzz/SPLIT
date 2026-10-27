@@ -50,6 +50,7 @@ import {
 } from "./startupSound";
 
 import DiscordPresenceSettings from "./DiscordPresenceSettings";
+import Onboarding, { isOnboardingCompleted } from "./Onboarding";
 
 type DeadlockStatus = {
   deadlockRunning: boolean;
@@ -632,6 +633,7 @@ function StatusDot({
 }
 
 function App() {
+  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingCompleted());
   const [activeView, setActiveView] =
     useState<AppView>("slots");
 
@@ -7942,6 +7944,7 @@ function App() {
           <p className="label">ABOUT</p>
           <h2 id="about-settings-title">SPLIT</h2>
         </div>
+        <button type="button" className="preset-button" onClick={() => setShowOnboarding(true)}>Replay getting started guide</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
             <span>Version</span>
@@ -7953,6 +7956,7 @@ function App() {
       </div>
       )}
 
+      {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
       {error && (
         <div className="error-box">
           Backend error: {error}
