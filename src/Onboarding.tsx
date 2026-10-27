@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isBorderlessEdition } from "./edition";
+import { getLanguage } from "./i18n";
 import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
@@ -21,6 +22,25 @@ const steps: Step[] = [
   { title: "Diagnostics", description: "You don't need this section for everyday use. If something stops working, check these status indicators to identify the problem. Select the info icons on individual cards to learn what each one means.", target: ".settings-view", view: "settings", section: "diagnostics" },
   { title: "You're ready!", description: "You can reopen this guide at any time from Settings > About. Have fun practicing!", target: ".about-settings-section", view: "settings", section: "about" },
 ];
+
+
+// Tour text is keyed by its original title so targeting and demo behavior remain unchanged.
+const frenchTour: Record<string, { title: string; description: string; tips?: string[] }> = {
+  "Welcome to SPLIT": { title: "Bienvenue dans SPLIT", description: "Votre compagnon d’entraînement sur Deadlock. Cette visite interactive vous présente les outils essentiels. Aucune position ne sera enregistrée ou chargée pendant le tutoriel." },
+  "Your presets": { title: "Vos presets", description: "Organisez ici vos positions d’entraînement. Vous disposez de quatre presets de huit emplacements indépendants. Vous pouvez les renommer et passer de l’un à l’autre." },
+  "Save State slots": { title: "Emplacements de sauvegarde", description: "Chaque carte représente une position sauvegardée. Enregistrez votre position actuelle, puis rechargez-la pour y revenir dans Deadlock. Les emplacements peuvent avoir un nom, une couleur et une capture d’écran.", tips: ["Faites un clic droit sur l’aperçu de Mina pour tester l’affichage de la capture.", "Cliquez sur le nom de l’emplacement d’exemple pour essayer de le renommer."] },
+  "Slot actions": { title: "Actions des emplacements", description: "Ouvrez le menu à trois points d’un emplacement pour le renommer, le vider, copier une position ou lui attribuer une couleur. Cliquez sur le bouton mis en évidence sur l’exemple de Mina, puis choisissez une couleur pour tester le mode Tint." },
+  "Undo and redo": { title: "Annuler et rétablir", description: "Ces boutons permettent d’annuler ou de rétablir certaines modifications de vos positions sauvegardées. Leurs raccourcis clavier sont indiqués à côté." },
+  "Favorites": { title: "Favoris", description: "Le mode Favoris propose une banque distincte de huit emplacements, indépendante de vos quatre presets. Vous pouvez y accéder ici ou avec un raccourci clavier." },
+  "Settings": { title: "Paramètres", description: "Personnalisez SPLIT ici. Nous allons parcourir les principales sections des paramètres." },
+  "General settings": { title: "Paramètres généraux", description: "Personnalisez le comportement de l’application, son apparence, le son de démarrage et les autres préférences." },
+  "Quick access": { title: "Accès rapide", description: "Dans l’édition Borderless, activez l’interface d’accès rapide et réglez sa position ici. Elle permet de gérer les emplacements pendant que vous jouez à Deadlock." },
+  "Discord rich presence": { title: "Présence Discord", description: "Choisissez les informations affichées sur Discord dans le Hideout, Explore NYC, pendant la recherche de partie et en match. Personnalisez les portraits, les textes et les détails d’activité." },
+  "Keyboard shortcuts": { title: "Raccourcis clavier", description: "Personnalisez les raccourcis pour enregistrer et charger les emplacements, changer de preset, accéder aux favoris et annuler ou rétablir." },
+  "In-game notifications": { title: "Notifications en jeu", description: "Choisissez où les notifications apparaissent en jeu, leur durée d’affichage et si elles utilisent les couleurs des emplacements." },
+  "Diagnostics": { title: "Diagnostics", description: "Cette section n’est pas nécessaire au quotidien. Si une fonction ne marche plus, consultez les indicateurs d’état pour identifier le problème. Cliquez sur les icônes d’information pour obtenir des explications." },
+  "You're ready!": { title: "Vous êtes prêt !", description: "Vous pourrez rouvrir ce tutoriel à tout moment depuis Paramètres > À propos. Bon entraînement !" },
+};
 
 export function isOnboardingCompleted(): boolean {
   try { return window.localStorage.getItem(KEY) === "true"; } catch { return false; }
@@ -50,6 +70,10 @@ export default function Onboarding({ onClose, navigate }: Props) {
     return () => observer.disconnect();
   }, [index]);
   const step = steps[index];
+  const [language, setTourLanguage] = useState(getLanguage);
+  useEffect(() => { const update = () => setTourLanguage(getLanguage()); window.addEventListener("split-language-change", update); return () => window.removeEventListener("split-language-change", update); }, []);
+  const translated = language === "fr" ? frenchTour[step.title] : undefined;
+  const label = (en: string, fr: string) => language === "fr" ? fr : en;
   useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName("Slot 1"); setDemoDraft("Slot 1"); setDemoRenaming(false); }, [index]);
   useEffect(() => {
     if (!demoOpen) return;
@@ -209,13 +233,13 @@ export default function Onboarding({ onClose, navigate }: Props) {
         </section>
       </div>}
       <section ref={popoverRef} className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
-        <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>Skip guide</button></div>
+        <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>{label("Skip guide", "Passer le tutoriel")}</button></div>
         <div className="tour-progress">{steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}</div>
-        <p className="tour-counter">STEP {index + 1} OF {steps.length}</p>
-        <h2 id="tour-title">{step.title}</h2>
-        <p className="tour-description">{step.description}</p>
-        {step.tips && <div className="tour-tips">{step.tips.map((tip, i) => <p key={i}><span className="tour-tip-label">TIP</span>{tip}</p>)}</div>}
-        <div className="tour-actions"><span>{index + 1} / {steps.length}</span><div>{index > 0 && <button type="button" className="tour-back" onClick={() => setIndex(i => i - 1)}>Back</button>}<button type="button" className="tour-next" onClick={() => index === steps.length - 1 ? finish() : setIndex(i => i + 1)}>{index === steps.length - 1 ? "Finish" : "Next"}</button></div></div>
+        <p className="tour-counter">{label("STEP", "ÉTAPE")} {index + 1} {label("OF", "SUR")} {steps.length}</p>
+        <h2 id="tour-title">{translated?.title ?? step.title}</h2>
+        <p className="tour-description">{translated?.description ?? step.description}</p>
+        {step.tips && <div className="tour-tips">{(translated?.tips ?? step.tips).map((tip, i) => <p key={i}><span className="tour-tip-label">{label("TIP", "ASTUCE")}</span>{tip}</p>)}</div>}
+        <div className="tour-actions"><span>{index + 1} / {steps.length}</span><div>{index > 0 && <button type="button" className="tour-back" onClick={() => setIndex(i => i - 1)}>{label("Back", "Retour")}</button>}<button type="button" className="tour-next" onClick={() => index === steps.length - 1 ? finish() : setIndex(i => i + 1)}>{index === steps.length - 1 ? label("Finish", "Terminer") : label("Next", "Suivant")}</button></div></div>
       </section>
     </div>
   );
