@@ -2770,6 +2770,8 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT captures this key combination before Deadlock receives it.",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.",
     "The current preset will be replaced by the imported preset.": "The current preset will be replaced by the imported preset.",
     "All savestates in this preset will be cleared.": "All savestates in this preset will be cleared.",
     "8 savestate slots": "8 savestate slots",
@@ -2903,6 +2905,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT intercepte cette combinaison de touches avant Deadlock.",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Si ces touches sont également utilisées dans le jeu, leurs actions peuvent ne pas fonctionner lorsque le raccourci est activé.",
     "The current preset will be replaced by the imported preset.": "Le preset actuel sera remplacé par le preset importé.",
     "All savestates in this preset will be cleared.": "Toutes les sauvegardes de ce preset seront effacées.",
     "8 savestate slots": "8 emplacements de sauvegarde",
@@ -3036,6 +3040,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT intercepta esta combinación de teclas antes que Deadlock.",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Si estas teclas también se usan en el juego, sus acciones podrían no funcionar al activar el atajo.",
     "The current preset will be replaced by the imported preset.": "El ajuste actual será reemplazado por el importado.",
     "All savestates in this preset will be cleared.": "Se borrarán todas las partidas guardadas de este ajuste.",
     "8 savestate slots": "8 espacios de guardado",
@@ -3169,6 +3175,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT fängt diese Tastenkombination ab, bevor Deadlock sie erhält.",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Wenn diese Tasten auch im Spiel verwendet werden, funktionieren die entsprechenden Aktionen beim Auslösen möglicherweise nicht.",
     "The current preset will be replaced by the imported preset.": "Die aktuelle Voreinstellung wird durch die importierte ersetzt.",
     "All savestates in this preset will be cleared.": "Alle Spielstände dieser Voreinstellung werden gelöscht.",
     "8 savestate slots": "8 Speicherplätze",
@@ -3302,6 +3310,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "SPLIT captures this key combination before Deadlock receives it.": "O SPLIT captura esta combinação de teclas antes do Deadlock.",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Se essas teclas também forem usadas no jogo, as ações podem não funcionar ao ativar o atalho.",
     "The current preset will be replaced by the imported preset.": "A predefinição atual será substituída pela importada.",
     "All savestates in this preset will be cleared.": "Todos os salvamentos desta predefinição serão apagados.",
     "8 savestate slots": "8 espaços de salvamento",
@@ -3435,6 +3445,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT перехватывает это сочетание клавиш до Deadlock.",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Если эти клавиши используются и в игре, соответствующие действия могут не сработать при нажатии сочетания.",
     "The current preset will be replaced by the imported preset.": "Текущий пресет будет заменён импортированным.",
     "All savestates in this preset will be cleared.": "Все сохранения этого пресета будут удалены.",
     "8 savestate slots": "8 слотов сохранения",
@@ -3568,6 +3580,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT は Deadlock より先にこのキー操作を受け取ります。",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "同じキーをゲーム内でも使用している場合、ショートカットを押した際にゲーム側の操作が反応しないことがあります。",
     "The current preset will be replaced by the imported preset.": "現在のプリセットはインポートしたプリセットに置き換わります。",
     "All savestates in this preset will be cleared.": "このプリセットの保存データはすべて消去されます。",
     "8 savestate slots": "保存スロット8個",
@@ -3701,6 +3715,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "SPLIT captures this key combination before Deadlock receives it.": "SPLIT 会在 Deadlock 接收按键前拦截此组合键。",
+    "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "如果游戏内也使用这些按键，触发快捷键时对应的游戏操作可能无法生效。",
     "The current preset will be replaced by the imported preset.": "当前预设将被导入的预设替换。",
     "All savestates in this preset will be cleared.": "此预设中的所有存档将被清空。",
     "8 savestate slots": "8 个存档槽位",
