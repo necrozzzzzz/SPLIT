@@ -4843,8 +4843,7 @@ function App() {
                 </h3>
 
                 <p className="confirmation-description">
-                  The current preset will be replaced by
-                  the imported preset.
+                  {runtimeUiText("The current preset will be replaced by the imported preset.", language)}
                 </p>
 
                 <div className="preset-import-comparison">
@@ -4926,8 +4925,7 @@ function App() {
                 </h3>
 
                 <p className="confirmation-description">
-                  All savestates in this preset will be
-                  cleared.
+                  {runtimeUiText("All savestates in this preset will be cleared.", language)}
                 </p>
 
                 <div className="clear-preset-target">
@@ -4938,7 +4936,7 @@ function App() {
                   </strong>
 
                   <small>
-                    8 savestate slots
+                    {runtimeUiText("8 savestate slots", language)}
                   </small>
                 </div>
 
