@@ -1880,6 +1880,7 @@ export const tourTips: Partial<Record<Language, string[]>> = {
 
 export const quickAccessLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "Color": "Color",
     "Overwrite": "Overwrite",
     "Confirm clear": "Confirm clear",
     "Clear": "Clear",
@@ -1899,6 +1900,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Screenshot for"
   },
   "fr": {
+    "Color": "Couleur",
     "Overwrite": "Écraser",
     "Confirm clear": "Confirmer l’effacement",
     "Clear": "Effacer",
@@ -1918,6 +1920,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Capture de"
   },
   "es": {
+    "Color": "Color",
     "Overwrite": "Sobrescribir",
     "Confirm clear": "Confirmar borrado",
     "Clear": "Borrar",
@@ -1937,6 +1940,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Captura de"
   },
   "de": {
+    "Color": "Farbe",
     "Overwrite": "Überschreiben",
     "Confirm clear": "Löschen bestätigen",
     "Clear": "Löschen",
@@ -1956,6 +1960,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Screenshot von"
   },
   "pt": {
+    "Color": "Cor",
     "Overwrite": "Sobrescrever",
     "Confirm clear": "Confirmar exclusão",
     "Clear": "Limpar",
@@ -1975,6 +1980,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Captura de"
   },
   "ru": {
+    "Color": "Цвет",
     "Overwrite": "Перезаписать",
     "Confirm clear": "Подтвердить очистку",
     "Clear": "Очистить",
@@ -1994,6 +2000,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Скриншот"
   },
   "ja": {
+    "Color": "色",
     "Overwrite": "上書き",
     "Confirm clear": "消去を確認",
     "Clear": "消去",
@@ -2013,6 +2020,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "スクリーンショット："
   },
   "zh": {
+    "Color": "颜色",
     "Overwrite": "覆盖",
     "Confirm clear": "确认清空",
     "Clear": "清空",
