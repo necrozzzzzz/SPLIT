@@ -50,7 +50,30 @@ export default function Onboarding({ onClose, navigate }: Props) {
       const el = step.target ? document.querySelector<HTMLElement>(step.target) : null;
       if (el) {
         if (attempts === 0) el.scrollIntoView({ block: "nearest", behavior: "instant" });
-        const r = el.getBoundingClientRect();
+        let r = el.getBoundingClientRect();
+        // DRP is a long settings page: spotlight its full content area,
+        // not just the short header/preview panel.
+        if (step.section === "discord") {
+          const container = document.querySelector<HTMLElement>(".settings-view");
+          if (container) r = container.getBoundingClientRect();
+        }
+        // Diagnostics starts with the separate Operational health summary,
+        // above the diagnostic cards. Include both in the spotlight.
+        if (step.section === "diagnostics") {
+          const summary = document.querySelector<HTMLElement>(".health-summary");
+          if (summary) {
+            const top = summary.getBoundingClientRect();
+            r = {
+              ...r,
+              top: Math.min(top.top, r.top),
+              left: Math.min(top.left, r.left),
+              right: Math.max(top.right, r.right),
+              bottom: Math.max(top.bottom, r.bottom),
+              width: Math.max(top.right, r.right) - Math.min(top.left, r.left),
+              height: Math.max(top.bottom, r.bottom) - Math.min(top.top, r.top),
+            } as DOMRect;
+          }
+        }
         if (r.width > 0 && r.height > 0) {
           const p = 7;
           setRect({ top: Math.max(0, r.top - p), left: Math.max(0, r.left - p), right: Math.min(innerWidth, r.right + p), bottom: Math.min(innerHeight, r.bottom + p), width: r.width + p * 2, height: r.height + p * 2 });
