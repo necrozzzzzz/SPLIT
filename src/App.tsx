@@ -5486,9 +5486,7 @@ function App() {
                 </strong>
 
                 <span>
-                  SPLIT is ready. Hotkeys and
-                  teleporting will become available
-                  when Deadlock starts.
+                  {uiText("SPLIT is ready. Hotkeys and teleporting will become available when Deadlock starts.", language)}
                 </span>
               </div>
             </div>
