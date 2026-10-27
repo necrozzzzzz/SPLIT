@@ -2770,6 +2770,12 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Renaming…": "Renaming…",
+    "Exporting…": "Exporting…",
+    "Export preset": "Export preset",
+    "Importing…": "Importing…",
+    "Clearing…": "Clearing…",
+    "Slot": "Slot",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT captures this key combination before Deadlock receives it.",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.",
     "The current preset will be replaced by the imported preset.": "The current preset will be replaced by the imported preset.",
@@ -2905,6 +2911,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Renaming…": "Renommage…",
+    "Exporting…": "Exportation…",
+    "Export preset": "Exporter le preset",
+    "Importing…": "Importation…",
+    "Clearing…": "Effacement…",
+    "Slot": "Emplacement",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT intercepte cette combinaison de touches avant Deadlock.",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Si ces touches sont également utilisées dans le jeu, leurs actions peuvent ne pas fonctionner lorsque le raccourci est activé.",
     "The current preset will be replaced by the imported preset.": "Le preset actuel sera remplacé par le preset importé.",
@@ -3040,6 +3052,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Renaming…": "Renombrando…",
+    "Exporting…": "Exportando…",
+    "Export preset": "Exportar ajuste",
+    "Importing…": "Importando…",
+    "Clearing…": "Borrando…",
+    "Slot": "Espacio",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT intercepta esta combinación de teclas antes que Deadlock.",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Si estas teclas también se usan en el juego, sus acciones podrían no funcionar al activar el atajo.",
     "The current preset will be replaced by the imported preset.": "El ajuste actual será reemplazado por el importado.",
@@ -3175,6 +3193,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Renaming…": "Umbenennen…",
+    "Exporting…": "Exportieren…",
+    "Export preset": "Voreinstellung exportieren",
+    "Importing…": "Importieren…",
+    "Clearing…": "Löschen…",
+    "Slot": "Platz",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT fängt diese Tastenkombination ab, bevor Deadlock sie erhält.",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Wenn diese Tasten auch im Spiel verwendet werden, funktionieren die entsprechenden Aktionen beim Auslösen möglicherweise nicht.",
     "The current preset will be replaced by the imported preset.": "Die aktuelle Voreinstellung wird durch die importierte ersetzt.",
@@ -3310,6 +3334,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Renaming…": "Renomeando…",
+    "Exporting…": "Exportando…",
+    "Export preset": "Exportar predefinição",
+    "Importing…": "Importando…",
+    "Clearing…": "Apagando…",
+    "Slot": "Espaço",
     "SPLIT captures this key combination before Deadlock receives it.": "O SPLIT captura esta combinação de teclas antes do Deadlock.",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Se essas teclas também forem usadas no jogo, as ações podem não funcionar ao ativar o atalho.",
     "The current preset will be replaced by the imported preset.": "A predefinição atual será substituída pela importada.",
@@ -3445,6 +3475,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Renaming…": "Переименование…",
+    "Exporting…": "Экспорт…",
+    "Export preset": "Экспортировать пресет",
+    "Importing…": "Импорт…",
+    "Clearing…": "Очистка…",
+    "Slot": "Слот",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT перехватывает это сочетание клавиш до Deadlock.",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "Если эти клавиши используются и в игре, соответствующие действия могут не сработать при нажатии сочетания.",
     "The current preset will be replaced by the imported preset.": "Текущий пресет будет заменён импортированным.",
@@ -3580,6 +3616,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Renaming…": "名前を変更中…",
+    "Exporting…": "エクスポート中…",
+    "Export preset": "プリセットをエクスポート",
+    "Importing…": "インポート中…",
+    "Clearing…": "消去中…",
+    "Slot": "スロット",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT は Deadlock より先にこのキー操作を受け取ります。",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "同じキーをゲーム内でも使用している場合、ショートカットを押した際にゲーム側の操作が反応しないことがあります。",
     "The current preset will be replaced by the imported preset.": "現在のプリセットはインポートしたプリセットに置き換わります。",
@@ -3715,6 +3757,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Renaming…": "正在重命名…",
+    "Exporting…": "正在导出…",
+    "Export preset": "导出预设",
+    "Importing…": "正在导入…",
+    "Clearing…": "正在清空…",
+    "Slot": "槽位",
     "SPLIT captures this key combination before Deadlock receives it.": "SPLIT 会在 Deadlock 接收按键前拦截此组合键。",
     "If these keys are also used in-game, those actions may not work while the shortcut is being triggered.": "如果游戏内也使用这些按键，触发快捷键时对应的游戏操作可能无法生效。",
     "The current preset will be replaced by the imported preset.": "当前预设将被导入的预设替换。",

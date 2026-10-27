@@ -4794,9 +4794,7 @@ function App() {
                 type="button"
                 disabled={favoriteCopyWorking}
                 onClick={cancelFavoriteOverwrite}
-              >
-                Back
-              </button>
+              >{runtimeUiText("Back", language)}</button>
 
               <button
                 className="preset-button preset-clear-button"
@@ -5070,7 +5068,7 @@ function App() {
                 type="submit"
                 disabled={renamingPreset}
               >
-                {renamingPreset ? "Renaming…" : "Rename"}
+                {renamingPreset ? runtimeUiText("Renaming…", language) : uiText("Rename", language)}
               </button>
             </div>
           </form>
@@ -5524,7 +5522,7 @@ function App() {
                       {presetNames[
                         preset - 1
                       ] ??
-                        `Preset ${preset}`}
+                        `${uiText("Preset", language)} ${preset}`}
                     </button>
 
                     {isActive && (
@@ -5583,8 +5581,7 @@ function App() {
                             }
                           >
                             {renamingPreset
-                              ? "Renaming…"
-                              : "Rename preset"}
+                              ? runtimeUiText("Renaming…", language) : uiText("Rename preset", language)}
                           </button>
 
                           <button
@@ -5605,8 +5602,7 @@ function App() {
                             }
                           >
                             {exportingPreset
-                              ? "Exporting…"
-                              : "Export preset"}
+                              ? runtimeUiText("Exporting…", language) : runtimeUiText("Export preset", language)}
                           </button>
 
                           <button
@@ -5627,8 +5623,7 @@ function App() {
                             }
                           >
                             {importingPreset
-                              ? "Importing…"
-                              : "Import preset"}
+                              ? runtimeUiText("Importing…", language) : uiText("Import preset", language)}
                           </button>
 
                           <button
@@ -5649,8 +5644,7 @@ function App() {
                             }
                           >
                             {clearingPreset
-                              ? "Clearing…"
-                              : "Clear preset"}
+                              ? runtimeUiText("Clearing…", language) : uiText("Clear preset", language)}
                           </button>
                         </div>
                       </details>
@@ -5676,7 +5670,7 @@ function App() {
           void toggleFavorites()
         }
       >
-        Favorites ·{" "}
+        {uiText("Favorites", language)} ·{" "}
         {formatHotkey(
           hotkeySettings.favoriteMode,
         )}
@@ -5740,8 +5734,7 @@ function App() {
               metadata?.name?.trim() ||
               (
                 favoriteMode
-                  ? `Favorite ${slot}`
-                  : `Slot ${slot}`
+                  ? `${uiText("Favorite", language)} ${slot}` : `${runtimeUiText("Slot", language)} ${slot}`
               );
 
 
@@ -5804,9 +5797,7 @@ function App() {
                   className={`slot-preview ${
                     position ? "filled" : "empty"
                   }`}
-                  title={
-                    position && metadata?.screenshot
-                      ? "Right click to view screenshot"
+                  title={position && metadata?.screenshot ? uiText("Right click to view screenshot", language)
                       : undefined
                   }
                   onContextMenu={(event) => {

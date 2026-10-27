@@ -7888,3 +7888,8 @@ select:hover:not(:disabled) {
 .general-setting-row > div:first-child { min-width: 0; }
 .drp-select-option > span { min-width: 0; }
 .drp-select-option select { max-width: 48%; }
+
+/* Multilingual preset menus and dialog layout */
+.preset-management .preset-button { height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.confirmation-dialog .confirmation-title, .confirmation-dialog .confirmation-description { overflow-wrap: anywhere; }
+.confirmation-actions .preset-button { height: auto; min-height: 32px; white-space: normal; line-height: 1.35; }
