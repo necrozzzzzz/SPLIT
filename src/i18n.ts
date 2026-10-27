@@ -2770,6 +2770,9 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "The complete save will be copied, including position, camera, name, timestamp and color.",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.",
+    "Choose a Favorite slot for": "Choose a Favorite slot for",
     "Choose a Favorite slot for": "Choose a Favorite slot for",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "The complete save will be copied, including position, camera, name, timestamp and color.",
     "Favorite": "Favorite",
@@ -2897,6 +2900,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "La sauvegarde complète sera copiée, avec la position, la caméra, le nom, la date et la couleur.",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Cet emplacement contient déjà un favori. Voulez-vous le remplacer par la sauvegarde sélectionnée ?",
+    "Choose a Favorite slot for": "Choisir un emplacement favori pour",
     "Choose a Favorite slot for": "Choisir un emplacement favori pour",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "La sauvegarde complète sera copiée, avec la position, la caméra, le nom, la date et la couleur.",
     "Favorite": "Favori",
@@ -3024,6 +3030,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "Se copiará toda la partida, incluidos posición, cámara, nombre, fecha y color.",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Este espacio ya contiene un favorito. ¿Quieres reemplazarlo por la partida seleccionada?",
+    "Choose a Favorite slot for": "Elige un espacio favorito para",
     "Choose a Favorite slot for": "Elige un espacio favorito para",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "Se copiará toda la partida, incluidos posición, cámara, nombre, fecha y color.",
     "Favorite": "Favorito",
@@ -3151,6 +3160,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "Der gesamte Spielstand wird kopiert, einschließlich Position, Kamera, Name, Zeitstempel und Farbe.",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Dieser Platz enthält bereits einen Favoriten. Soll er durch den ausgewählten Spielstand ersetzt werden?",
+    "Choose a Favorite slot for": "Favoritenplatz auswählen für",
     "Choose a Favorite slot for": "Favoritenplatz auswählen für",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "Der gesamte Spielstand wird kopiert, einschließlich Position, Kamera, Name, Zeitstempel und Farbe.",
     "Favorite": "Favorit",
@@ -3278,6 +3290,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "O salvamento completo será copiado, incluindo posição, câmera, nome, data e cor.",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Este espaço já contém um favorito. Deseja substituí-lo pelo salvamento selecionado?",
+    "Choose a Favorite slot for": "Escolha um espaço favorito para",
     "Choose a Favorite slot for": "Escolha um espaço favorito para",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "O salvamento completo será copiado, incluindo posição, câmera, nome, data e cor.",
     "Favorite": "Favorito",
@@ -3405,6 +3420,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "Будет скопировано всё сохранение: позиция, камера, имя, время и цвет.",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "Этот слот уже занят. Заменить его выбранным сохранением?",
+    "Choose a Favorite slot for": "Выберите слот избранного для",
     "Choose a Favorite slot for": "Выберите слот избранного для",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "Будет скопировано всё сохранение: позиция, камера, имя, время и цвет.",
     "Favorite": "Избранное",
@@ -3532,6 +3550,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "位置、カメラ、名前、日時、色を含む保存データ全体がコピーされます。",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "このスロットにはお気に入りが保存されています。選択したセーブデータで置き換えますか？",
+    "Choose a Favorite slot for": "お気に入りの保存先を選択：",
     "Choose a Favorite slot for": "お気に入りの保存先を選択：",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "位置、カメラ、名前、日時、色を含む保存データ全体がコピーされます。",
     "Favorite": "お気に入り",
@@ -3659,6 +3680,9 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "The complete save will be copied, including position, camera, name, timestamp and color.": "将复制完整存档，包括位置、摄像机、名称、时间戳和颜色。",
+    "This slot already contains a Favorite. Choose whether to replace it with the selected savestate.": "此槽位已有收藏。是否使用所选存档替换？",
+    "Choose a Favorite slot for": "选择收藏槽位：",
     "Choose a Favorite slot for": "选择收藏槽位：",
     "The complete save will be copied, including position, camera, name, timestamp and color.": "将复制完整存档，包括位置、摄像机、名称、时间戳和颜色。",
     "Favorite": "收藏",
