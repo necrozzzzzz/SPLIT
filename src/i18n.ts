@@ -3065,6 +3065,10 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Load Slot": "Load Slot",
+    "Save Slot": "Save Slot",
+    " is already assigned to ": " is already assigned to ",
+    ".": ".",
     "Could not save startup sound settings: ": "Could not save startup sound settings: ",
     "Could not play the startup sound: ": "Could not play the startup sound: ",
     "Preset name cannot be empty": "Preset name cannot be empty",
@@ -3236,6 +3240,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Load Slot": "Charger l’emplacement",
+    "Save Slot": "Enregistrer l’emplacement",
+    " is already assigned to ": " est déjà attribué à ",
+    ".": ".",
     "Could not save startup sound settings: ": "Impossible d’enregistrer les paramètres du son de démarrage : ",
     "Could not play the startup sound: ": "Impossible de lire le son de démarrage : ",
     "Preset name cannot be empty": "Le nom du preset ne peut pas être vide",
@@ -3407,6 +3415,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Load Slot": "Cargar espacio",
+    "Save Slot": "Guardar espacio",
+    " is already assigned to ": " ya está asignado a ",
+    ".": ".",
     "Could not save startup sound settings: ": "No se pudo guardar la configuración del sonido de inicio: ",
     "Could not play the startup sound: ": "No se pudo reproducir el sonido de inicio: ",
     "Preset name cannot be empty": "El nombre del preajuste no puede estar vacío",
@@ -3578,6 +3590,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Load Slot": "Platz laden",
+    "Save Slot": "Platz speichern",
+    " is already assigned to ": " ist bereits zugewiesen an ",
+    ".": ".",
     "Could not save startup sound settings: ": "Startsound-Einstellungen konnten nicht gespeichert werden: ",
     "Could not play the startup sound: ": "Startsound konnte nicht abgespielt werden: ",
     "Preset name cannot be empty": "Der Preset-Name darf nicht leer sein",
@@ -3749,6 +3765,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Load Slot": "Carregar espaço",
+    "Save Slot": "Salvar espaço",
+    " is already assigned to ": " já está atribuído a ",
+    ".": ".",
     "Could not save startup sound settings: ": "Não foi possível salvar as configurações do som de inicialização: ",
     "Could not play the startup sound: ": "Não foi possível reproduzir o som de inicialização: ",
     "Preset name cannot be empty": "O nome da predefinição não pode estar vazio",
@@ -3920,6 +3940,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Load Slot": "Загрузить слот",
+    "Save Slot": "Сохранить слот",
+    " is already assigned to ": " уже назначено для ",
+    ".": ".",
     "Could not save startup sound settings: ": "Не удалось сохранить настройки звука запуска: ",
     "Could not play the startup sound: ": "Не удалось воспроизвести звук запуска: ",
     "Preset name cannot be empty": "Название пресета не может быть пустым",
@@ -4091,6 +4115,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Load Slot": "スロットを読み込む",
+    "Save Slot": "スロットを保存",
+    " is already assigned to ": " はすでに次に割り当てられています: ",
+    ".": "。",
     "Could not save startup sound settings: ": "起動音の設定を保存できませんでした: ",
     "Could not play the startup sound: ": "起動音を再生できませんでした: ",
     "Preset name cannot be empty": "プリセット名を空にすることはできません",
@@ -4262,6 +4290,10 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Load Slot": "加载槽位",
+    "Save Slot": "保存槽位",
+    " is already assigned to ": " 已分配给 ",
+    ".": "。",
     "Could not save startup sound settings: ": "无法保存启动音效设置：",
     "Could not play the startup sound: ": "无法播放启动音效：",
     "Preset name cannot be empty": "预设名称不能为空",

@@ -403,6 +403,7 @@ function findHotkeyConflictLabel(
   settings: HotkeySettings,
   target: HotkeyTarget,
   candidate: Hotkey,
+  language: Language,
 ): string | null {
   for (let index = 0; index < 8; index += 1) {
     if (
@@ -415,7 +416,7 @@ function findHotkeyConflictLabel(
         candidate,
       )
     ) {
-      return `Load Slot ${index + 1}`;
+      return `${runtimeUiText("Load Slot", language)} ${index + 1}`;
     }
 
     if (
@@ -428,7 +429,7 @@ function findHotkeyConflictLabel(
         candidate,
       )
     ) {
-      return `Save Slot ${index + 1}`;
+      return `${runtimeUiText("Save Slot", language)} ${index + 1}`;
     }
   }
 
@@ -439,7 +440,7 @@ function findHotkeyConflictLabel(
       candidate,
     )
   ) {
-    return "Undo";
+    return runtimeUiText("Undo", language);
   }
 
   if (
@@ -449,7 +450,7 @@ function findHotkeyConflictLabel(
       candidate,
     )
   ) {
-    return "Redo";
+    return runtimeUiText("Redo", language);
   }
 
   if (
@@ -459,7 +460,7 @@ function findHotkeyConflictLabel(
       candidate,
     )
   ) {
-    return "Cycle Preset";
+    return runtimeUiText("Cycle Preset", language);
   }
 
   if (
@@ -469,7 +470,7 @@ function findHotkeyConflictLabel(
       candidate,
     )
   ) {
-    return "Favorite Mode";
+    return runtimeUiText("Favorite Mode", language);
   }
 
   if (
@@ -479,7 +480,7 @@ function findHotkeyConflictLabel(
       candidate,
     )
   ) {
-    return "Quick Access";
+    return runtimeUiText("Quick Access", language);
   }
 
   return null;
@@ -3653,11 +3654,12 @@ function App() {
           hotkeySettings,
           target,
           hotkey,
+          language,
         );
 
       if (conflictLabel) {
         setHotkeyMessage(
-          `${formatHotkey(hotkey)} is already assigned to ${conflictLabel}.`,
+          `${formatHotkey(hotkey)}${runtimeUiText(" is already assigned to ", language)}${conflictLabel}${runtimeUiText(".", language)}`,
         );
 
         return;
