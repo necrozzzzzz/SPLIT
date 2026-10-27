@@ -9,7 +9,7 @@ const steps: Step[] = [
   { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
   { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click a saved slot’s preview to view its screenshot (when available).", "Click a slot name to rename it."] },
-  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
+  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, copying a saved position, and assigning a color. Try opening the example slot menu and choosing a color.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
   { title: "Undo and redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
   { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
   { title: "Settings", description: "This is where you customize SPLIT. We'll walk through the main settings sections next.", target: ".sidebar-nav button:nth-child(3)", view: "settings", section: "general" },
@@ -31,6 +31,9 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const [index, setIndex] = useState(0);
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoSlotRect, setDemoSlotRect] = useState<Rect | null>(null);
+  const [demoCardRect, setDemoCardRect] = useState<Rect | null>(null);
+  const [demoMenuOpen, setDemoMenuOpen] = useState(false);
+  const [demoColor, setDemoColor] = useState<string | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const [popoverHeight, setPopoverHeight] = useState(300);
@@ -44,7 +47,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
     return () => observer.disconnect();
   }, [index]);
   const step = steps[index];
-  useEffect(() => { setDemoOpen(false); }, [index]);
+  useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); }, [index]);
   useEffect(() => {
     if (!demoOpen) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopImmediatePropagation(); setDemoOpen(false); } };
@@ -57,12 +60,14 @@ export default function Onboarding({ onClose, navigate }: Props) {
     let attempts = 0;
     const update = () => {
       const el = step.target ? document.querySelector<HTMLElement>(step.target) : null;
-      if (step.title === "Save State slots") {
+      if (step.title === "Save State slots" || step.title === "Slot actions") {
+        const card = document.querySelector<HTMLElement>(".slots-grid .slot-card:first-child");
+        if (card) { const cr = card.getBoundingClientRect(); setDemoCardRect({ top: cr.top, left: cr.left, right: cr.right, bottom: cr.bottom, width: cr.width, height: cr.height }); } else setDemoCardRect(null);
         const preview = document.querySelector<HTMLElement>(".slots-grid .slot-card:first-child .slot-preview");
         if (preview) {
           const pr = preview.getBoundingClientRect();
           setDemoSlotRect({ top: pr.top, left: pr.left, right: pr.right, bottom: pr.bottom, width: pr.width, height: pr.height });
-        } else setDemoSlotRect(null);
+        } else { setDemoSlotRect(null); setDemoCardRect(null); }
       } else setDemoSlotRect(null);
       if (el) {
         if (attempts === 0) el.scrollIntoView({ block: "nearest", behavior: "instant" });
@@ -165,6 +170,24 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <img src="/tutorial-mina.jpg" alt="Example Deadlock screenshot featuring Mina" />
         <span className="tour-live-preview-number">01</span>
         <span className="tour-live-preview-hint">RIGHT-CLICK TO PREVIEW</span>
+      </div>}
+      {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height, borderColor: demoColor ?? undefined }}>
+        <div className="tour-demo-slot-image" style={{ boxShadow: demoColor ? `inset 0 0 0 3px ${demoColor}` : undefined }}>
+          <img src="/tutorial-mina.jpg" alt="Example Deadlock save state featuring Mina" />
+          <span>01</span>
+        </div>
+        <div className="tour-demo-slot-footer"><strong>Example · Mina</strong><small>Try changing its color</small></div>
+        <button className="tour-demo-slot-menu-trigger" type="button" aria-label="Open example slot actions" aria-expanded={demoMenuOpen} onClick={() => setDemoMenuOpen(v => !v)}>···</button>
+        {demoMenuOpen && <div className="slot-card-menu-panel tour-demo-slot-menu">
+          <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>Rename <span>Example</span></button>
+          <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>View screenshot <span>Right click</span></button>
+          <div className="slot-menu-divider" />
+          <span className="slot-menu-label">Color</span>
+          <div className="slot-menu-colors">
+            {([["None", null], ["Cyan", "#4fd1c5"], ["Yellow", "#ffd166"], ["Red", "#d98c8c"], ["Purple", "#9b8cff"], ["Green", "#62ff8f"]] as const).map(([label, color]) => <button key={label} type="button" className={`slot-menu-color ${demoColor === color ? "active" : ""}`} title={label} aria-label={`${label} slot color`} onClick={() => { setDemoColor(color); setDemoMenuOpen(false); }}><span style={{ width: 11, height: 11, borderRadius: 3, background: color ?? "#344b4b", display: "block" }} /></button>)}
+          </div>
+          <small className="tour-demo-disclaimer">Demo only — no saved data changes</small>
+        </div>}
       </div>}
       {step.title === "Save State slots" && demoOpen && <div className="screenshot-viewer-backdrop tour-example-viewer" onClick={() => setDemoOpen(false)}>
         <section className="screenshot-viewer" role="dialog" aria-modal="true" aria-label="Example screenshot for Mina" onClick={(event) => event.stopPropagation()}>
