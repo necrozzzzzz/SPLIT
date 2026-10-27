@@ -576,45 +576,24 @@ type SettingsSection =
 function formatSavedAge(
   savedAt: number | null,
   nowMs: number,
+  language: Language,
 ): string | null {
-  if (savedAt === null) {
-    return null;
+  if (savedAt === null) return null;
+  const seconds = Math.max(0, Math.floor(nowMs / 1000) - savedAt);
+  const locale = language === "pt" ? "pt-BR" : language === "zh" ? "zh-CN" : language;
+  const saved = runtimeUiText("Saved", language);
+  if (seconds < 60) {
+    return `${saved} · ${new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(0, "second")}`;
   }
-
-  const ageSeconds = Math.max(
-    0,
-    Math.floor(nowMs / 1000) - savedAt,
-  );
-
-  if (ageSeconds < 60) {
-    return "Saved just now";
-  }
-
-  const minutes =
-    Math.floor(ageSeconds / 60);
-
-  if (minutes < 60) {
-    return `Saved ${minutes} min ago`;
-  }
-
-  const hours =
-    Math.floor(minutes / 60);
-
-  if (hours < 24) {
-    return `Saved ${hours} h ago`;
-  }
-
-  const days =
-    Math.floor(hours / 24);
-
-  if (days < 7) {
-    return `Saved ${days} d ago`;
-  }
-
-  return `Saved ${new Date(
-    savedAt * 1000,
-  ).toLocaleDateString()}`;
-}  
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "short" });
+  if (minutes < 60) return `${saved} ${relative.format(-minutes, "minute")}`;
+  if (hours < 24) return `${saved} ${relative.format(-hours, "hour")}`;
+  if (days < 7) return `${saved} ${relative.format(-days, "day")}`;
+  return `${saved} ${new Date(savedAt * 1000).toLocaleDateString(locale)}`;
+}
 
 function StatusDot({
   ok = false,
@@ -5799,6 +5778,7 @@ function App() {
                 ? formatSavedAge(
                     metadata?.savedAt ?? null,
                     relativeTimeNow,
+                    language,
                   )
                 : null;
 
