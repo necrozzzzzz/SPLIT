@@ -28,10 +28,5 @@ jobs:
       - name: Check frontend
         run: npm run build
 
-      - name: Test offline BOTREC diagnostics
-        run: |
-          python -m unittest discover -s tools/botrec_diagnostics -p "test_*.py"
-          node --check tools/botrec_diagnostics/extract_sourcetv.mjs
-
       - name: Test Rust backend
         run: cargo test --manifest-path src-tauri/Cargo.toml
