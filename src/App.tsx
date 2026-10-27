@@ -345,7 +345,7 @@ function HotkeyKeys({
   return (
     <kbd
       className="hotkey-binding"
-      aria-label={`Shortcut: ${formatHotkey(hotkey)}`}
+      aria-label={`${uiText("Shortcut", getLanguage())}: ${formatHotkey(hotkey)}`}
     >
       {keys.map((key, index) => (
         <span
@@ -6142,7 +6142,7 @@ function App() {
                                   type="button"
                                   key={label}
                                   title={label}
-                                  aria-label={`${label} slot color`}
+                                  aria-label={`${label} · ${runtimeUiText("Slot color", language)}`}
                                   disabled={
                                     savingSlot !==
                                       null ||
