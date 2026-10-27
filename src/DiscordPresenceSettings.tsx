@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getLanguage, uiText } from "./i18n";
 import abramsUrl from "../assets/discord-preview/abrams.png?url";
 import bebopUrl from "../assets/discord-preview/bebop.png?url";
 import calicoUrl from "../assets/discord-preview/calico.png?url";
@@ -238,7 +239,7 @@ function PartyDisplayRow({
   return (
     <label className="drp-select-option">
       <span>
-        <strong>Party display</strong>
+        <strong>{uiText("Party display", language)}</strong>
         <small>
           {value === "compact"
             ? "Shows 1/6 inline"
@@ -252,9 +253,9 @@ function PartyDisplayRow({
         value={value}
         onChange={(event) => onChange(event.currentTarget.value as PartyDisplay)}
       >
-        <option value="compact">Compact</option>
+        <option value="compact">{uiText("Compact", language)}</option>
         <option value="discord">Discord</option>
-        <option value="hidden">Hidden</option>
+        <option value="hidden">{uiText("Hidden", language)}</option>
       </select>
     </label>
   );
@@ -320,7 +321,7 @@ function PrefixSelector({
       </div>
       {customSelected ? (
         <label className="drp-custom-prefix">
-          <span>Custom prefix</span>
+          <span>{uiText("Custom prefix", language)}</span>
           <input
             type="text"
             maxLength={64}
@@ -460,6 +461,8 @@ function previewFor(
 }
 
 export default function DiscordPresenceSettings() {
+  const [language, setCurrentLanguage] = useState(getLanguage);
+  useEffect(() => { const update = () => setCurrentLanguage(getLanguage()); window.addEventListener("split-language-change", update); return () => window.removeEventListener("split-language-change", update); }, []);
   const [config, setConfig] = useState<DiscordPresenceConfig | null>(null);
   const [activeSection, setActiveSection] = useState<PresenceSection>("global");
   const [error, setError] = useState<string | null>(null);
@@ -589,8 +592,8 @@ export default function DiscordPresenceSettings() {
       <header className="drp-settings-header">
         <div>
           <p className="label">DISCORD</p>
-          <h2>Discord Rich Presence</h2>
-          <p>Show your current Deadlock activity on Discord.</p>
+          <h2>{uiText("Discord Rich Presence", language)}</h2>
+          <p>{uiText("Show your current Deadlock activity on Discord.", language)}</p>
         </div>
         <div className="drp-header-actions">
           <span className="drp-save-status" role="status" aria-live="polite">
@@ -643,7 +646,7 @@ export default function DiscordPresenceSettings() {
           >
             <div className="drp-context-heading">
               <div>
-                <span>CONTEXT</span>
+                <span>{uiText("CONTEXT", language)}</span>
                 <h3>{activeLabel}</h3>
               </div>
               <button
@@ -810,8 +813,8 @@ export default function DiscordPresenceSettings() {
 
           <aside className="drp-preview-panel" aria-label={`${activeLabel} preview`}>
             <div className="drp-preview-label">
-              <span>LIVE PREVIEW</span>
-              <em>Example only</em>
+              <span>{uiText("LIVE PREVIEW", language)}</span>
+              <em>{uiText("Example only", language)}</em>
             </div>
             <div className={`drp-preview-card ${!config.global.enabled ? "disabled" : ""}`}>
               <strong className="drp-preview-app">Deadlock - SPLIT</strong>
@@ -836,9 +839,9 @@ export default function DiscordPresenceSettings() {
                     {config.global.showElapsedTime ? <span>02:14 elapsed</span> : null}
                   </div>
                 </div>
-              ) : <p className="drp-preview-disabled">Rich Presence is disabled.</p>}
+              ) : <p className="drp-preview-disabled">{uiText("Rich Presence is disabled.", language)}</p>}
             </div>
-            <p>This preview stays inside SPLIT and never sends test activity to Discord.</p>
+            <p>{uiText("This preview stays inside SPLIT and never sends test activity to Discord.", language)}</p>
           </aside>
         </div>
       </div>
