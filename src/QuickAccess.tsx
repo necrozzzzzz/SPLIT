@@ -278,7 +278,7 @@ export default function QuickAccess() {
 
         setBankName(
           favoriteMode
-            ? "Favorites"
+            ? q("Favorites")
             : (
                 presetNames[
                   activePreset - 1
@@ -1065,7 +1065,7 @@ export default function QuickAccess() {
                                       type="button"
                                       role="menuitemradio"
                                       aria-checked={active}
-                                      aria-label={`${label} color for slot ${slot}`}
+                                      aria-label={`${q(label)} · ${slot}`}
                                       title={q(label)}
                                       className={`quick-access-slot-menu-color${
                                         active
