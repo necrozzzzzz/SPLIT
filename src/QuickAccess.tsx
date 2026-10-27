@@ -891,7 +891,7 @@ export default function QuickAccess() {
                             )}
                             alt=""
                             draggable={false}
-                            title="Right click to view screenshot"
+                            title={q("Right click to view screenshot")}
                             onContextMenu={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -1049,7 +1049,7 @@ export default function QuickAccess() {
                             <div className="quick-access-slot-menu-divider" />
 
                             <span className="quick-access-slot-menu-label">
-                              Color
+                              {q("Color")}
                             </span>
 
                             <div className="quick-access-slot-menu-colors">
@@ -1066,7 +1066,7 @@ export default function QuickAccess() {
                                       role="menuitemradio"
                                       aria-checked={active}
                                       aria-label={`${label} color for slot ${slot}`}
-                                      title={label}
+                                      title={q(label)}
                                       className={`quick-access-slot-menu-color${
                                         active
                                           ? " active"
@@ -1219,7 +1219,7 @@ export default function QuickAccess() {
               className="quick-access-viewer"
               role="dialog"
               aria-modal="true"
-              aria-label={`Screenshot for ${viewerName}`}
+              aria-label={`${q("Screenshot for")} ${viewerName}`}
             >
               <header
                 className="quick-access-viewer-header"
@@ -1250,7 +1250,7 @@ export default function QuickAccess() {
                     viewerFullPath ??
                       viewerThumbnailPath,
                   )}
-                  alt={`Screenshot for ${viewerName}`}
+                  alt={`${q("Screenshot for")} ${viewerName}`}
                   draggable={false}
                   onClick={(event) =>
                     event.stopPropagation()
