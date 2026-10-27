@@ -4484,8 +4484,7 @@ function App() {
                 </h3>
 
                 <p className="confirmation-description">
-                  SPLIT captures this key combination before
-                  Deadlock receives it.
+                  {runtimeUiText("SPLIT captures this key combination before Deadlock receives it.", language)}
                 </p>
 
                 <div className="gameplay-hotkey-selected">
@@ -4499,9 +4498,7 @@ function App() {
                 </div>
 
                 <p className="gameplay-hotkey-note">
-                  If these keys are also used in-game, those
-                  actions may not work while the shortcut is
-                  being triggered.
+                  {runtimeUiText("If these keys are also used in-game, those actions may not work while the shortcut is being triggered.", language)}
                 </p>
               </div>
             </div>
@@ -5028,7 +5025,7 @@ function App() {
             </h3>
 
             <p className="confirmation-description">
-              Preset {pendingPresetRename.preset}
+              {uiText("Preset", language)} {pendingPresetRename.preset}
             </p>
 
             <label className="preset-rename-field">
