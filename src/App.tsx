@@ -633,8 +633,14 @@ function StatusDot({
 }
 
 function DiagnosticInfo({ text }: { text: string }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: PointerEvent) => { if (ref.current?.open && !ref.current.contains(e.target as Node)) ref.current.open = false; };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
   return (
-    <details className="diagnostic-info">
+    <details ref={ref} className="diagnostic-info">
       <summary aria-label="What does this diagnostic mean?" title="What does this mean?">i</summary>
       <div className="diagnostic-info-content">{text}</div>
     </details>
