@@ -2770,6 +2770,14 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "CONFIRMATIONS & WARNINGS": "CONFIRMATIONS & WARNINGS",
+    "Show the confirmation dialog before clearing an entire preset.": "Show the confirmation dialog before clearing an entire preset.",
+    "Warn when a shortcut may interfere with Deadlock controls.": "Warn when a shortcut may interfere with Deadlock controls.",
+    "Show the information dialog when entering Favorite Mode.": "Show the information dialog when entering Favorite Mode.",
+    "Restored": "Restored",
+    "Restore confirmation": "Restore confirmation",
+    "Restore warning": "Restore warning",
+    "Reset to defaults": "Reset to defaults",
     "The Deadlock integration needs repair.": "The Deadlock integration needs repair.",
     "The Windows keyboard hook is not running.": "The Windows keyboard hook is not running.",
     "The Deadlock console watcher is not running.": "The Deadlock console watcher is not running.",
@@ -2854,6 +2862,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "CONFIRMATIONS & WARNINGS": "CONFIRMATIONS ET AVERTISSEMENTS",
+    "Show the confirmation dialog before clearing an entire preset.": "Afficher une confirmation avant d'effacer un preset entier.",
+    "Warn when a shortcut may interfere with Deadlock controls.": "Avertir lorsqu'un raccourci risque de gêner les commandes de Deadlock.",
+    "Show the information dialog when entering Favorite Mode.": "Afficher les informations lors de l'activation du mode Favoris.",
+    "Restored": "Rétabli",
+    "Restore confirmation": "Rétablir la confirmation",
+    "Restore warning": "Rétablir l'avertissement",
+    "Reset to defaults": "Rétablir les valeurs par défaut",
     "The Deadlock integration needs repair.": "L'intégration avec Deadlock doit être réparée.",
     "The Windows keyboard hook is not running.": "Le raccourci clavier global de Windows ne fonctionne pas.",
     "The Deadlock console watcher is not running.": "La surveillance de la console Deadlock ne fonctionne pas.",
@@ -2938,6 +2954,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "CONFIRMATIONS & WARNINGS": "CONFIRMACIONES Y ADVERTENCIAS",
+    "Show the confirmation dialog before clearing an entire preset.": "Mostrar una confirmación antes de borrar un ajuste completo.",
+    "Warn when a shortcut may interfere with Deadlock controls.": "Avisar si un atajo puede interferir con los controles de Deadlock.",
+    "Show the information dialog when entering Favorite Mode.": "Mostrar información al activar el modo Favoritos.",
+    "Restored": "Restaurado",
+    "Restore confirmation": "Restaurar confirmación",
+    "Restore warning": "Restaurar advertencia",
+    "Reset to defaults": "Restablecer valores predeterminados",
     "The Deadlock integration needs repair.": "Es necesario reparar la integración con Deadlock.",
     "The Windows keyboard hook is not running.": "El controlador de atajos de Windows no funciona.",
     "The Deadlock console watcher is not running.": "El monitor de consola de Deadlock no funciona.",
@@ -3022,6 +3046,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "CONFIRMATIONS & WARNINGS": "BESTÄTIGUNGEN UND WARNUNGEN",
+    "Show the confirmation dialog before clearing an entire preset.": "Vor dem Löschen einer gesamten Voreinstellung nachfragen.",
+    "Warn when a shortcut may interfere with Deadlock controls.": "Warnen, wenn ein Kürzel die Deadlock-Steuerung stören könnte.",
+    "Show the information dialog when entering Favorite Mode.": "Beim Aktivieren des Favoritenmodus den Hinweis anzeigen.",
+    "Restored": "Wiederhergestellt",
+    "Restore confirmation": "Bestätigung wiederherstellen",
+    "Restore warning": "Warnung wiederherstellen",
+    "Reset to defaults": "Standards wiederherstellen",
     "The Deadlock integration needs repair.": "Die Deadlock-Integration muss repariert werden.",
     "The Windows keyboard hook is not running.": "Die Windows-Tastaturüberwachung läuft nicht.",
     "The Deadlock console watcher is not running.": "Die Deadlock-Konsolenüberwachung läuft nicht.",
@@ -3106,6 +3138,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "CONFIRMATIONS & WARNINGS": "CONFIRMAÇÕES E AVISOS",
+    "Show the confirmation dialog before clearing an entire preset.": "Exibir confirmação antes de apagar uma predefinição inteira.",
+    "Warn when a shortcut may interfere with Deadlock controls.": "Avisar quando um atalho puder interferir nos controles do Deadlock.",
+    "Show the information dialog when entering Favorite Mode.": "Exibir informações ao ativar o modo Favoritos.",
+    "Restored": "Restaurado",
+    "Restore confirmation": "Restaurar confirmação",
+    "Restore warning": "Restaurar aviso",
+    "Reset to defaults": "Restaurar padrões",
     "The Deadlock integration needs repair.": "A integração com Deadlock precisa de reparo.",
     "The Windows keyboard hook is not running.": "O monitor de atalhos do Windows não está funcionando.",
     "The Deadlock console watcher is not running.": "O monitor do console de Deadlock não está funcionando.",
@@ -3190,6 +3230,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "CONFIRMATIONS & WARNINGS": "ПОДТВЕРЖДЕНИЯ И ПРЕДУПРЕЖДЕНИЯ",
+    "Show the confirmation dialog before clearing an entire preset.": "Показывать подтверждение перед удалением всего пресета.",
+    "Warn when a shortcut may interfere with Deadlock controls.": "Предупреждать, если сочетание клавиш мешает управлению Deadlock.",
+    "Show the information dialog when entering Favorite Mode.": "Показывать информацию при включении режима избранного.",
+    "Restored": "Восстановлено",
+    "Restore confirmation": "Вернуть подтверждение",
+    "Restore warning": "Вернуть предупреждение",
+    "Reset to defaults": "Сбросить настройки",
     "The Deadlock integration needs repair.": "Интеграцию с Deadlock необходимо восстановить.",
     "The Windows keyboard hook is not running.": "Обработчик горячих клавиш Windows не работает.",
     "The Deadlock console watcher is not running.": "Отслеживание консоли Deadlock не работает.",
@@ -3274,6 +3322,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "CONFIRMATIONS & WARNINGS": "確認と警告",
+    "Show the confirmation dialog before clearing an entire preset.": "プリセット全体を消去する前に確認画面を表示します。",
+    "Warn when a shortcut may interfere with Deadlock controls.": "ショートカットが Deadlock の操作に干渉する場合に警告します。",
+    "Show the information dialog when entering Favorite Mode.": "お気に入りモードに切り替える際に説明を表示します。",
+    "Restored": "復元済み",
+    "Restore confirmation": "確認を復元",
+    "Restore warning": "警告を復元",
+    "Reset to defaults": "初期設定に戻す",
     "The Deadlock integration needs repair.": "Deadlock との連携を修復する必要があります。",
     "The Windows keyboard hook is not running.": "Windows のホットキー監視が動作していません。",
     "The Deadlock console watcher is not running.": "Deadlock のコンソール監視が動作していません。",
@@ -3358,6 +3414,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "CONFIRMATIONS & WARNINGS": "确认与警告",
+    "Show the confirmation dialog before clearing an entire preset.": "清空整个预设前显示确认对话框。",
+    "Warn when a shortcut may interfere with Deadlock controls.": "快捷键可能干扰 Deadlock 操作时发出警告。",
+    "Show the information dialog when entering Favorite Mode.": "进入收藏模式时显示说明。",
+    "Restored": "已恢复",
+    "Restore confirmation": "恢复确认提示",
+    "Restore warning": "恢复警告",
+    "Reset to defaults": "恢复默认设置",
     "The Deadlock integration needs repair.": "需要修复 Deadlock 集成。",
     "The Windows keyboard hook is not running.": "Windows 快捷键监听未运行。",
     "The Deadlock console watcher is not running.": "Deadlock 控制台监控未运行。",
