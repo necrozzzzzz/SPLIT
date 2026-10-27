@@ -7868,3 +7868,9 @@ select:hover:not(:disabled) {
 .diagnostic-info > summary::-webkit-details-marker { display: none; }
 .diagnostic-info[open] { z-index: 20; }
 .diagnostic-info-content { position: absolute; right: 0; top: 26px; width: min(260px, 70vw); padding: 12px 14px; border: 1px solid #416361; border-radius: 8px; background: #18292c; color: #d5e6e2; font-size: 12px; line-height: 1.55; box-shadow: 0 12px 30px #0009; }
+
+/* Diagnostic help: scannable labels and separate troubleshooting. */
+.diagnostic-info-content { width: min(288px, 78vw); padding: 13px 15px; font-size: 12px; font-weight: 400; line-height: 1.5; }
+.diagnostic-info-content p { margin: 5px 0 0; font-weight: 400; color: #d5e6e2; }
+.diagnostic-info-label { font-size: 10px; font-weight: 800; letter-spacing: .085em; color: #72d8cf; }
+.diagnostic-info-separator { height: 1px; margin: 12px 0 10px; background: rgba(112,183,180,.2); }
