@@ -94,10 +94,16 @@ export default function Onboarding({ onClose, navigate }: Props) {
     left >= 16 && top >= 16 && left + tipWidth <= w - 16 &&
     top + usableHeight <= h - 16 && fits(left, top)
   );
-  const [tipLeft, tipTop] = valid[0] ?? [
-    clamp(preferredLeft, 16, w - tipWidth - 16),
-    clamp(preferredTop, 16, h - usableHeight - 16),
-  ];
+  // Large settings panels span almost the entire content area. Keep their
+  // explanations anchored at the bottom, rather than covering the first controls.
+  // Leave all other tour steps on the automatic positioning algorithm.
+  const bottomAnchored = ["General settings", "Discord rich presence", "Keyboard shortcuts", "Diagnostics"].includes(step.title);
+  const [tipLeft, tipTop] = bottomAnchored
+    ? [16, Math.max(16, h - usableHeight - 16)]
+    : (valid[0] ?? [
+        clamp(preferredLeft, 16, w - tipWidth - 16),
+        clamp(preferredTop, 16, h - usableHeight - 16),
+      ]);
   return (
     <div className="tour-root" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       {rect ? <>
