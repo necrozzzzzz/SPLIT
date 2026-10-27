@@ -51,7 +51,7 @@ import {
 } from "./startupSound";
 
 import DiscordPresenceSettings from "./DiscordPresenceSettings";
-import { getLanguage, setLanguage, languages, languageNames, t, uiText, diagnosticText, runtimeErrorText, type Language } from "./i18n";
+import { getLanguage, setLanguage, languages, languageNames, t, uiText, diagnosticText, runtimeErrorText, runtimeUiText, type Language } from "./i18n";
 import Onboarding, { isOnboardingCompleted } from "./Onboarding";
 
 type DeadlockStatus = {
@@ -4349,19 +4349,10 @@ function App() {
         ? "warning"
         : "ok";
 
-  const healthHeadline =
-    healthProblemCount > 0
-      ? "Operational with issues"
-      : "Operational";
-
-  const healthDescription =
-    healthProblemCount > 0
-      ? `${healthProblemCount} ${
-          healthProblemCount === 1
-            ? "issue detected"
-            : "issues detected"
-        }.`
-      : "No issues detected.";
+  const healthHeadline = runtimeUiText(healthProblemCount > 0 ? "Operational with issues" : "Operational", language);
+  const healthDescription = healthProblemCount > 0
+    ? `${healthProblemCount} ${runtimeUiText(healthProblemCount === 1 ? "issue detected" : "issues detected", language)}.`
+    : runtimeUiText("No issues detected.", language);
 
   const screenshotViewerFullPath =
     screenshotViewer
@@ -4621,7 +4612,7 @@ function App() {
 
                   <div>
                     <span>{uiText("Favorites", language)}</span>
-                    <strong>8 shared slots</strong>
+                    <strong>{runtimeUiText("8 shared slots", language)}</strong>
                   </div>
                 </div>
 
@@ -5964,7 +5955,7 @@ function App() {
                       >
                         {loadingSlot === slot
                           ? "Loading…"
-                          : "Load"}
+                          : runtimeUiText("Load", language)}
                       </button>
                     </>
                   ) : (
@@ -6060,7 +6051,7 @@ function App() {
                             );
                           }}
                         >
-                          Load
+                          {runtimeUiText("Load", language)}
                           <span>
                             {formatHotkey(
                               hotkeySettings.loadSlots[
@@ -6118,7 +6109,7 @@ function App() {
                     >
                       {position
                         ? "Overwrite"
-                        : "Save"}
+                        : runtimeUiText("Save", language)}
                       <span>
                         {formatHotkey(
                           hotkeySettings.saveSlots[
@@ -6337,8 +6328,8 @@ function App() {
                     <span>
                       {savedAge ??
                         (position
-                          ? "Saved"
-                          : "No position saved")}
+                          ? runtimeUiText("Saved", language)
+                          : runtimeUiText("No position saved", language))}
                     </span>
                   </div>
 
@@ -7034,7 +7025,7 @@ function App() {
                 const capturing = isHotkeyTarget(capturingHotkey, target);
                 return (
                   <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={`${group}-${index}`}>
-                    <span>{label === "LOAD" ? "Load" : "Save"} Slot {index + 1}</span>
+                    <span>{label === "LOAD" ? runtimeUiText("Load", language) : runtimeUiText("Save", language)} Slot {index + 1}</span>
                     <HotkeyKeys
                       hotkey={hotkey}
                       capturing={capturing}
@@ -7129,7 +7120,7 @@ function App() {
             onClick={() => void testNotification()}
           >
             {notificationTesting
-              ? "Testing…"
+              ? runtimeUiText("Testing…", language)
               : "Test notification"}
           </button>
         </div>
@@ -7284,8 +7275,8 @@ function App() {
 
           <strong>
             {status.integrationHealthy
-              ? "Healthy"
-              : "Needs attention"}
+              ? runtimeUiText("Healthy", language)
+              : runtimeUiText("Needs attention", language)}
           </strong>
 
           {!status.integrationHealthy && (
@@ -7298,8 +7289,8 @@ function App() {
               }
             >
               {repairingIntegration
-                ? "Repairing…"
-                : "Repair integration"}
+                ? runtimeUiText("Repairing…", language)
+                : runtimeUiText("Repair integration", language)}
             </button>
           )}
         </article>
@@ -7318,8 +7309,8 @@ function App() {
 
           <strong>
             {status.deadlockRunning
-              ? "Running"
-              : "Not running"}
+              ? runtimeUiText("Running", language)
+              : runtimeUiText("Not running", language)}
           </strong>
         </article>
 
@@ -7347,15 +7338,15 @@ function App() {
 
           <strong>
             {status.hotkeysRunning
-              ? "Running"
-              : "Down"}
+              ? runtimeUiText("Running", language)
+              : runtimeUiText("Down", language)}
           </strong>
 
           {!status.hotkeysRunning && (
             <div className="diagnostic-details">
               <div className="diagnostic-reason">
                 <span>
-                  REASON
+                  {runtimeUiText("REASON", language)}
                 </span>
 
                 <code>
@@ -7366,7 +7357,7 @@ function App() {
 
               <div className="diagnostic-fix">
                 <span>
-                  HOW TO FIX
+                  {runtimeUiText("HOW TO FIX", language)}
                 </span>
 
                 <ol>
@@ -7432,15 +7423,15 @@ function App() {
 
           <strong>
             {status.consoleWatcherRunning
-              ? "Running"
-              : "Down"}
+              ? runtimeUiText("Running", language)
+              : runtimeUiText("Down", language)}
           </strong>
 
           {!status.consoleWatcherRunning && (
             <div className="diagnostic-details">
               <div className="diagnostic-reason">
                 <span>
-                  REASON
+                  {runtimeUiText("REASON", language)}
                 </span>
 
                 <code>
@@ -7451,7 +7442,7 @@ function App() {
 
               <div className="diagnostic-fix">
                 <span>
-                  HOW TO FIX
+                  {runtimeUiText("HOW TO FIX", language)}
                 </span>
 
                 <ol>
@@ -7495,8 +7486,8 @@ function App() {
                   }
                 >
                   {watcherRetrying
-                    ? "Restarting…"
-                    : "Retry watcher"}
+                    ? runtimeUiText("Restarting…", language)
+                    : runtimeUiText("Retry watcher", language)}
                 </button>
               </div>
             </div>
@@ -7547,7 +7538,7 @@ function App() {
 
               <div className="diagnostic-fix">
                 <span>
-                  PREPARE MANUALLY
+                  {runtimeUiText("PREPARE MANUALLY", language)}
                 </span>
 
                 <p className="teleport-manual-intro">
@@ -7591,8 +7582,8 @@ function App() {
                   }
                 >
                   {teleportPreparing
-                    ? "Preparing…"
-                    : "Prepare now"}
+                    ? runtimeUiText("Preparing…", language)
+                    : runtimeUiText("Prepare now", language)}
                 </button>
 
                 {!status.deadlockRunning && (
@@ -7629,8 +7620,8 @@ function App() {
 
           <strong>
             {status.presentationMaskActive
-              ? "Active"
-              : "Normal"}
+              ? runtimeUiText("Active", language)
+              : runtimeUiText("Normal", language)}
           </strong>
 
           {status.presentationMaskActive && (
@@ -7649,7 +7640,7 @@ function App() {
 
               <div className="diagnostic-fix">
                 <span>
-                  HOW TO FIX
+                  {runtimeUiText("HOW TO FIX", language)}
                 </span>
 
                 <ol>
@@ -7689,8 +7680,8 @@ function App() {
                   }
                 >
                   {presentationResuming
-                    ? "Resuming…"
-                    : "Resume presentation"}
+                    ? runtimeUiText("Resuming…", language)
+                    : runtimeUiText("Resume presentation", language)}
                 </button>
 
                 {!status.deadlockRunning && (
@@ -7732,10 +7723,10 @@ function App() {
 
           <strong>
             {!status.cameraRuntimeChecked
-              ? "Not tested"
+              ? runtimeUiText("Not tested", language)
               : status.cameraRuntimeReady
-                ? "Ready"
-                : "Unavailable"}
+                ? runtimeUiText("Ready", language)
+                : runtimeUiText("Unavailable", language)}
           </strong>
 
           {!status.cameraRuntimeReady && (
@@ -7758,7 +7749,7 @@ function App() {
                 <>
                   <div className="diagnostic-reason">
                     <span>
-                      REASON
+                      {runtimeUiText("REASON", language)}
                     </span>
 
                     <code>
@@ -7769,7 +7760,7 @@ function App() {
 
                   <div className="diagnostic-fix">
                     <span>
-                      HOW TO FIX
+                      {runtimeUiText("HOW TO FIX", language)}
                     </span>
 
                     <ol>
@@ -7809,10 +7800,10 @@ function App() {
                   }
                 >
                   {cameraRetrying
-                    ? "Testing…"
+                    ? runtimeUiText("Testing…", language)
                     : status.cameraRuntimeChecked
-                      ? "Retry camera"
-                      : "Test camera"}
+                      ? runtimeUiText("Retry camera", language)
+                      : runtimeUiText("Test camera", language)}
                 </button>
 
                 {!status.deadlockRunning && (
@@ -7849,10 +7840,9 @@ function App() {
 
           <code
             className="diagnostic-path"
-            title={status.deadlockPath ?? "Not configured"}
+            title={status.deadlockPath ?? runtimeUiText("Not configured", language)}
           >
-            {status.deadlockPath ??
-              "Not configured"}
+            {status.deadlockPath ?? runtimeUiText("Not configured", language)}
           </code>
         </article>
 
@@ -7870,8 +7860,8 @@ function App() {
 
           <strong>
             {status.cfgDirExists
-              ? "Ready"
-              : "Missing"}
+              ? runtimeUiText("Ready", language)
+              : runtimeUiText("Missing", language)}
           </strong>
         </article>
 
@@ -7889,10 +7879,10 @@ function App() {
 
           <strong>
             {status.savestateCfgValid
-              ? "Valid"
+              ? runtimeUiText("Valid", language)
               : status.savestateCfgExists
                 ? "Invalid"
-                : "Missing"}
+                : runtimeUiText("Missing", language)}
           </strong>
         </article>
 
@@ -7910,10 +7900,10 @@ function App() {
 
           <strong>
             {status.prepareCfgValid
-              ? "Valid"
+              ? runtimeUiText("Valid", language)
               : status.prepareCfgExists
                 ? "Invalid"
-                : "Missing"}
+                : runtimeUiText("Missing", language)}
           </strong>
         </article>
 
@@ -7931,10 +7921,10 @@ function App() {
 
           <strong>
             {status.autoexecValid
-              ? "Configured"
+              ? runtimeUiText("Configured", language)
               : status.autoexecExists
                 ? "Missing SPLIT entry"
-                : "Missing"}
+                : runtimeUiText("Missing", language)}
           </strong>
         </article>
 
