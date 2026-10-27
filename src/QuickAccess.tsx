@@ -278,7 +278,7 @@ export default function QuickAccess() {
 
         setBankName(
           favoriteMode
-            ? q("Favorites")
+            ? "Favorites"
             : (
                 presetNames[
                   activePreset - 1
@@ -776,7 +776,7 @@ export default function QuickAccess() {
         </span>
 
         <strong>
-            {bankName}
+            {bankName === "Favorites" ? q("Favorites") : bankName === "Preset" ? q("Preset") : bankName}
         </strong>
       </header>
 
