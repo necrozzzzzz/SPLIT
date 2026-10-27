@@ -4,11 +4,11 @@ import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
 type Section = "general" | "discord" | "hotkeys" | "notifications" | "diagnostics" | "about";
-type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section; demo?: boolean };
+type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section; demo?: boolean; tips?: string[] };
 const steps: Step[] = [
   { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
-  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots" },
+  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click a saved slot’s preview to view its screenshot (when available).", "Click a slot name to rename it."] },
   { title: "Try the screenshot preview", description: "Right-click the example slot preview below to see how screenshots open. This is only a demonstration — your saved slots won't be changed.", target: "", view: "slots", demo: true },
   { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
   { title: "Undo and redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
@@ -154,6 +154,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <p className="tour-counter">STEP {index + 1} OF {steps.length}</p>
         <h2 id="tour-title">{step.title}</h2>
         <p className="tour-description">{step.description}</p>
+        {step.tips && <div className="tour-tips">{step.tips.map((tip, i) => <p key={i}><span className="tour-tip-label">TIP</span>{tip}</p>)}</div>}
         {step.demo && <div className="tour-demo">
           <div className="tour-demo-preview" role="button" tabIndex={0} aria-label="Example slot screenshot, right-click to view" onContextMenu={(event) => { event.preventDefault(); setDemoOpen(true); }} onClick={() => setDemoOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDemoOpen(true); } }}>
             <div className="tour-demo-scene"><span className="tour-demo-building left" /><span className="tour-demo-building right" /><span className="tour-demo-road" /><span className="tour-demo-crosshair">+</span></div>
