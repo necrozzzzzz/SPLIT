@@ -2770,6 +2770,14 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "CFG directory": "CFG directory",
+    "Invalid": "Invalid",
+    "Missing SPLIT entry": "Missing SPLIT entry",
+    "No Deadlock path available": "No Deadlock path available",
+    "ABOUT": "ABOUT",
+    "Backend error: ": "Backend error: ",
+    "Saving startup sound settings…": "Saving startup sound settings…",
+    "Loading…": "Loading…",
     "Change": "Change",
     "Left": "Left",
     "Right": "Right",
@@ -2924,6 +2932,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "CFG directory": "Dossier CFG",
+    "Invalid": "Invalide",
+    "Missing SPLIT entry": "Entrée SPLIT manquante",
+    "No Deadlock path available": "Chemin Deadlock indisponible",
+    "ABOUT": "À PROPOS",
+    "Backend error: ": "Erreur du moteur : ",
+    "Saving startup sound settings…": "Enregistrement des paramètres audio de démarrage…",
+    "Loading…": "Chargement…",
     "Change": "Modifier",
     "Left": "Gauche",
     "Right": "Droite",
@@ -3078,6 +3094,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "CFG directory": "Carpeta CFG",
+    "Invalid": "No válido",
+    "Missing SPLIT entry": "Falta la entrada SPLIT",
+    "No Deadlock path available": "Ruta de Deadlock no disponible",
+    "ABOUT": "ACERCA DE",
+    "Backend error: ": "Error del motor: ",
+    "Saving startup sound settings…": "Guardando ajustes del sonido de inicio…",
+    "Loading…": "Cargando…",
     "Change": "Cambiar",
     "Left": "Izquierda",
     "Right": "Derecha",
@@ -3232,6 +3256,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "CFG directory": "CFG-Ordner",
+    "Invalid": "Ungültig",
+    "Missing SPLIT entry": "SPLIT-Eintrag fehlt",
+    "No Deadlock path available": "Deadlock-Pfad nicht verfügbar",
+    "ABOUT": "ÜBER SPLIT",
+    "Backend error: ": "Backend-Fehler: ",
+    "Saving startup sound settings…": "Startsound-Einstellungen werden gespeichert…",
+    "Loading…": "Laden…",
     "Change": "Ändern",
     "Left": "Links",
     "Right": "Rechts",
@@ -3386,6 +3418,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "CFG directory": "Pasta CFG",
+    "Invalid": "Inválido",
+    "Missing SPLIT entry": "Entrada SPLIT ausente",
+    "No Deadlock path available": "Caminho do Deadlock indisponível",
+    "ABOUT": "SOBRE",
+    "Backend error: ": "Erro do sistema: ",
+    "Saving startup sound settings…": "Salvando configurações do som de inicialização…",
+    "Loading…": "Carregando…",
     "Change": "Alterar",
     "Left": "Esquerda",
     "Right": "Direita",
@@ -3540,6 +3580,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "CFG directory": "Папка CFG",
+    "Invalid": "Недействительно",
+    "Missing SPLIT entry": "Нет записи SPLIT",
+    "No Deadlock path available": "Путь к Deadlock недоступен",
+    "ABOUT": "О ПРОГРАММЕ",
+    "Backend error: ": "Ошибка сервиса: ",
+    "Saving startup sound settings…": "Сохранение настроек звука запуска…",
+    "Loading…": "Загрузка…",
     "Change": "Изменить",
     "Left": "Слева",
     "Right": "Справа",
@@ -3694,6 +3742,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "CFG directory": "CFG フォルダー",
+    "Invalid": "無効",
+    "Missing SPLIT entry": "SPLIT の設定がありません",
+    "No Deadlock path available": "Deadlock のパスがありません",
+    "ABOUT": "アプリについて",
+    "Backend error: ": "バックエンドエラー: ",
+    "Saving startup sound settings…": "起動音の設定を保存中…",
+    "Loading…": "読み込み中…",
     "Change": "変更",
     "Left": "左",
     "Right": "右",
@@ -3848,6 +3904,14 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "CFG directory": "CFG 文件夹",
+    "Invalid": "无效",
+    "Missing SPLIT entry": "缺少 SPLIT 配置项",
+    "No Deadlock path available": "Deadlock 路径不可用",
+    "ABOUT": "关于",
+    "Backend error: ": "后端错误：",
+    "Saving startup sound settings…": "正在保存启动音效设置…",
+    "Loading…": "正在加载…",
     "Change": "更改",
     "Left": "左侧",
     "Right": "右侧",

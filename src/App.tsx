@@ -6504,7 +6504,7 @@ function App() {
                     }`}
                     role={startupSoundFeedback ? "alert" : "status"}
                   >
-                    {startupSoundFeedback ?? "Saving startup sound settings…"}
+                    {startupSoundFeedback ?? runtimeUiText("Saving startup sound settings…", language)}
                   </p>
                 )}
 
@@ -7750,9 +7750,7 @@ function App() {
               ok={status.cfgDirExists}
             />
 
-            <span>
-              CFG directory
-            </span>
+            <span>{runtimeUiText("CFG directory", language)}</span>
             <DiagnosticInfo language={language} text={"Folder containing Deadlock configuration scripts."} />
           </div>
 
@@ -7779,7 +7777,7 @@ function App() {
             {status.savestateCfgValid
               ? runtimeUiText("Valid", language)
               : status.savestateCfgExists
-                ? "Invalid"
+                ? runtimeUiText("Invalid", language)
                 : runtimeUiText("Missing", language)}
           </strong>
         </article>
@@ -7800,7 +7798,7 @@ function App() {
             {status.prepareCfgValid
               ? runtimeUiText("Valid", language)
               : status.prepareCfgExists
-                ? "Invalid"
+                ? runtimeUiText("Invalid", language)
                 : runtimeUiText("Missing", language)}
           </strong>
         </article>
@@ -7821,7 +7819,7 @@ function App() {
             {status.autoexecValid
               ? runtimeUiText("Configured", language)
               : status.autoexecExists
-                ? "Missing SPLIT entry"
+                ? runtimeUiText("Missing SPLIT entry", language)
                 : runtimeUiText("Missing", language)}
           </strong>
         </article>
@@ -7849,10 +7847,10 @@ function App() {
 
           <code
             className="diagnostic-path"
-            title={status.consoleLogPath ?? "No Deadlock path available"}
+            title={status.consoleLogPath ?? runtimeUiText("No Deadlock path available", language)}
           >
             {status.consoleLogPath ??
-              "No Deadlock path available"}
+              runtimeUiText("No Deadlock path available", language)}
           </code>
         </article>
 
@@ -7891,14 +7889,14 @@ function App() {
     {activeSettingsSection === "about" && (
       <section className="about-settings-section" aria-labelledby="about-settings-title">
         <div className="about-settings-heading">
-          <p className="label">ABOUT</p>
+          <p className="label">{runtimeUiText("ABOUT", language)}</p>
           <h2 id="about-settings-title">SPLIT</h2>
         </div>
         <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>{t("replayGuide", language)}</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
-            <span>{language === "fr" ? "Version" : "Version"}</span>
-            <strong>{appVersion ?? "Loading…"}</strong>
+            <span>Version</span>
+            <strong>{appVersion ?? runtimeUiText("Loading…", language)}</strong>
           </div>
         </div>
       </section>
@@ -7909,7 +7907,7 @@ function App() {
       {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} navigate={navigateOnboarding} />}
       {error && (
         <div className="error-box">
-          Backend error: {error}
+          {runtimeUiText("Backend error: ", language)}{error}
         </div>
       )}
 
