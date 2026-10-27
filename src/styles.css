@@ -7879,3 +7879,12 @@ select:hover:not(:disabled) {
 .general-toggle-group { width: 170px; max-width: 35%; }
 .general-toggle-group .general-toggle { min-height: 32px; height: auto; padding: 6px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
 .drp-prefix-presets button { min-width: 0; height: auto; padding: 6px 2px; white-space: normal; overflow-wrap: anywhere; }
+
+/* Localization: prevent narrow buttons and status counters from stacking words. */
+.health-summary-counts { min-width: 0; }
+.health-count { white-space: normal; text-align: center; line-height: 1.35; }
+.health-summary-toggle { height: auto; min-width: 96px; white-space: normal; line-height: 1.35; }
+.general-restore-button { max-width: 42%; min-height: 32px; height: auto; white-space: normal; overflow-wrap: normal; line-height: 1.35; padding-top: 6px; padding-bottom: 6px; }
+.general-setting-row > div:first-child { min-width: 0; }
+.drp-select-option > span { min-width: 0; }
+.drp-select-option select { max-width: 48%; }
