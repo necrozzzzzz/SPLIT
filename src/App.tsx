@@ -50,7 +50,7 @@ import {
 } from "./startupSound";
 
 import DiscordPresenceSettings from "./DiscordPresenceSettings";
-import { getLanguage, setLanguage, languages, languageNames, t, uiText, type Language } from "./i18n";
+import { getLanguage, setLanguage, languages, languageNames, t, uiText, diagnosticText, type Language } from "./i18n";
 import Onboarding, { isOnboardingCompleted } from "./Onboarding";
 
 type DeadlockStatus = {
@@ -643,7 +643,7 @@ function DiagnosticInfo({ text, fix, language = "en" }: { text: string; fix?: st
   return (
     <details ref={ref} className="diagnostic-info">
       <summary aria-label={t("whatDoesItMean", language)} title={t("whatDoesItMean", language)}>i</summary>
-      <div className="diagnostic-info-content"><div className="diagnostic-info-label">{t("meaning", language).toUpperCase()}</div><p>{text}</p>{fix && <><div className="diagnostic-info-separator" /><div className="diagnostic-info-label">{t("troubleshooting", language).toUpperCase()}</div><p>{fix}</p></>}</div>
+      <div className="diagnostic-info-content"><div className="diagnostic-info-label">{t("meaning", language).toUpperCase()}</div><p>{diagnosticText(text, language)}</p>{fix && <><div className="diagnostic-info-separator" /><div className="diagnostic-info-label">{t("troubleshooting", language).toUpperCase()}</div><p>{fix}</p></>}</div>
     </details>
   );
 }
