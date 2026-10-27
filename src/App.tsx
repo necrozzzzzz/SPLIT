@@ -16,6 +16,7 @@ import {
 
 import {
   listen,
+  emit,
 } from "@tauri-apps/api/event";
 
 import {
@@ -665,6 +666,7 @@ function App() {
   };
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   useEffect(() => { void invoke("set_notification_language", { language }).catch(() => undefined); }, [language]);
+  useEffect(() => { void emit("split-language-updated", language).catch(() => undefined); }, [language]);
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingCompleted());
   const [activeView, setActiveView] =
     useState<AppView>("slots");
