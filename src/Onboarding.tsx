@@ -174,7 +174,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
       {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height }}>
         <div className="tour-demo-slot-image">
           <img src="/tutorial-mina.jpg" alt="Example Deadlock save state featuring Mina" />
-          {demoColor && <div className="tour-demo-slot-tint" style={{ backgroundColor: `${demoColor}45` }} />}
+          {demoColor && <div className="tour-demo-slot-tint" style={{ backgroundColor: demoColor }} />}
           <span>01</span>
         </div>
         <div className="tour-demo-slot-footer"><strong>Example · Mina</strong><small>{demoColor ? "Tint applied! Try another color." : "Try the slot actions above"}</small></div>
