@@ -4600,8 +4600,7 @@ function App() {
                 </h3>
 
                 <p className="confirmation-description">
-                  Favorite Mode uses one shared bank of
-                  8 Favorites instead of presets.
+                  {runtimeUiText("Favorite Mode uses one shared bank of 8 Favorites instead of presets.", language)}
                 </p>
 
                 <div className="favorite-mode-summary">
@@ -4617,8 +4616,7 @@ function App() {
                 </div>
 
                 <p className="favorite-mode-note">
-                  Changes made here affect these same
-                  Favorites every time you return.
+                  {runtimeUiText("Changes made here affect these same Favorites every time you return.", language)}
                 </p>
               </div>
             </div>
@@ -5439,7 +5437,7 @@ function App() {
                 {healthProblemCount} {uiText(healthProblemCount === 1 ? "issue detected" : "issues detected", language)}
               </span>
               <span className="health-summary-chevron" aria-hidden="true">
-                âŒ„
+                ⌄
               </span>
             </button>
           </div>
@@ -6108,7 +6106,7 @@ function App() {
                       }}
                     >
                       {position
-                        ? "Overwrite"
+                        ? uiText("Overwrite", language)
                         : runtimeUiText("Save", language)}
                       <span>
                         {formatHotkey(
@@ -7351,7 +7349,7 @@ function App() {
 
                 <code>
                   {status.hotkeysError ??
-                    "The Windows keyboard hook is not running."}
+                    runtimeUiText("The Windows keyboard hook is not running.", language)}
                 </code>
               </div>
 
@@ -7362,8 +7360,7 @@ function App() {
 
                 <ol>
                   <li>
-                    Close every other running
-                    instance of SPLIT.
+                    {runtimeUiText("Close every other running instance of SPLIT.", language)}
                   </li>
 
                   <li>
@@ -7436,7 +7433,7 @@ function App() {
 
                 <code>
                   {status.consoleWatcherError ??
-                    "The console watcher is not running."}
+                    runtimeUiText("The console watcher is not running.", language)}
                 </code>
               </div>
 
@@ -7447,8 +7444,7 @@ function App() {
 
                 <ol>
                   <li>
-                    Make sure SPLIT points to the
-                    correct Deadlock installation.
+                    {runtimeUiText("Make sure SPLIT points to the correct Deadlock installation.", language)}
                   </li>
 
                   <li>
@@ -7460,8 +7456,7 @@ function App() {
                   </li>
 
                   <li>
-                    If console.log is missing,
-                    launch Deadlock once.
+                    {runtimeUiText("If console.log is missing, launch Deadlock once.", language)}
                   </li>
 
                   <li>
@@ -7469,9 +7464,7 @@ function App() {
                   </li>
 
                   <li>
-                    If it still fails, check Windows
-                    permissions or antivirus software
-                    blocking SPLIT.
+                    {runtimeUiText("If it still fails, check Windows permissions or antivirus software blocking SPLIT.", language)}
                   </li>
                 </ol>
               </div>
@@ -7526,14 +7519,11 @@ function App() {
           {!status.teleportsReady && (
             <div className="diagnostic-details">
               <p className="diagnostic-description">
-                SPLIT prepares teleport points
-                automatically when you load a
-                populated slot.
+                {runtimeUiText("SPLIT prepares teleport points automatically when you load a populated slot.", language)}
               </p>
 
               <p className="diagnostic-description teleport-reassurance">
-                You do not need to do anything here
-                for Save / Load to work.
+                {runtimeUiText("You do not need to do anything here for Save / Load to work.", language)}
               </p>
 
               <div className="diagnostic-fix">
@@ -7542,9 +7532,7 @@ function App() {
                 </span>
 
                 <p className="teleport-manual-intro">
-                  Use this only if you want the
-                  teleport points to be ready in
-                  advance.
+                  {runtimeUiText("Use this only if you want the teleport points to be ready in advance.", language)}
                 </p>
 
                 <ol>
@@ -7563,10 +7551,7 @@ function App() {
               </div>
 
               <p className="teleport-context-note">
-                Teleport points may need to be
-                prepared again after startup repair,
-                saving a slot, switching presets, or
-                changing the active slot bank.
+                {runtimeUiText("Teleport points may need to be prepared again after startup repair, saving a slot, switching presets, or changing the active slot bank.", language)}
               </p>
 
               <div className="diagnostic-actions">
@@ -7734,15 +7719,11 @@ function App() {
               {!status.cameraRuntimeChecked ? (
                 <>
                   <p className="diagnostic-description">
-                    The camera runtime has not been
-                    checked during this Deadlock
-                    session yet.
+                    {runtimeUiText("The camera runtime has not been checked during this Deadlock session yet.", language)}
                   </p>
 
                   <p className="diagnostic-description">
-                    Start Deadlock and enter
-                    Sandbox / Practice mode, then
-                    test the camera.
+                    {runtimeUiText("Start Deadlock and enter Sandbox / Practice mode, then test the camera.", language)}
                   </p>
                 </>
               ) : (
@@ -7754,7 +7735,7 @@ function App() {
 
                     <code>
                       {status.cameraRuntimeError ??
-                        "Unknown camera runtime error"}
+                        runtimeUiText("Unknown camera runtime error", language)}
                     </code>
                   </div>
 
