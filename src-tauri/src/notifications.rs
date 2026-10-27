@@ -178,27 +178,48 @@ pub enum Notification {
     Test,
 }
 
+
+// Language is shared with the UI via set_notification_language.
+static NOTIFICATION_LANGUAGE: AtomicU32 = AtomicU32::new(0);
+
+pub fn set_language(language: &str) {
+    let index = match language {
+        "fr" => 1, "es" => 2, "de" => 3, "pt" => 4,
+        "ru" => 5, "ja" => 6, "zh" => 7, _ => 0,
+    };
+    NOTIFICATION_LANGUAGE.store(index, Ordering::Relaxed);
+}
+
+const NOTIFICATION_WORDS: [[&str; 14]; 8] = [
+    ["Preset", "Saved", "Loaded", "Favorite", "Slot", "empty", "Favorites enabled", "Favorites disabled", "Undo", "Redo", "Nothing to undo", "Nothing to redo", "Save failed", "Test notification"],
+    ["Preset", "Enregistré", "Chargé", "Favori", "Emplacement", "vide", "Favoris activés", "Favoris désactivés", "Annuler", "Rétablir", "Rien à annuler", "Rien à rétablir", "Échec de l’enregistrement", "Notification de test"],
+    ["Preset", "Guardado", "Cargado", "Favorito", "Ranura", "vacía", "Favoritos activados", "Favoritos desactivados", "Deshacer", "Rehacer", "Nada que deshacer", "Nada que rehacer", "Error al guardar", "Notificación de prueba"],
+    ["Preset", "Gespeichert", "Geladen", "Favorit", "Slot", "leer", "Favoriten aktiviert", "Favoriten deaktiviert", "Rückgängig", "Wiederholen", "Nichts rückgängig zu machen", "Nichts zu wiederholen", "Speichern fehlgeschlagen", "Testbenachrichtigung"],
+    ["Preset", "Salvo", "Carregado", "Favorito", "Slot", "vazio", "Favoritos ativados", "Favoritos desativados", "Desfazer", "Refazer", "Nada para desfazer", "Nada para refazer", "Falha ao salvar", "Notificação de teste"],
+    ["Пресет", "Сохранено", "Загружено", "Избранное", "Слот", "пуст", "Избранное включено", "Избранное выключено", "Отмена", "Повтор", "Нечего отменять", "Нечего повторять", "Ошибка сохранения", "Тестовое уведомление"],
+    ["プリセット", "保存済み", "読み込み済み", "お気に入り", "スロット", "空です", "お気に入りを有効化", "お気に入りを無効化", "元に戻す", "やり直す", "元に戻す操作がありません", "やり直す操作がありません", "保存に失敗しました", "テスト通知"],
+    ["预设", "已保存", "已加载", "收藏", "存档槽", "为空", "收藏已开启", "收藏已关闭", "撤销", "重做", "没有可撤销的操作", "没有可重做的操作", "保存失败", "测试通知"]
+];
+
+fn notification_word(index: usize) -> &'static str {
+    NOTIFICATION_WORDS[NOTIFICATION_LANGUAGE.load(Ordering::Relaxed) as usize][index]
+}
+
 impl Notification {
     fn text(&self) -> String {
         match self {
-            Self::Preset(preset) => format!("SPLIT · Preset {preset}"),
-            Self::SlotSaved { display_name, .. } => {
-                format!("SPLIT · Saved · {display_name}")
-            }
-            Self::SlotLoaded { display_name, .. } => {
-                format!("SPLIT · Loaded · {display_name}")
-            }
-            Self::SlotEmpty { slot, favorite } => {
-                format!("SPLIT · {} {slot} empty", slot_kind(*favorite))
-            }
-            Self::Favorites(true) => "SPLIT · Favorites enabled".to_string(),
-            Self::Favorites(false) => "SPLIT · Favorites disabled".to_string(),
-            Self::Undo => "SPLIT · Undo".to_string(),
-            Self::Redo => "SPLIT · Redo".to_string(),
-            Self::NothingToUndo => "SPLIT · Nothing to undo".to_string(),
-            Self::NothingToRedo => "SPLIT · Nothing to redo".to_string(),
-            Self::SaveFailed => "SPLIT · Save failed".to_string(),
-            Self::Test => "SPLIT · Test notification".to_string(),
+            Self::Preset(preset) => format!("SPLIT · {} {preset}", notification_word(0)),
+            Self::SlotSaved { display_name, .. } => format!("SPLIT · {} · {display_name}", notification_word(1)),
+            Self::SlotLoaded { display_name, .. } => format!("SPLIT · {} · {display_name}", notification_word(2)),
+            Self::SlotEmpty { slot, favorite } => format!("SPLIT · {} {slot} {}", notification_word(if *favorite { 3 } else { 4 }), notification_word(5)),
+            Self::Favorites(true) => format!("SPLIT · {}", notification_word(6)),
+            Self::Favorites(false) => format!("SPLIT · {}", notification_word(7)),
+            Self::Undo => format!("SPLIT · {}", notification_word(8)),
+            Self::Redo => format!("SPLIT · {}", notification_word(9)),
+            Self::NothingToUndo => format!("SPLIT · {}", notification_word(10)),
+            Self::NothingToRedo => format!("SPLIT · {}", notification_word(11)),
+            Self::SaveFailed => format!("SPLIT · {}", notification_word(12)),
+            Self::Test => format!("SPLIT · {}", notification_word(13)),
         }
     }
 
