@@ -655,8 +655,8 @@ function App() {
     if (value === "auto") {
       localStorage.removeItem("split.language");
       setAutomaticLanguage(true);
-      const detected = navigator.language.toLowerCase().split("-")[0];
-      updateLanguage(languages.includes(detected as Language) ? detected as Language : "en");
+      updateLanguage(getLanguage());
+      window.dispatchEvent(new Event("split-language-change"));
     } else {
       setLanguage(value as Language);
       updateLanguage(value as Language);
