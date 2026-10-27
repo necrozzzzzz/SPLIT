@@ -5334,7 +5334,7 @@ function App() {
               )
             }
           >
-            {language === "fr" ? "Présence Discord" : "Discord Presence"}
+            {uiText("Discord Presence", language)}
           </button>
 
           <button
@@ -5350,7 +5350,7 @@ function App() {
               )
             }
           >
-            {language === "fr" ? "Raccourcis clavier" : "Hotkeys"}
+            {uiText("Hotkeys", language)}
           </button>
 
           {isBorderlessEdition && (
@@ -5368,7 +5368,7 @@ function App() {
                 )
               }
             >
-              {language === "fr" ? "Notifications en jeu" : "In-Game Notifications"}
+              {uiText("In-Game Notifications", language)}
             </button>
           )}
 
@@ -5386,7 +5386,7 @@ function App() {
               )
             }
           >
-            {language === "fr" ? "Diagnostics" : "Diagnostics"}
+            {uiText("Diagnostics", language)}
           </button>
 
           <button
@@ -5400,7 +5400,7 @@ function App() {
               setActiveSettingsSection("about")
             }
           >
-            {language === "fr" ? "À propos" : "About"}
+            {uiText("About", language)}
           </button>
         </nav>
       )}
