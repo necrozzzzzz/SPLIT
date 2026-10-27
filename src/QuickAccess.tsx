@@ -19,7 +19,7 @@ import {
 } from "./screenshot";
 
 import "./quick-access.css";
-import { getLanguage, quickAccessText } from "./i18n";
+import { getLanguage, quickAccessText, languages, type Language } from "./i18n";
 
 
 type PositionSnapshot = {
@@ -123,6 +123,14 @@ export default function QuickAccess() {
     const update = () => setCurrentLanguage(getLanguage());
     window.addEventListener("split-language-change", update);
     return () => window.removeEventListener("split-language-change", update);
+  }, []);
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<Language>("split-language-updated", (event) => {
+      if (!disposed && languages.includes(event.payload)) setCurrentLanguage(event.payload);
+    }).then((cleanup) => { if (disposed) cleanup(); else unlisten = cleanup; }).catch(() => undefined);
+    return () => { disposed = true; unlisten?.(); };
   }, []);
   const q = (english: string) => quickAccessText(english, language);
   const [
