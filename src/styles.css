@@ -7893,3 +7893,9 @@ select:hover:not(:disabled) {
 .preset-management .preset-button { height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .confirmation-dialog .confirmation-title, .confirmation-dialog .confirmation-description { overflow-wrap: anywhere; }
 .confirmation-actions .preset-button { height: auto; min-height: 32px; white-space: normal; line-height: 1.35; }
+
+/* Internationalization: accommodate long hotkey labels and translated notification controls. */
+.hotkey-row > span, .hotkey-action-item .hotkey-row > span { min-width: 0; overflow-wrap: anywhere; }
+.hotkey-row button, .quick-access-shortcut-control button, .notification-test-button { height: auto; min-height: 32px; white-space: normal; line-height: 1.35; }
+.notification-settings-heading > div { min-width: 0; }
+.notification-settings-heading p { overflow-wrap: anywhere; }

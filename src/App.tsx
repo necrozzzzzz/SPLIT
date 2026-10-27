@@ -6767,7 +6767,7 @@ function App() {
                         capturingHotkey,
                         { group: "quickAccess" },
                       )
-                        ? "Press a shortcut..."
+                        ? runtimeUiText("Press a shortcut...", language)
                         : formatHotkey(hotkeySettings.quickAccess)}
                     </kbd>
                     <button
@@ -6797,8 +6797,7 @@ function App() {
                         capturingHotkey,
                         { group: "quickAccess" },
                       )
-                        ? "Cancel"
-                        : "Change"}
+                        ? uiText("Cancel", language) : runtimeUiText("Change", language)}
                     </button>
                   </div>
                 </div>
@@ -6834,7 +6833,7 @@ function App() {
                             })
                           }
                         >
-                          {position === "left" ? "Left" : "Right"}
+                          {runtimeUiText(position === "left" ? "Left" : "Right", language)}
                         </button>
                       ),
                     )}
@@ -6963,13 +6962,13 @@ function App() {
             ["SAVE", "saveSlots", hotkeySettings.saveSlots],
           ] as const).map(([label, group, bindings]) => (
             <div className="hotkey-category" key={group}>
-              <h3>{label}</h3>
+              <h3>{runtimeUiText(label, language)}</h3>
               {bindings.map((hotkey, index) => {
                 const target: HotkeyTarget = { group, index };
                 const capturing = isHotkeyTarget(capturingHotkey, target);
                 return (
                   <div className={`hotkey-row ${capturing ? "capturing" : ""}`} key={`${group}-${index}`}>
-                    <span>{label === "LOAD" ? runtimeUiText("Load", language) : runtimeUiText("Save", language)} Slot {index + 1}</span>
+                    <span>{label === "LOAD" ? runtimeUiText("Load", language) : runtimeUiText("Save", language)} {runtimeUiText("Slot", language)} {index + 1}</span>
                     <HotkeyKeys
                       hotkey={hotkey}
                       capturing={capturing}
@@ -6982,7 +6981,7 @@ function App() {
                         setCapturingHotkey(capturing ? null : target);
                       }}
                     >
-                      {capturing ? "Cancel" : "Change"}
+                      {capturing ? uiText("Cancel", language) : runtimeUiText("Change", language)}
                     </button>
                   </div>
                 );
@@ -7003,7 +7002,7 @@ function App() {
               return (
                 <div className="hotkey-action-item" key={group}>
                   <div className={`hotkey-row ${capturing ? "capturing" : ""}`}>
-                    <span>{label}</span>
+                    <span>{runtimeUiText(label, language)}</span>
                     <HotkeyKeys
                       hotkey={hotkey}
                       capturing={capturing}
@@ -7016,13 +7015,12 @@ function App() {
                         setCapturingHotkey(capturing ? null : target);
                       }}
                     >
-                      {capturing ? "Cancel" : "Change"}
+                      {capturing ? uiText("Cancel", language) : runtimeUiText("Change", language)}
                     </button>
                   </div>
                   {group === "cyclePreset" && isSimpleTextHotkey(hotkey) && (
                     <p className="hotkey-text-key-note">
-                      Text keys may be captured while the Deadlock console is open.
-                      Use a function key or modified shortcut to avoid interfering with typing.
+                      {runtimeUiText("Text keys may be captured while the Deadlock console is open. Use a function key or modified shortcut to avoid interfering with typing.", language)}
                     </p>
                   )}
                 </div>
@@ -7040,17 +7038,14 @@ function App() {
       <section className="notification-settings-section">
         <div className="notification-settings-heading">
           <div>
-            <p className="label">
-              IN-GAME NOTIFICATIONS
-            </p>
+            <p className="label">{runtimeUiText("IN-GAME NOTIFICATIONS", language)}</p>
 
             <h2>
               {uiText("In-Game notifications", language)}
             </h2>
 
             <p>
-              Configure how SPLIT notifications appear
-              while playing Deadlock.
+              {runtimeUiText("Configure how SPLIT notifications appear while playing Deadlock.", language)}
             </p>
           </div>
 
@@ -7065,7 +7060,7 @@ function App() {
           >
             {notificationTesting
               ? runtimeUiText("Testing…", language)
-              : "Test notification"}
+              : uiText("Test notification", language)}
           </button>
         </div>
 
