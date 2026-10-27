@@ -153,7 +153,7 @@ export default function QuickAccess() {
   const [
     bankName,
     setBankName,
-  ] = useState("Preset");
+  ] = useState(() => `${quickAccessText("Preset", getLanguage())}`);
 
   const [
     hotkeys,

@@ -5149,7 +5149,7 @@ function App() {
             <p className="subtitle">
               {activeView === "settings"
                 ? t("preferences", language)
-                : presetNames[activePreset - 1] ?? `Preset ${activePreset}`}
+                : presetNames[activePreset - 1] ?? `${runtimeUiText("Preset", language)} ${activePreset}`}
             </p>
           )}
         </div>
