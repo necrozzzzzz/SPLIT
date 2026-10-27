@@ -4653,7 +4653,7 @@ function App() {
                   id="save-favorite-title"
                   className="confirmation-title"
                 >
-                  Choose a Favorite slot for{" "}
+                  {runtimeUiText("Choose a Favorite slot for", language)}{" "}
                   <strong>
                     &quot;
                     {pendingFavoriteCopy.sourceName}
@@ -4662,9 +4662,7 @@ function App() {
                 </h3>
 
                 <p className="confirmation-description">
-                  The complete save will be copied,
-                  including position, camera, name,
-                  timestamp and color.
+                  {runtimeUiText("The complete save will be copied, including position, camera, name, timestamp and color.", language)}
                 </p>
               </div>
             </div>
@@ -4759,9 +4757,7 @@ function App() {
                 </h3>
 
                 <p className="confirmation-description">
-                  This slot already contains a Favorite.
-                  Choose whether to replace it with the
-                  selected savestate.
+                  {runtimeUiText("This slot already contains a Favorite. Choose whether to replace it with the selected savestate.", language)}
                 </p>
 
                 <div className="favorite-overwrite-comparison">
