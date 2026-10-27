@@ -6498,7 +6498,7 @@ function App() {
                     aria-checked={startupSoundSettings.enabled}
                     onClick={toggleStartupSound}
                   >
-                    {startupSoundSettings.enabled ? "On" : "Off"}
+                    {startupSoundSettings.enabled ? uiText("On", language) : uiText("Off", language)}
                   </button>
                 </div>
 
@@ -6593,8 +6593,8 @@ function App() {
                       : focusDeadlockOnStartupLoading
                         ? "Checking…"
                         : focusDeadlockOnStartup
-                          ? "On"
-                          : "Off"}
+                          ? uiText("On", language)
+                          : uiText("Off", language)}
                   </button>
                 </div>
               </div>
@@ -6651,8 +6651,8 @@ function App() {
                     : autostartLoading
                       ? "Checking…"
                       : autostartEnabled
-                        ? "On"
-                        : "Off"}
+                        ? uiText("On", language)
+                        : uiText("Off", language)}
                 </button>
               </div>
 
@@ -6692,8 +6692,8 @@ function App() {
                     : startMinimizedLoading
                       ? "Checking…"
                       : startMinimized
-                        ? "On"
-                        : "Off"}
+                        ? uiText("On", language)
+                        : uiText("Off", language)}
                 </button>
               </div>
 
@@ -6814,7 +6814,7 @@ function App() {
                       })
                     }
                   >
-                    {quickAccessSettings.enabled ? "On" : "Off"}
+                    {quickAccessSettings.enabled ? uiText("On", language) : uiText("Off", language)}
                   </button>
                 </div>
 
@@ -7172,7 +7172,7 @@ function App() {
                 })
               }
             >
-              {notificationSettings.enabled ? "ON" : "OFF"}
+              {notificationSettings.enabled ? uiText("ON", language) : uiText("OFF", language)}
             </button>
           </label>
 
@@ -7232,7 +7232,7 @@ function App() {
                 })
               }
             >
-              {notificationSettings.useSlotColor ? "ON" : "OFF"}
+              {notificationSettings.useSlotColor ? uiText("ON", language) : uiText("OFF", language)}
             </button>
           </label>
         </div>
