@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isBorderlessEdition } from "./edition";
 import "./onboarding.css";
 
@@ -16,7 +16,7 @@ const steps: Step[] = [
   { title: "General settings", description: "Customize desktop behavior, appearance, startup sound, and other preferences here.", target: ".general-settings-section", view: "settings", section: "general" },
   ...(isBorderlessEdition ? [{ title: "Quick access", description: "In the Borderless edition, enable the Quick Access overlay and configure its position here. It lets you work with slots while in Deadlock.", target: ".quick-access-settings-group", view: "settings" as const, section: "general" as const }] : []),
   { title: "Discord rich presence", description: "Choose what Discord displays for your Hideout, Explore NYC, matchmaking, and matches. Customize hero images, text, and activity details.", target: ".drp-settings-shell", view: "settings", section: "discord" },
-  { title: "Keyboard shortcuts", description: "Customize shortcuts for saving and loading slots, switching presets, favorites, and undo / redo.", tips: ["Tip: Some actions use mouse gestures instead of configurable hotkeys. Right-click a saved slot preview to open its screenshot."], target: ".settings-view", view: "settings", section: "hotkeys" },
+  { title: "Keyboard shortcuts", description: "Customize shortcuts for saving and loading slots, switching presets, favorites, and undo / redo.", tips: ["Some actions use mouse gestures instead of configurable hotkeys. Right-click a saved slot preview to open its screenshot."], target: ".settings-view", view: "settings", section: "hotkeys" },
   ...(isBorderlessEdition ? [{ title: "In-game notifications", description: "Choose where in-game notifications appear, how long they remain visible, and whether they use slot colors.", target: ".settings-view", view: "settings" as const, section: "notifications" as const }] : []),
   { title: "Diagnostics", description: "You don't need this section for everyday use. If something stops working, check these status indicators to identify the problem. Select the info icons on individual cards to learn what each one means.", target: ".settings-view", view: "settings", section: "diagnostics" },
   { title: "You're ready!", description: "You can reopen this guide at any time from Settings > About. Have fun practicing!", target: ".about-settings-section", view: "settings", section: "about" },
@@ -30,6 +30,17 @@ type Rect = { top: number; left: number; right: number; bottom: number; width: n
 export default function Onboarding({ onClose, navigate }: Props) {
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
+  const popoverRef = useRef<HTMLElement>(null);
+  const [popoverHeight, setPopoverHeight] = useState(300);
+  useLayoutEffect(() => {
+    const el = popoverRef.current;
+    if (!el) return;
+    const update = () => setPopoverHeight(el.getBoundingClientRect().height);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [index]);
   const step = steps[index];
   useLayoutEffect(() => { navigate(step.view, step.section); }, [index, navigate, step.view, step.section]);
   useEffect(() => {
@@ -60,8 +71,9 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const w = window.innerWidth, h = window.innerHeight;
   const tipWidth = Math.min(370, w - 32);
   const tipLeft = rect ? Math.max(16, Math.min(w - tipWidth - 16, rect.left)) : Math.max(16, (w - tipWidth) / 2);
-  const estimatedHeight = 270;
-  const tipTop = Math.max(16, Math.min(h - estimatedHeight - 16, rect ? (rect.bottom + estimatedHeight + 18 < h ? rect.bottom + 18 : rect.top > estimatedHeight + 30 ? rect.top - estimatedHeight - 18 : h - estimatedHeight - 16) : (h - estimatedHeight) / 2));
+  const usableHeight = Math.min(popoverHeight, h - 32);
+  const desiredTop = rect ? (rect.bottom + usableHeight + 18 < h ? rect.bottom + 18 : rect.top >= usableHeight + 34 ? rect.top - usableHeight - 18 : 16) : (h - usableHeight) / 2;
+  const tipTop = Math.max(16, Math.min(h - usableHeight - 16, desiredTop));
   return (
     <div className="tour-root" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       {rect ? <>
@@ -71,7 +83,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <div className="tour-shade" style={{ left: rect.right, top: rect.top, width: w - rect.right, height: rect.bottom - rect.top }} />
         <div className="tour-highlight" style={{ top: rect.top, left: rect.left, width: rect.right - rect.left, height: rect.bottom - rect.top }} />
       </> : <div className="tour-shade" style={{ inset: 0 }} />}
-      <section className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
+      <section ref={popoverRef} className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
         <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>Skip guide</button></div>
         <div className="tour-progress">{steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}</div>
         <p className="tour-counter">STEP {index + 1} OF {steps.length}</p>
