@@ -7899,3 +7899,10 @@ select:hover:not(:disabled) {
 .hotkey-row button, .quick-access-shortcut-control button, .notification-test-button { height: auto; min-height: 32px; white-space: normal; line-height: 1.35; }
 .notification-settings-heading > div { min-width: 0; }
 .notification-settings-heading p { overflow-wrap: anywhere; }
+
+/* DRP localization: long translated labels must remain legible. */
+.drp-prefix-presets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.drp-prefix-presets button { min-width: 0; overflow-wrap: anywhere; }
+.drp-preview-copy { min-width: 0; }
+.drp-preview-copy strong, .drp-preview-copy span { overflow-wrap: anywhere; }
+.drp-section-nav button { min-width: 0; white-space: normal; overflow-wrap: anywhere; }

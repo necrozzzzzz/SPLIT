@@ -597,7 +597,7 @@ export default function DiscordPresenceSettings() {
     <section className="drp-settings-shell">
       <header className="drp-settings-header">
         <div>
-          <p className="label">DISCORD</p>
+          <p className="label">{d("DISCORD")}</p>
           <h2>{uiText("Discord Rich Presence", language)}</h2>
           <p>{uiText("Show your current Deadlock activity on Discord.", language)}</p>
         </div>

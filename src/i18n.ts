@@ -2372,6 +2372,7 @@ export function diagnosticText(english: string, language: Language): string {
 
 export const discordUiLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "DISCORD": "DISCORD",
     "Sandbox": "Sandbox",
     "Exploring NYC": "Exploring NYC",
     "Exploring NYC with ": "Exploring NYC with ",
@@ -2427,6 +2428,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "preview"
   },
   "fr": {
+    "DISCORD": "DISCORD",
     "Sandbox": "Bac à sable",
     "Exploring NYC": "Exploration de NYC",
     "Exploring NYC with ": "Exploration de NYC avec ",
@@ -2482,6 +2484,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "aperçu"
   },
   "es": {
+    "DISCORD": "DISCORD",
     "Sandbox": "Práctica",
     "Exploring NYC": "Explorando NYC",
     "Exploring NYC with ": "Explorando NYC con ",
@@ -2537,6 +2540,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "vista previa"
   },
   "de": {
+    "DISCORD": "DISCORD",
     "Sandbox": "Übungsmodus",
     "Exploring NYC": "NYC erkunden",
     "Exploring NYC with ": "NYC erkunden mit ",
@@ -2592,6 +2596,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "Vorschau"
   },
   "pt": {
+    "DISCORD": "DISCORD",
     "Sandbox": "Treino",
     "Exploring NYC": "Explorando NYC",
     "Exploring NYC with ": "Explorando NYC com ",
@@ -2647,6 +2652,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "prévia"
   },
   "ru": {
+    "DISCORD": "ДИСКОРД",
     "Sandbox": "Тренировка",
     "Exploring NYC": "Исследование NYC",
     "Exploring NYC with ": "Исследование NYC с ",
@@ -2702,6 +2708,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "предпросмотр"
   },
   "ja": {
+    "DISCORD": "DISCORD",
     "Sandbox": "練習モード",
     "Exploring NYC": "NYC を探索中",
     "Exploring NYC with ": "NYC を探索中：",
@@ -2757,6 +2764,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "プレビュー"
   },
   "zh": {
+    "DISCORD": "DISCORD",
     "Sandbox": "练习模式",
     "Exploring NYC": "探索 NYC",
     "Exploring NYC with ": "正在探索 NYC，使用 ",
