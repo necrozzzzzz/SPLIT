@@ -381,7 +381,7 @@ const HERO_ARTWORK_MAPPINGS: &[HeroArtworkMapping] = &[
             image: "baba",
             text: "Baba",
         },
-        hideout_details: None,
+        hideout_details: Some("Hating Mildred in the Hideout"),
     },
     HeroArtworkMapping {
         internal_keys: &["bebop"],
@@ -421,7 +421,7 @@ const HERO_ARTWORK_MAPPINGS: &[HeroArtworkMapping] = &[
             image: "deadman_danny",
             text: "Deadman Danny",
         },
-        hideout_details: None,
+        hideout_details: Some("Testing Fine Fairfax Products in The Hideout"),
     },
     HeroArtworkMapping {
         internal_keys: &["drifter"],
@@ -549,7 +549,7 @@ const HERO_ARTWORK_MAPPINGS: &[HeroArtworkMapping] = &[
             image: "nurse_harrow",
             text: "Nurse Harrow",
         },
-        hideout_details: None,
+        hideout_details: Some("Conducting Rounds In The Hideout"),
     },
     HeroArtworkMapping {
         internal_keys: &["paige", "bookworm"],
@@ -629,7 +629,7 @@ const HERO_ARTWORK_MAPPINGS: &[HeroArtworkMapping] = &[
             image: "solomon",
             text: "Solomon",
         },
-        hideout_details: None,
+        hideout_details: Some("Planning Moves In The Hideout"),
     },
     HeroArtworkMapping {
         internal_keys: &["the_doorman", "doorman"],
@@ -669,7 +669,7 @@ const HERO_ARTWORK_MAPPINGS: &[HeroArtworkMapping] = &[
             image: "violet",
             text: "Violet",
         },
-        hideout_details: None,
+        hideout_details: Some("Painting In The Hideout"),
     },
     HeroArtworkMapping {
         internal_keys: &["viscous"],
@@ -2339,15 +2339,12 @@ mod tests {
             MatchMode::Invalid,
             GameMode::Invalid,
         );
-        for hero in [None, Some("baba"), Some("unknown_hero")] {
+        for hero in [None, Some("unknown_hero")] {
             let mut hideout = console(ConsolePhase::Hideout, None, "HeroTest");
             hideout.current_hero = hero.map(str::to_string);
             let result = snapshot(memory, &hideout);
             assert_eq!(result.details, "Deadlock");
             assert_eq!(result.state, "Hideout · 2/6");
-            if hero == Some("baba") {
-                assert_eq!(result.large_image, "baba");
-            }
         }
     }
 
