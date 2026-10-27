@@ -8,7 +8,7 @@ type Step = { title: string; description: string; target: string; view: "slots" 
 const steps: Step[] = [
   { title: "Welcome to SPLIT", description: "Your Deadlock practice companion. This short interactive tour will show you where to find the tools you need. Nothing will be saved or loaded during the tour.", target: "", view: "slots" },
   { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
-  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click a saved slot’s preview to view its screenshot (when available).", "Click a slot name to rename it."] },
+  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots", tips: ["Right-click Mina’s preview to try the screenshot viewer.", "Click the example slot name below to try renaming it."] },
   { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, copying a saved position, and assigning a color. Click the highlighted three-dot button on Mina’s example slot, then choose a color to try it in Tint mode.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
   { title: "Undo and redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
   { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
@@ -34,6 +34,9 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const [demoCardRect, setDemoCardRect] = useState<Rect | null>(null);
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const [demoColor, setDemoColor] = useState<string | null>(null);
+  const [demoName, setDemoName] = useState("Slot 1");
+  const [demoRenaming, setDemoRenaming] = useState(false);
+  const [demoDraft, setDemoDraft] = useState("Slot 1");
   const [rect, setRect] = useState<Rect | null>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const [popoverHeight, setPopoverHeight] = useState(300);
@@ -47,7 +50,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
     return () => observer.disconnect();
   }, [index]);
   const step = steps[index];
-  useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); }, [index]);
+  useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName("Slot 1"); setDemoDraft("Slot 1"); setDemoRenaming(false); }, [index]);
   useEffect(() => {
     if (!demoOpen) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopImmediatePropagation(); setDemoOpen(false); } };
@@ -170,6 +173,10 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <img src="/tutorial-mina.jpg" alt="Example Deadlock screenshot featuring Mina" />
         <span className="tour-live-preview-number">01</span>
         <span className="tour-live-preview-hint">RIGHT-CLICK TO PREVIEW</span>
+      </div>}
+      {step.title === "Save State slots" && demoCardRect && <div className="tour-live-rename" style={{ position: "fixed", left: demoCardRect.left, top: demoSlotRect ? demoSlotRect.bottom : demoCardRect.bottom - 56, width: demoCardRect.width, height: demoSlotRect ? Math.max(42, demoCardRect.bottom - demoSlotRect.bottom) : 56 }}>
+        {demoRenaming ? <input autoFocus aria-label="Rename example slot" maxLength={40} value={demoDraft} onChange={event => setDemoDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); } if (event.key === "Escape") { event.stopPropagation(); setDemoRenaming(false); setDemoDraft(demoName); } }} onBlur={() => { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); }} /> : <button type="button" className="tour-live-rename-button" onClick={() => { setDemoDraft(demoName); setDemoRenaming(true); }} title="Click to rename this example slot">{demoName}</button>}
+        <small>{demoRenaming ? "Press Enter to confirm · Esc to cancel" : "CLICK THE NAME TO TRY RENAMING"}</small>
       </div>}
       {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height }}>
         <div className="tour-demo-slot-image">
