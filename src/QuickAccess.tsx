@@ -19,6 +19,7 @@ import {
 } from "./screenshot";
 
 import "./quick-access.css";
+import { getLanguage, quickAccessText } from "./i18n";
 
 
 type PositionSnapshot = {
