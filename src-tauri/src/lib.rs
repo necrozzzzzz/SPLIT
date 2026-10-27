@@ -392,84 +392,6 @@ fn resume_deadlock_presentation() -> Result<deadlock::DeadlockStatus, String> {
 }
 
 #[tauri::command]
-async fn list_bot_replay_candidates() -> Result<Vec<u32>, String> {
-    tauri::async_runtime::spawn_blocking(deadlock::list_bot_replay_candidates)
-        .await.map_err(|e| format!("Bot scan task failed: {e}"))?
-}
-
-#[tauri::command]
-async fn record_bot_replay_diagnostic(
-    entity_index: u32,
-    duration_ms: u64,
-    output_path: String,
-) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        deadlock::record_bot_replay_diagnostic(entity_index, duration_ms, output_path)
-    })
-    .await
-    .map_err(|e| format!("Bot replay diagnostic task failed: {e}"))?
-}
-
-#[tauri::command]
-async fn start_bot_route_recording(entity_index: u32) -> Result<deadlock::RouteRecordingStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || deadlock::start_bot_route_recording(entity_index))
-        .await
-        .map_err(|error| format!("Bot route recorder start task failed: {error}"))?
-}
-
-#[tauri::command]
-async fn start_route_recording() -> Result<deadlock::RouteRecordingStatus, String> {
-    tauri::async_runtime::spawn_blocking(deadlock::start_route_recording)
-        .await
-        .map_err(|error| format!("Route recorder start task failed: {error}"))?
-}
-
-#[tauri::command]
-async fn stop_route_recording() -> Result<deadlock::RouteRecordingStatus, String> {
-    tauri::async_runtime::spawn_blocking(deadlock::stop_route_recording)
-        .await
-        .map_err(|error| format!("Route recorder stop task failed: {error}"))?
-}
-
-#[tauri::command]
-fn get_route_recording_status() -> Result<deadlock::RouteRecordingStatus, String> {
-    deadlock::get_route_recording_status()
-}
-
-#[tauri::command]
-async fn save_route_recording_json(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || deadlock::save_route_recording_json(path))
-        .await
-        .map_err(|error| format!("Route recorder save task failed: {error}"))?
-}
-
-#[tauri::command]
-async fn load_ghost_route_json(path: String) -> Result<deadlock::GhostPlaybackStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || deadlock::load_ghost_route_json(path))
-        .await
-        .map_err(|error| format!("Ghost route load task failed: {error}"))?
-}
-
-#[tauri::command]
-async fn start_ghost_playback(looping: bool) -> Result<deadlock::GhostPlaybackStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || deadlock::start_ghost_playback(looping))
-        .await
-        .map_err(|error| format!("Ghost playback start task failed: {error}"))?
-}
-
-#[tauri::command]
-async fn stop_ghost_playback() -> Result<deadlock::GhostPlaybackStatus, String> {
-    tauri::async_runtime::spawn_blocking(deadlock::stop_ghost_playback)
-        .await
-        .map_err(|error| format!("Ghost playback stop task failed: {error}"))?
-}
-
-#[tauri::command]
-fn get_ghost_playback_status() -> Result<deadlock::GhostPlaybackStatus, String> {
-    deadlock::get_ghost_playback_status()
-}
-
-#[tauri::command]
 fn confirm_deadlock_path(
     app: tauri::AppHandle,
     path: String,
@@ -745,17 +667,6 @@ pub fn run() {
             retry_console_watcher,
             prepare_teleports_now,
             resume_deadlock_presentation,
-            list_bot_replay_candidates,
-            record_bot_replay_diagnostic,
-            start_route_recording,
-            start_bot_route_recording,
-            stop_route_recording,
-            get_route_recording_status,
-            save_route_recording_json,
-            load_ghost_route_json,
-            start_ghost_playback,
-            stop_ghost_playback,
-            get_ghost_playback_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building SPLIT");
