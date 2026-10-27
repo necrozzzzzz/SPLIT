@@ -6882,7 +6882,7 @@ function App() {
               </div>
 
               <div className="general-settings-group">
-                <h3>CONFIRMATIONS &amp; WARNINGS</h3>
+                <h3>{runtimeUiText("CONFIRMATIONS & WARNINGS", language)}</h3>
 
               <div className="general-setting-row">
                 <div>
@@ -6891,8 +6891,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Show the confirmation dialog
-                    before clearing an entire preset.
+                    {runtimeUiText("Show the confirmation dialog before clearing an entire preset.", language)}
                   </span>
                 </div>
 
@@ -6904,8 +6903,8 @@ function App() {
                   }
                 >
                   {clearPresetConfirmationRestored
-                    ? "Restored"
-                    : "Restore confirmation"}
+                    ? runtimeUiText("Restored", language)
+                    : runtimeUiText("Restore confirmation", language)}
                 </button>
               </div>
 
@@ -6916,8 +6915,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Warn when a shortcut may interfere
-                    with Deadlock controls.
+                    {runtimeUiText("Warn when a shortcut may interfere with Deadlock controls.", language)}
                   </span>
                 </div>
 
@@ -6929,8 +6927,8 @@ function App() {
                   }
                 >
                   {gameplayHotkeyWarningRestored
-                    ? "Restored"
-                    : "Restore warning"}
+                    ? runtimeUiText("Restored", language)
+                    : runtimeUiText("Restore warning", language)}
                 </button>
               </div>
 
@@ -6941,8 +6939,7 @@ function App() {
                   </strong>
 
                   <span>
-                    Show the information dialog when
-                    entering Favorite Mode.
+                    {runtimeUiText("Show the information dialog when entering Favorite Mode.", language)}
                   </span>
                 </div>
 
@@ -6954,8 +6951,8 @@ function App() {
                   }
                 >
                   {favoriteModeWarningRestored
-                    ? "Restored"
-                    : "Restore warning"}
+                    ? runtimeUiText("Restored", language)
+                    : runtimeUiText("Restore warning", language)}
                 </button>
               </div>
               </div>
@@ -6980,7 +6977,7 @@ function App() {
             disabled={hotkeySettingsSaving}
             onClick={() => void resetHotkeys()}
           >
-            {hotkeysRestored ? "Restored" : "Reset to defaults"}
+            {hotkeysRestored ? runtimeUiText("Restored", language) : runtimeUiText("Reset to defaults", language)}
           </button>
         </div>
 
