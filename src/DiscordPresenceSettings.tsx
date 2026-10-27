@@ -720,6 +720,7 @@ export default function DiscordPresenceSettings() {
                     }
                   />
                   <PartyDisplayRow
+                    language={language}
                     value={config.sandbox.partyDisplay}
                     onChange={(partyDisplay) =>
                       updateSection("sandbox", { partyDisplay })
