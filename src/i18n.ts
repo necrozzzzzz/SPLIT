@@ -3065,6 +3065,8 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Preset name cannot be empty": "Preset name cannot be empty",
+    "Invalid preset": "Invalid preset",
     "Screenshot for": "Screenshot for",
     "Open actions for": "Open actions for",
     "Rename slot": "Rename slot",
@@ -3232,6 +3234,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Preset name cannot be empty": "Le nom du preset ne peut pas être vide",
+    "Invalid preset": "Preset invalide",
     "Screenshot for": "Capture d’écran de",
     "Open actions for": "Ouvrir les actions de",
     "Rename slot": "Renommer l’emplacement",
@@ -3399,6 +3403,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Preset name cannot be empty": "El nombre del preajuste no puede estar vacío",
+    "Invalid preset": "Preajuste no válido",
     "Screenshot for": "Captura de pantalla de",
     "Open actions for": "Abrir acciones de",
     "Rename slot": "Renombrar espacio",
@@ -3566,6 +3572,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Preset name cannot be empty": "Der Preset-Name darf nicht leer sein",
+    "Invalid preset": "Ungültiges Preset",
     "Screenshot for": "Screenshot von",
     "Open actions for": "Aktionen öffnen für",
     "Rename slot": "Platz umbenennen",
@@ -3733,6 +3741,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Preset name cannot be empty": "O nome da predefinição não pode estar vazio",
+    "Invalid preset": "Predefinição inválida",
     "Screenshot for": "Captura de tela de",
     "Open actions for": "Abrir ações de",
     "Rename slot": "Renomear espaço",
@@ -3900,6 +3910,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Preset name cannot be empty": "Название пресета не может быть пустым",
+    "Invalid preset": "Недопустимый пресет",
     "Screenshot for": "Скриншот для",
     "Open actions for": "Открыть действия для",
     "Rename slot": "Переименовать слот",
@@ -4067,6 +4079,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Preset name cannot be empty": "プリセット名を空にすることはできません",
+    "Invalid preset": "無効なプリセット",
     "Screenshot for": "スクリーンショット：",
     "Open actions for": "操作を開く：",
     "Rename slot": "スロット名を変更",
@@ -4234,6 +4248,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Preset name cannot be empty": "预设名称不能为空",
+    "Invalid preset": "无效的预设",
     "Screenshot for": "截图：",
     "Open actions for": "打开操作：",
     "Rename slot": "重命名槽位",

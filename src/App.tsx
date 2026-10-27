@@ -2650,7 +2650,7 @@ function App() {
                 current
                   ? {
                       ...current,
-                      error: "Preset name cannot be empty",
+                      error: runtimeUiText("Preset name cannot be empty", language),
                     }
                   : current,
               );
@@ -2929,7 +2929,7 @@ function App() {
                 typeof imported.name ===
                   "string"
                   ? imported.name
-                  : "Invalid preset";
+                  : runtimeUiText("Invalid preset", language);
 
               setPendingImportPreset({
                 preset:
@@ -4255,14 +4255,14 @@ function App() {
     !status.integrationHealthy
       ? {
           tone: "error" as const,
-          title: "SPLIT integration",
+          title: uiText("SPLIT integration", language),
           description: runtimeUiText("The Deadlock integration needs repair.", language),
         }
       : null,
     !status.hotkeysRunning
       ? {
           tone: "error" as const,
-          title: "Hotkey hook",
+          title: uiText("Hotkey hook", language),
           description: runtimeUiText("The Windows keyboard hook is not running.", language),
         }
       : null,
@@ -4270,14 +4270,14 @@ function App() {
     !status.consoleWatcherRunning
       ? {
           tone: "error" as const,
-          title: "Console watcher",
+          title: uiText("Console watcher", language),
           description: runtimeUiText("The Deadlock console watcher is not running.", language),
         }
       : null,
     status.presentationMaskActive
       ? {
           tone: "error" as const,
-          title: "Presentation mask",
+          title: uiText("Presentation mask", language),
           description: runtimeUiText("Deadlock presentation may still be paused.", language),
         }
       : null,
@@ -4285,14 +4285,14 @@ function App() {
     !status.cameraRuntimeReady
       ? {
           tone: "error" as const,
-          title: "Camera runtime",
+          title: uiText("Camera runtime", language),
           description: runtimeUiText("The tested camera runtime is unavailable.", language),
         }
       : null,
     !status.deadlockRunning
       ? {
           tone: "warning" as const,
-          title: "Deadlock process",
+          title: uiText("Deadlock process", language),
           description: runtimeUiText("Deadlock is not currently running.", language),
         }
       : null,
@@ -4300,7 +4300,7 @@ function App() {
     !status.consoleLogExists
       ? {
           tone: "warning" as const,
-          title: "Console log",
+          title: uiText("Console log", language),
           description: runtimeUiText("Deadlock's console log is unavailable.", language),
         }
       : null,
@@ -5691,7 +5691,7 @@ function App() {
             )
           }
         >
-          Undo&nbsp;&nbsp;
+          {runtimeUiText("Undo", language)}&nbsp;&nbsp;
           {formatHotkey(
             hotkeySettings.undo,
           )}
@@ -5711,7 +5711,7 @@ function App() {
             )
           }
         >
-          Redo&nbsp;&nbsp;
+          {runtimeUiText("Redo", language)}&nbsp;&nbsp;
           {formatHotkey(
             hotkeySettings.redo,
           )}
