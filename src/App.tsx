@@ -5260,8 +5260,8 @@ function App() {
               disabled={loading}
             >
               {loading
-                ? "Checking…"
-                : "Refresh"}
+                ? t("checking", language)
+                : t("refresh", language)}
             </button>    
 
           </div>
