@@ -1,0 +1,16 @@
+{
+  "sourceSha256": "59c44b944e5e89f39aa28094ec27313fb300e8749e4b8c76938b3d532c36ff52",
+  "validatedCapture": "2026-10-26",
+  "patchedSha256": "885a72ea9bfb0c1e996a187ccf1851c1bab05c427e8fd12d1885b31de5e81a95",
+  "tagChange": "npcclip -> nodraw",
+  "collisionAttributeIndices": [
+    6,
+    11
+  ],
+  "geometryBlobAndSecondBufferByteIdentical": true,
+  "otherResourceBlocksByteIdentical": true,
+  "scope": "Attribute 6 retains playerclip; attribute 11 was npcclip only.",
+  "runtimeValidated": false,
+  "addonMountingValidated": false,
+  "addonSha256": "30e731b880d7ba52c9e903123b8ab7ca96afe6298149a2027158c041ffa9f5d6"
+}
