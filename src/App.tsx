@@ -7937,37 +7937,17 @@ function App() {
     )}
 
     {activeSettingsSection === "about" && (
-      <section
-        className="about-settings-section"
-        aria-labelledby="about-settings-title"
-      >
+      <section className="about-settings-section" aria-labelledby="about-settings-title">
         <div className="about-settings-heading">
           <p className="label">ABOUT</p>
           <h2 id="about-settings-title">SPLIT</h2>
         </div>
-
         <div className="about-settings-list">
           <div className="about-settings-row">
             <span>Version</span>
             <strong>{appVersion ?? "Loading…"}</strong>
           </div>
-
-          <div className="about-settings-row about-edition-row">
-            <span>Edition</span>
-            <div className="about-edition-value">
-              <strong className="edition-badge">
-                {splitEditionLabel}
-              </strong>
-              <p>
-                {isBorderlessEdition
-                  ? "Includes Quick Access and in-game notifications."
-                  : "Optimized for exclusive fullscreen. No external in-game overlays."}
-              </p>
-            </div>
-          </div>
-
-          </div>
-
+        </div>
       </section>
     )}
       </div>
