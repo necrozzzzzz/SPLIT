@@ -1888,6 +1888,7 @@ export const tourTips: Partial<Record<Language, string[]>> = {
 
 export const quickAccessLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "Overwrite": "Overwrite",
     "Confirm clear": "Confirm clear",
     "Clear": "Clear",
     "Loading…": "Loading…",
@@ -1906,6 +1907,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Screenshot for"
   },
   "fr": {
+    "Overwrite": "Écraser",
     "Confirm clear": "Confirmer l’effacement",
     "Clear": "Effacer",
     "Loading…": "Chargement…",
@@ -1924,6 +1926,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Capture de"
   },
   "es": {
+    "Overwrite": "Sobrescribir",
     "Confirm clear": "Confirmar borrado",
     "Clear": "Borrar",
     "Loading…": "Cargando…",
@@ -1942,6 +1945,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Captura de"
   },
   "de": {
+    "Overwrite": "Überschreiben",
     "Confirm clear": "Löschen bestätigen",
     "Clear": "Löschen",
     "Loading…": "Lädt…",
@@ -1960,6 +1964,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Screenshot von"
   },
   "pt": {
+    "Overwrite": "Sobrescrever",
     "Confirm clear": "Confirmar exclusão",
     "Clear": "Limpar",
     "Loading…": "Carregando…",
@@ -1978,6 +1983,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Captura de"
   },
   "ru": {
+    "Overwrite": "Перезаписать",
     "Confirm clear": "Подтвердить очистку",
     "Clear": "Очистить",
     "Loading…": "Загрузка…",
@@ -1996,6 +2002,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "Скриншот"
   },
   "ja": {
+    "Overwrite": "上書き",
     "Confirm clear": "消去を確認",
     "Clear": "消去",
     "Loading…": "読み込み中…",
@@ -2014,6 +2021,7 @@ export const quickAccessLabels: Record<Language, Record<string, string>> = {
     "Screenshot for": "スクリーンショット："
   },
   "zh": {
+    "Overwrite": "覆盖",
     "Confirm clear": "确认清空",
     "Clear": "清空",
     "Loading…": "加载中…",
