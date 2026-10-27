@@ -367,6 +367,10 @@ fn run(
     let started_at = Instant::now();
     let mut retry = ResolutionRetry::immediate(started_at);
     let mut observed_entry_generation = 0;
+    // A single failed memory sample should not blank the Discord district
+    // image. The current pawn handle is checked on every iteration, so
+    // genuine pawn changes still invalidate the district immediately.
+    let mut consecutive_district_read_failures: u8 = 0;
 
     #[cfg(debug_assertions)]
     {
@@ -382,6 +386,7 @@ fn run(
         let explore_nyc_active = is_explore_nyc_context(&console);
 
         if !explore_nyc_active {
+            consecutive_district_read_failures = 0;
             resolution = None;
             retry.retry_immediately(now);
 
@@ -394,6 +399,7 @@ fn run(
         }
         let entry_generation = MIDTOWN_ENTRY_GENERATION.load(Ordering::Acquire);
         if entry_generation != observed_entry_generation {
+            consecutive_district_read_failures = 0;
             observed_entry_generation = entry_generation;
             retry.retry_immediately(now);
             #[cfg(debug_assertions)]
@@ -410,6 +416,7 @@ fn run(
                 pawn::read_current_pawn_handle(pid, current.controller, pawn_handle_offset)
                     .is_ok_and(|handle| handle == current.pawn_handle);
             if !resolution_is_current {
+                consecutive_district_read_failures = 0;
                 resolution = None;
                 retry.retry_immediately(now);
                 if changes.observe(None) {
@@ -437,6 +444,7 @@ fn run(
         if let Some(current) = resolution {
             match read_map_district_location(pid, current.pawn, district_offset) {
                 Ok(Some(value)) if changes.observe(Some(value)) => {
+                    consecutive_district_read_failures = 0;
                     #[cfg(debug_assertions)]
                     debug_first_valid_raw(value);
                     publish_current(pid, Some(value));
@@ -449,8 +457,17 @@ fn run(
                         None => println!("[SPLIT][District] raw location = {value} -> unknown"),
                     }
                 }
-                Ok(Some(_)) => {}
+                Ok(Some(_)) => {
+                    consecutive_district_read_failures = 0;
+                }
                 Ok(None) | Err(_) => {
+                    consecutive_district_read_failures =
+                        consecutive_district_read_failures.saturating_add(1);
+                    if consecutive_district_read_failures < 3 {
+                        thread::sleep(POLL_INTERVAL);
+                        continue;
+                    }
+                    consecutive_district_read_failures = 0;
                     resolution = None;
                     if changes.observe(None) {
                         publish_current(pid, None);
