@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getLanguage, uiText } from "./i18n";
+import { getLanguage, uiText, discordUiText } from "./i18n";
 import abramsUrl from "../assets/discord-preview/abrams.png?url";
 import bebopUrl from "../assets/discord-preview/bebop.png?url";
 import calicoUrl from "../assets/discord-preview/calico.png?url";
@@ -213,8 +213,8 @@ function ToggleRow({
   return (
     <label className={`drp-option ${disabled ? "disabled" : ""}`}>
       <span>
-        <strong>{label}</strong>
-        {description ? <small>{description}</small> : null}
+        <strong>{discordUiText(label, getLanguage())}</strong>
+        {description ? <small>{discordUiText(description, getLanguage())}</small> : null}
       </span>
       <input
         type="checkbox"
@@ -294,7 +294,7 @@ function PrefixSelector({
 
   return (
     <fieldset className="drp-prefix-fieldset" disabled={disabled}>
-      <legend>{label}</legend>
+      <legend>{discordUiText(label, language)}</legend>
       <div className="drp-prefix-presets">
         {PREFIX_PRESETS.map((preset) => (
           <button
@@ -320,7 +320,7 @@ function PrefixSelector({
             onPreviewChange(value);
           }}
         >
-          Custom
+          {discordUiText("Custom", language)}
         </button>
       </div>
       {customSelected ? (
@@ -330,7 +330,7 @@ function PrefixSelector({
             type="text"
             maxLength={64}
             value={draft}
-            placeholder="Enter a short prefix"
+            placeholder={discordUiText("Enter a short prefix", language)}
             onChange={(event) => {
               const next = event.currentTarget.value;
               setDraft(next);
