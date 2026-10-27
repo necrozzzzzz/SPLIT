@@ -351,3 +351,89 @@ export const tourTitles: Partial<Record<Language, Record<string, string>>> = {
 export function tourTitle(english: string, language: Language): string {
   return tourTitles[language]?.[english] ?? english;
 }
+
+export const tourControls: Record<Language, Record<string, string>> = {
+  "en": {
+    "GUIDE": "GUIDE",
+    "Skip guide": "Skip guide",
+    "STEP": "STEP",
+    "OF": "OF",
+    "TIP": "TIP",
+    "Back": "Back",
+    "Next": "Next",
+    "Finish": "Finish"
+  },
+  "fr": {
+    "GUIDE": "GUIDE",
+    "Skip guide": "Passer le tutoriel",
+    "STEP": "ÉTAPE",
+    "OF": "SUR",
+    "TIP": "ASTUCE",
+    "Back": "Retour",
+    "Next": "Suivant",
+    "Finish": "Terminer"
+  },
+  "es": {
+    "GUIDE": "GUÍA",
+    "Skip guide": "Omitir guía",
+    "STEP": "PASO",
+    "OF": "DE",
+    "TIP": "CONSEJO",
+    "Back": "Atrás",
+    "Next": "Siguiente",
+    "Finish": "Finalizar"
+  },
+  "de": {
+    "GUIDE": "ANLEITUNG",
+    "Skip guide": "Anleitung überspringen",
+    "STEP": "SCHRITT",
+    "OF": "VON",
+    "TIP": "TIPP",
+    "Back": "Zurück",
+    "Next": "Weiter",
+    "Finish": "Fertig"
+  },
+  "pt": {
+    "GUIDE": "GUIA",
+    "Skip guide": "Pular guia",
+    "STEP": "ETAPA",
+    "OF": "DE",
+    "TIP": "DICA",
+    "Back": "Voltar",
+    "Next": "Próximo",
+    "Finish": "Concluir"
+  },
+  "ru": {
+    "GUIDE": "РУКОВОДСТВО",
+    "Skip guide": "Пропустить",
+    "STEP": "ШАГ",
+    "OF": "ИЗ",
+    "TIP": "СОВЕТ",
+    "Back": "Назад",
+    "Next": "Далее",
+    "Finish": "Готово"
+  },
+  "ja": {
+    "GUIDE": "ガイド",
+    "Skip guide": "ガイドをスキップ",
+    "STEP": "ステップ",
+    "OF": "／",
+    "TIP": "ヒント",
+    "Back": "戻る",
+    "Next": "次へ",
+    "Finish": "完了"
+  },
+  "zh": {
+    "GUIDE": "指南",
+    "Skip guide": "跳过指南",
+    "STEP": "步骤",
+    "OF": "共",
+    "TIP": "提示",
+    "Back": "返回",
+    "Next": "下一步",
+    "Finish": "完成"
+  }
+};
+export function tourControl(english: string, language: Language): string {
+  return tourControls[language][english] ?? english;
+}
