@@ -7315,7 +7315,7 @@ function App() {
             <span>
               Hotkey hook
             </span>
-            <DiagnosticInfo text={"Listens for SPLIT keyboard shortcuts."} fix={"If Down, close duplicate SPLIT instances and restart. Match Deadlock's administrator privileges if needed. See HOW TO FIX below."} />
+            <DiagnosticInfo text={"Listens for SPLIT keyboard shortcuts."} fix={"If shortcuts stop working, close duplicate SPLIT instances and restart SPLIT. If Deadlock runs as administrator, match its privileges. Additional troubleshooting appears when the hook is Down."} />
           </div>
 
           <strong>
@@ -7400,7 +7400,7 @@ function App() {
             <span>
               Console watcher
             </span>
-            <DiagnosticInfo text={"Reads Deadlock's console log for activity and position responses."} fix={"If Down, check the installation path, launch Deadlock once, then click Retry watcher. See HOW TO FIX below."} />
+            <DiagnosticInfo text={"Reads Deadlock's console log for activity and position responses."} fix={"If the watcher stops working, check the Deadlock installation path and restart the game. Then use Retry watcher, which appears when an issue is detected."} />
           </div>
 
           <strong>
