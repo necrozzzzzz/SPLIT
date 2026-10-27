@@ -866,3 +866,30 @@ export const tourDemoLabels: Record<Language, Record<string, string>> = {
 export function tourDemoText(english: string, language: Language): string {
   return tourDemoLabels[language][english] ?? english;
 }
+
+export const tourTips: Partial<Record<Language, string[]>> = {
+  "es": [
+    "Haz clic derecho en la vista previa de Mina para probar el visor de capturas.",
+    "Haz clic en el nombre de la ranura de ejemplo para probar cómo se cambia."
+  ],
+  "de": [
+    "Rechtsklicke auf Minas Vorschau, um den Screenshot-Betrachter zu testen.",
+    "Klicke auf den Namen des Beispiel-Slots, um ihn umzubenennen."
+  ],
+  "pt": [
+    "Clique com o botão direito na prévia da Mina para testar a visualização.",
+    "Clique no nome do slot de exemplo para testar a renomeação."
+  ],
+  "ru": [
+    "Щёлкните правой кнопкой по изображению Mina, чтобы открыть просмотр скриншота.",
+    "Нажмите на имя примера слота, чтобы попробовать переименование."
+  ],
+  "ja": [
+    "Mina のプレビューを右クリックするとスクリーンショット表示を試せます。",
+    "サンプルスロットの名前をクリックすると名前変更を試せます。"
+  ],
+  "zh": [
+    "右键点击 Mina 的预览图，体验截图查看器。",
+    "点击示例存档槽名称，体验重命名。"
+  ]
+};
