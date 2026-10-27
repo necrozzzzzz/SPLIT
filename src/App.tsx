@@ -3975,15 +3975,14 @@ function App() {
                 </h1>
 
                 <p className="setup-description">
-                  Scanning your Steam libraries for a
-                  Deadlock installation.
+                  {runtimeUiText("Scanning your Steam libraries for a Deadlock installation.", language)}
                 </p>
               </div>
             </div>
 
             <div className="setup-scan-status">
               <div className="setup-scan-status-header">
-                <span>INSTALLATION SCAN</span>
+                <span>{runtimeUiText("INSTALLATION SCAN", language)}</span>
                 <strong>{uiText("Searching…", language)}</strong>
               </div>
 
@@ -3992,8 +3991,7 @@ function App() {
               </div>
 
               <p>
-                Checking Steam libraries and known
-                installation locations.
+                {runtimeUiText("Checking Steam libraries and known installation locations.", language)}
               </p>
             </div>
           </div>
@@ -4015,7 +4013,7 @@ function App() {
           <div className="setup-onboarding-grid">
             <div className="setup-onboarding-main">
               <p className="eyebrow">
-                SPLIT · FIRST SETUP
+                {runtimeUiText("SPLIT · FIRST SETUP", language)}
               </p>
 
               <h1>
@@ -4025,13 +4023,12 @@ function App() {
               {detected ? (
                 <>
                   <p className="setup-description">
-                    SPLIT detected a
-                    Deadlock installation.
+                    {runtimeUiText("SPLIT detected a Deadlock installation.", language)}
                   </p>
 
                   <div className="detected-folder">
                     <span>
-                      DETECTED FOLDER
+                      {runtimeUiText("DETECTED FOLDER", language)}
                     </span>
 
                     <code>
@@ -4040,8 +4037,7 @@ function App() {
                   </div>
 
                   <h2 className="setup-question">
-                    Is this the correct
-                    Deadlock folder?
+                    {runtimeUiText("Is this the correct Deadlock folder?", language)}
                   </h2>
 
                   <div className="setup-actions">
@@ -4056,8 +4052,8 @@ function App() {
                       }
                     >
                       {setupWorking
-                        ? "Configuring…"
-                        : "Yes, continue"}
+                        ? runtimeUiText("Configuring…", language)
+                        : runtimeUiText("Yes, continue", language)}
                     </button>
 
                     <button
@@ -4076,13 +4072,13 @@ function App() {
                 <>
                   <p className="setup-description">
                     {setup.invalidConfiguredPath
-                      ? "Your configured Deadlock folder is no longer valid. Choose the current installation folder to continue."
-                      : "SPLIT couldn't detect a Deadlock installation in your Steam libraries."}
+                      ? runtimeUiText("Your configured Deadlock folder is no longer valid. Choose the current installation folder to continue.", language)
+                      : runtimeUiText("SPLIT couldn't detect a Deadlock installation in your Steam libraries.", language)}
                   </p>
 
                   {setup.invalidConfiguredPath && setup.configuredPath && (
                     <div className="detected-folder invalid-folder">
-                      <span>INVALID CONFIGURED FOLDER</span>
+                      <span>{runtimeUiText("INVALID CONFIGURED FOLDER", language)}</span>
                       <code>{setup.configuredPath}</code>
                     </div>
                   )}
@@ -4100,15 +4096,14 @@ function App() {
                     </div>
 
                     <div className="setup-manual-folder-content">
-                      <span>MANUAL SELECTION</span>
+                      <span>{runtimeUiText("MANUAL SELECTION", language)}</span>
 
                       <strong>
                         {uiText("Select your Deadlock folder", language)}
                       </strong>
 
                       <p>
-                        Choose the main installation directory,
-                        usually located inside:
+                        {runtimeUiText("Choose the main installation directory, usually located inside:", language)}
                       </p>
 
                       <code>
