@@ -5225,7 +5225,7 @@ function App() {
               }
               onClick={() => void runHistoryAction("undo_last_action")}
             >
-              Undo{" "}
+              {t("undo", language)}{" "}
               <kbd>
                 {formatHotkey(
                   hotkeySettings.undo,
@@ -5243,7 +5243,7 @@ function App() {
               }
               onClick={() => void runHistoryAction("redo_last_action")}
             >
-              Redo{" "}
+              {t("redo", language)}{" "}
               <kbd>
                 {formatHotkey(
                   hotkeySettings.redo,
