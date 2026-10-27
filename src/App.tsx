@@ -5277,10 +5277,10 @@ function App() {
                 disabled={diagnosticCopying}
               >
                 {diagnosticCopying
-                  ? "Copying…"
+                  ? uiText("Copying…", language)
                   : diagnosticCopied
-                    ? "Copied!"
-                    : "Copy diagnostics"}
+                    ? uiText("Copied!", language)
+                    : uiText("Copy diagnostics", language)}
               </button>
 
               <button
@@ -5303,7 +5303,7 @@ function App() {
       {activeView === "settings" && (
         <nav
           className="settings-subnav"
-          aria-label="Settings sections"
+          aria-label={uiText("Settings sections", language)}
         >
           <button
             type="button"
@@ -5442,9 +5442,7 @@ function App() {
               }
             >
               <span>
-                {healthProblemCount} {healthProblemCount === 1
-                  ? "issue detected"
-                  : "issues detected"}
+                {healthProblemCount} {uiText(healthProblemCount === 1 ? "issue detected" : "issues detected", language)}
               </span>
               <span className="health-summary-chevron" aria-hidden="true">
                 âŒ„
@@ -5484,7 +5482,7 @@ function App() {
 
               <div>
                 <strong>
-                  Deadlock is not running
+                  {uiText("Deadlock is not running", language)}
                 </strong>
 
                 <span>
@@ -5503,8 +5501,8 @@ function App() {
               }
             >
               {launchingDeadlock
-                ? "Launching…"
-                : "Launch"}
+                ? uiText("Launching…", language)
+                : uiText("Launch", language)}
             </button>
           </div>
         )}
@@ -5513,8 +5511,8 @@ function App() {
       <>
       {status.matchSafetyLocked && (
         <div className="match-safety-banner" role="status">
-          <strong>MATCH IN PROGRESS</strong>
-          <span>SPLIT is locked until you return to the Hideout.</span>
+          <strong>{uiText("MATCH IN PROGRESS", language)}</strong>
+          <span>{uiText("SPLIT is locked until you return to the Hideout.", language)}</span>
         </div>
       )}
     <fieldset
@@ -5527,16 +5525,16 @@ function App() {
       <div className="savestates-header">
         <div>
           <p className="label">
-            SAVESTATES
+            {uiText("SAVESTATES", language)}
           </p>
 
           <h2>
-            Position slots
+            {uiText("Position slots", language)}
           </h2>
         </div>
 
         <span className="savestates-hint">
-          Save Alt+F1–F8 · Load F1–F8
+          {uiText("Save Alt+F1–F8 · Load F1–F8", language)}
         </span>
       </div>
 
