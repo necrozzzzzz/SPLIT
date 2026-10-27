@@ -7858,3 +7858,13 @@ select:hover:not(:disabled) {
   .drp-switch,
   .drp-switch::after { transition: none; }
 }
+
+
+/* Onboarding replay and contextual diagnostics help */
+.about-replay-guide { margin-bottom: 18px; }
+.diagnostics-grid .status-card { position: relative; }
+.diagnostic-info { position: absolute; right: 12px; top: 10px; z-index: 4; }
+.diagnostic-info > summary { list-style: none; display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid rgba(112,183,180,.5); border-radius: 50%; color: #9fc8c5; background: #192c2e; font: 700 12px/1 sans-serif; cursor: pointer; }
+.diagnostic-info > summary::-webkit-details-marker { display: none; }
+.diagnostic-info[open] { z-index: 20; }
+.diagnostic-info-content { position: absolute; right: 0; top: 26px; width: min(260px, 70vw); padding: 12px 14px; border: 1px solid #416361; border-radius: 8px; background: #18292c; color: #d5e6e2; font-size: 12px; line-height: 1.55; box-shadow: 0 12px 30px #0009; }
