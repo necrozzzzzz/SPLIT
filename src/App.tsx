@@ -4689,7 +4689,7 @@ function App() {
                   >
                     <div className="favorite-destination-card-header">
                       <span className="favorite-destination-slot">
-                        Favorite {favorite.slot}
+                        {uiText("Favorite", language)} {favorite.slot}
                       </span>
 
                       <span
@@ -4700,21 +4700,19 @@ function App() {
                         }`}
                       >
                         {favorite.occupied
-                          ? "Occupied"
-                          : "Empty"}
+                          ? uiText("Occupied", language) : uiText("Empty", language)}
                       </span>
                     </div>
 
                     <strong className="favorite-destination-name">
                       {favorite.occupied
                         ? favorite.name
-                        : "Available slot"}
+                        : uiText("Available slot", language)}
                     </strong>
 
                     <span className="favorite-destination-hint">
                       {favorite.occupied
-                        ? "Overwrite this favorite"
-                        : "Save here"}
+                        ? uiText("Overwrite this favorite", language) : uiText("Save here", language)}
                     </span>
                   </button>
                 ),
@@ -4756,7 +4754,7 @@ function App() {
                   id="overwrite-favorite-title"
                   className="confirmation-title"
                 >
-                  Replace Favorite{" "}
+                  {uiText("Replace Favorite", language)}{" "}
                   {pendingFavoriteOverwrite.target.slot}?
                 </h3>
 
@@ -4816,8 +4814,7 @@ function App() {
                 }
               >
                 {favoriteCopyWorking
-                  ? "Replacing…"
-                  : "Replace Favorite"}
+                  ? uiText("Replacing…", language) : uiText("Replace Favorite", language)}
               </button>
             </div>
           </section>
