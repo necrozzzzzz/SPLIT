@@ -37,3 +37,14 @@
 /* Tour root disables pointer events by default; restore them on the native viewer. */
 .tour-example-viewer{pointer-events:auto}
 .tour-example-viewer .screenshot-viewer{pointer-events:auto}
+
+/* Slot actions practice: temporary card mirrors the real slot without changing saves. */
+.tour-demo-slot-card{position:fixed;z-index:3;pointer-events:auto;box-sizing:border-box;background:#0e191b;border:2px solid #b7d0f5;border-radius:8px;overflow:visible;box-shadow:0 0 22px #b7d0f533}
+.tour-demo-slot-image{position:relative;height:73%;overflow:hidden;border-radius:6px 6px 0 0}
+.tour-demo-slot-image img{width:100%;height:100%;object-fit:cover;display:block}
+.tour-demo-slot-image>span{position:absolute;top:9px;left:10px;color:white;font-weight:800;font-size:13px;text-shadow:0 1px 4px black}
+.tour-demo-slot-footer{display:flex;flex-direction:column;gap:3px;padding:9px 10px;font-size:11px;color:#e4efed}
+.tour-demo-slot-footer small{color:#8eada9;font-size:10px}
+.tour-demo-slot-menu-trigger{position:absolute;top:8px;right:8px;cursor:pointer;color:#d7f0ec;background:#102324;border:1px solid #547674;border-radius:5px;width:29px;height:29px;font-weight:800}
+.tour-demo-slot-menu{position:absolute;z-index:5;top:39px;right:4px;width:210px;pointer-events:auto}
+.tour-demo-disclaimer{display:block;padding:5px 7px;color:#9cb3b1;font-size:9px;line-height:1.4}
