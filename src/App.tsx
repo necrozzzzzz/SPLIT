@@ -5178,7 +5178,7 @@ function App() {
             />
             <strong>Deadlock</strong>
           </div>
-          <span>{status.deadlockRunning ? "Connected" : "Not connected"}</span>
+          <span>{status.deadlockRunning ? t("connected", language) : t("notConnected", language)}</span>
         </div>
       </aside>
 
