@@ -2770,6 +2770,12 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "The Deadlock integration needs repair.": "The Deadlock integration needs repair.",
+    "The Windows keyboard hook is not running.": "The Windows keyboard hook is not running.",
+    "The Deadlock console watcher is not running.": "The Deadlock console watcher is not running.",
+    "Deadlock presentation may still be paused.": "Deadlock presentation may still be paused.",
+    "The tested camera runtime is unavailable.": "The tested camera runtime is unavailable.",
+    "Deadlock's console log is unavailable.": "Deadlock's console log is unavailable.",
     "Deadlock is not currently running.": "Deadlock is not currently running.",
     "Start SPLIT automatically when you sign in to Windows.": "Start SPLIT automatically when you sign in to Windows.",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Keep SPLIT hidden in the system tray when it starts with Windows.",
@@ -2848,6 +2854,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "The Deadlock integration needs repair.": "L'intégration avec Deadlock doit être réparée.",
+    "The Windows keyboard hook is not running.": "Le raccourci clavier global de Windows ne fonctionne pas.",
+    "The Deadlock console watcher is not running.": "La surveillance de la console Deadlock ne fonctionne pas.",
+    "Deadlock presentation may still be paused.": "L'affichage de Deadlock est peut-être encore en pause.",
+    "The tested camera runtime is unavailable.": "La caméra testée n'est pas disponible.",
+    "Deadlock's console log is unavailable.": "Le journal de console de Deadlock est indisponible.",
     "Deadlock is not currently running.": "Deadlock n'est pas en cours d'exécution.",
     "Start SPLIT automatically when you sign in to Windows.": "Démarrer automatiquement SPLIT à l'ouverture de session Windows.",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Garder SPLIT dans la zone de notification au démarrage de Windows.",
@@ -2926,6 +2938,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "The Deadlock integration needs repair.": "Es necesario reparar la integración con Deadlock.",
+    "The Windows keyboard hook is not running.": "El controlador de atajos de Windows no funciona.",
+    "The Deadlock console watcher is not running.": "El monitor de consola de Deadlock no funciona.",
+    "Deadlock presentation may still be paused.": "La presentación de Deadlock podría seguir pausada.",
+    "The tested camera runtime is unavailable.": "La cámara comprobada no está disponible.",
+    "Deadlock's console log is unavailable.": "El registro de consola de Deadlock no está disponible.",
     "Deadlock is not currently running.": "Deadlock no se está ejecutando.",
     "Start SPLIT automatically when you sign in to Windows.": "Iniciar SPLIT automáticamente al iniciar sesión en Windows.",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Mantener SPLIT oculto en la bandeja del sistema al iniciar Windows.",
@@ -3004,6 +3022,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "The Deadlock integration needs repair.": "Die Deadlock-Integration muss repariert werden.",
+    "The Windows keyboard hook is not running.": "Die Windows-Tastaturüberwachung läuft nicht.",
+    "The Deadlock console watcher is not running.": "Die Deadlock-Konsolenüberwachung läuft nicht.",
+    "Deadlock presentation may still be paused.": "Die Deadlock-Anzeige ist möglicherweise noch pausiert.",
+    "The tested camera runtime is unavailable.": "Die getestete Kamerafunktion ist nicht verfügbar.",
+    "Deadlock's console log is unavailable.": "Das Deadlock-Konsolenprotokoll ist nicht verfügbar.",
     "Deadlock is not currently running.": "Deadlock läuft derzeit nicht.",
     "Start SPLIT automatically when you sign in to Windows.": "SPLIT bei der Windows-Anmeldung automatisch starten.",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "SPLIT beim Windows-Start im Infobereich ausblenden.",
@@ -3082,6 +3106,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "The Deadlock integration needs repair.": "A integração com Deadlock precisa de reparo.",
+    "The Windows keyboard hook is not running.": "O monitor de atalhos do Windows não está funcionando.",
+    "The Deadlock console watcher is not running.": "O monitor do console de Deadlock não está funcionando.",
+    "Deadlock presentation may still be paused.": "A exibição do Deadlock pode ainda estar pausada.",
+    "The tested camera runtime is unavailable.": "A câmera testada está indisponível.",
+    "Deadlock's console log is unavailable.": "O registro do console de Deadlock está indisponível.",
     "Deadlock is not currently running.": "Deadlock não está em execução.",
     "Start SPLIT automatically when you sign in to Windows.": "Iniciar o SPLIT automaticamente ao entrar no Windows.",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Manter o SPLIT oculto na bandeja do sistema ao iniciar o Windows.",
@@ -3160,6 +3190,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "The Deadlock integration needs repair.": "Интеграцию с Deadlock необходимо восстановить.",
+    "The Windows keyboard hook is not running.": "Обработчик горячих клавиш Windows не работает.",
+    "The Deadlock console watcher is not running.": "Отслеживание консоли Deadlock не работает.",
+    "Deadlock presentation may still be paused.": "Отображение Deadlock всё ещё может быть приостановлено.",
+    "The tested camera runtime is unavailable.": "Проверенная функция камеры недоступна.",
+    "Deadlock's console log is unavailable.": "Журнал консоли Deadlock недоступен.",
     "Deadlock is not currently running.": "Deadlock сейчас не запущен.",
     "Start SPLIT automatically when you sign in to Windows.": "Автоматически запускать SPLIT при входе в Windows.",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Скрывать SPLIT в системном трее при запуске Windows.",
@@ -3238,6 +3274,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "The Deadlock integration needs repair.": "Deadlock との連携を修復する必要があります。",
+    "The Windows keyboard hook is not running.": "Windows のホットキー監視が動作していません。",
+    "The Deadlock console watcher is not running.": "Deadlock のコンソール監視が動作していません。",
+    "Deadlock presentation may still be paused.": "Deadlock の画面表示が一時停止したままの可能性があります。",
+    "The tested camera runtime is unavailable.": "テストしたカメラ機能は利用できません。",
+    "Deadlock's console log is unavailable.": "Deadlock のコンソールログは利用できません。",
     "Deadlock is not currently running.": "Deadlock は現在起動していません。",
     "Start SPLIT automatically when you sign in to Windows.": "Windows へのサインイン時に SPLIT を自動起動します。",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Windows 起動時に SPLIT をシステムトレイに隠します。",
@@ -3316,6 +3358,12 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "The Deadlock integration needs repair.": "需要修复 Deadlock 集成。",
+    "The Windows keyboard hook is not running.": "Windows 快捷键监听未运行。",
+    "The Deadlock console watcher is not running.": "Deadlock 控制台监控未运行。",
+    "Deadlock presentation may still be paused.": "Deadlock 画面可能仍处于暂停状态。",
+    "The tested camera runtime is unavailable.": "测试的摄像机功能不可用。",
+    "Deadlock's console log is unavailable.": "Deadlock 控制台日志不可用。",
     "Deadlock is not currently running.": "Deadlock 当前未运行。",
     "Start SPLIT automatically when you sign in to Windows.": "登录 Windows 时自动启动 SPLIT。",
     "Keep SPLIT hidden in the system tray when it starts with Windows.": "Windows 启动时将 SPLIT 隐藏到系统托盘。",
