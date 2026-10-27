@@ -7368,29 +7368,21 @@ function App() {
                   </li>
 
                   <li>
-                    If Deadlock is running as
-                    administrator, run SPLIT with
-                    the same privilege level.
+                    {runtimeUiText("If Deadlock is running as administrator, run SPLIT with the same privilege level.", language)}
                   </li>
 
                   <li>
-                    Temporarily disable software
-                    that intercepts global keyboard
-                    input and test again.
+                    {runtimeUiText("Temporarily disable software that intercepts global keyboard input and test again.", language)}
                   </li>
 
                   <li>
-                    If the issue persists, copy the
-                    diagnostic report before
-                    reporting the problem.
+                    {runtimeUiText("If the issue persists, copy the diagnostic report before reporting the problem.", language)}
                   </li>
                 </ol>
               </div>
 
               <p className="diagnostic-description">
-                Hotkeys cannot currently be restarted
-                safely inside the same SPLIT process.
-                Restarting SPLIT is required.
+                {runtimeUiText("Hotkeys cannot currently be restarted safely inside the same SPLIT process. Restarting SPLIT is required.", language)}
               </p>
             </div>
           )}
@@ -7612,15 +7604,11 @@ function App() {
           {status.presentationMaskActive && (
             <div className="diagnostic-details">
               <p className="diagnostic-description">
-                SPLIT believes Deadlock presentation
-                is still paused by
-                r_force_no_present.
+                {runtimeUiText("SPLIT believes Deadlock presentation is still paused by r_force_no_present.", language)}
               </p>
 
               <p className="diagnostic-description">
-                Deadlock may appear frozen even
-                though the game process is still
-                running normally.
+                {runtimeUiText("Deadlock may appear frozen even though the game process is still running normally.", language)}
               </p>
 
               <div className="diagnostic-fix">
@@ -7634,20 +7622,15 @@ function App() {
                   </li>
 
                   <li>
-                    If automatic recovery fails,
-                    bring Deadlock to the foreground.
+                    {runtimeUiText("If automatic recovery fails, bring Deadlock to the foreground.", language)}
                   </li>
 
                   <li>
-                    Press F10 manually. During an
-                    active presentation mask, F10 is
-                    SPLIT's emergency recovery key.
+                    {runtimeUiText("Press F10 manually. During an active presentation mask, F10 is SPLIT's emergency recovery key.", language)}
                   </li>
 
                   <li>
-                    If this happens repeatedly, copy
-                    the diagnostic report and report
-                    the issue.
+                    {runtimeUiText("If this happens repeatedly, copy the diagnostic report and report the issue.", language)}
                   </li>
                 </ol>
               </div>
@@ -7750,8 +7733,7 @@ function App() {
                       </li>
 
                       <li>
-                        Enter Sandbox or Practice mode
-                        so the in-game camera is active.
+                        {runtimeUiText("Enter Sandbox or Practice mode so the in-game camera is active.", language)}
                       </li>
 
                       <li>
@@ -7759,9 +7741,7 @@ function App() {
                       </li>
 
                       <li>
-                        If the problem started after a
-                        Deadlock update, update SPLIT
-                        to the latest version.
+                        {runtimeUiText("If the problem started after a Deadlock update, update SPLIT to the latest version.", language)}
                       </li>
                     </ol>
                   </div>
