@@ -30,6 +30,12 @@ export function t(key: MessageKey, language = getLanguage()): string {
 // Shared visible labels. The original English text is the lookup key.
 export const uiLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "Discord Presence": "Discord Presence",
+    "Hotkeys": "Hotkeys",
+    "In-Game Notifications": "In-Game Notifications",
+    "Diagnostics": "Diagnostics",
+    "About": "About",
+
     "APPEARANCE": "APPEARANCE",
     "STARTUP": "STARTUP",
     "DESKTOP": "DESKTOP",
@@ -55,6 +61,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Adjust playback without changing Windows volume."
   },
   "fr": {
+    "Discord Presence": "Présence Discord",
+    "Hotkeys": "Raccourcis clavier",
+    "In-Game Notifications": "Notifications en jeu",
+    "Diagnostics": "Diagnostics",
+    "About": "À propos",
+
     "APPEARANCE": "APPARENCE",
     "STARTUP": "DÉMARRAGE",
     "DESKTOP": "BUREAU",
@@ -80,6 +92,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Régler le son sans modifier le volume de Windows."
   },
   "es": {
+    "Discord Presence": "Presencia en Discord",
+    "Hotkeys": "Atajos",
+    "In-Game Notifications": "Notificaciones en el juego",
+    "Diagnostics": "Diagnóstico",
+    "About": "Acerca de",
+
     "APPEARANCE": "APARIENCIA",
     "STARTUP": "INICIO",
     "DESKTOP": "ESCRITORIO",
@@ -105,6 +123,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Ajusta el sonido sin cambiar el volumen de Windows."
   },
   "de": {
+    "Discord Presence": "Discord-Präsenz",
+    "Hotkeys": "Tastenkürzel",
+    "In-Game Notifications": "Benachrichtigungen im Spiel",
+    "Diagnostics": "Diagnose",
+    "About": "Über",
+
     "APPEARANCE": "DARSTELLUNG",
     "STARTUP": "START",
     "DESKTOP": "DESKTOP",
@@ -130,6 +154,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Lautstärke ohne Änderung der Windows-Lautstärke anpassen."
   },
   "pt": {
+    "Discord Presence": "Presença no Discord",
+    "Hotkeys": "Atalhos",
+    "In-Game Notifications": "Notificações no jogo",
+    "Diagnostics": "Diagnóstico",
+    "About": "Sobre",
+
     "APPEARANCE": "APARÊNCIA",
     "STARTUP": "INICIALIZAÇÃO",
     "DESKTOP": "ÁREA DE TRABALHO",
@@ -155,6 +185,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Ajuste o som sem alterar o volume do Windows."
   },
   "ru": {
+    "Discord Presence": "Статус Discord",
+    "Hotkeys": "Горячие клавиши",
+    "In-Game Notifications": "Уведомления в игре",
+    "Diagnostics": "Диагностика",
+    "About": "О программе",
+
     "APPEARANCE": "ВНЕШНИЙ ВИД",
     "STARTUP": "ЗАПУСК",
     "DESKTOP": "РАБОЧИЙ СТОЛ",
@@ -180,6 +216,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Настройка звука без изменения громкости Windows."
   },
   "ja": {
+    "Discord Presence": "Discord プレゼンス",
+    "Hotkeys": "ショートカット",
+    "In-Game Notifications": "ゲーム内通知",
+    "Diagnostics": "診断",
+    "About": "このアプリについて",
+
     "APPEARANCE": "外観",
     "STARTUP": "起動",
     "DESKTOP": "デスクトップ",
@@ -205,6 +247,12 @@ export const uiLabels: Record<Language, Record<string, string>> = {
     "Adjust playback without changing Windows volume.": "Windows の音量を変えずに再生音量を調整します。"
   },
   "zh": {
+    "Discord Presence": "Discord 状态",
+    "Hotkeys": "快捷键",
+    "In-Game Notifications": "游戏内通知",
+    "Diagnostics": "诊断",
+    "About": "关于",
+
     "APPEARANCE": "外观",
     "STARTUP": "启动",
     "DESKTOP": "桌面",
