@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isBorderlessEdition } from "./edition";
-import { getLanguage, tourTitle, tourControl } from "./i18n";
+import { getLanguage, tourTitle, tourControl, tourDescription } from "./i18n";
 import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
@@ -237,7 +237,7 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <div className="tour-progress">{steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}</div>
         <p className="tour-counter">{label("STEP", "ÉTAPE")} {index + 1} {label("OF", "SUR")} {steps.length}</p>
         <h2 id="tour-title">{translated?.title ?? tourTitle(step.title, language)}</h2>
-        <p className="tour-description">{translated?.description ?? step.description}</p>
+        <p className="tour-description">{translated?.description ?? tourDescription(step.title, step.description, language)}</p>
         {step.tips && <div className="tour-tips">{(translated?.tips ?? step.tips).map((tip, i) => <p key={i}><span className="tour-tip-label">{label("TIP", "ASTUCE")}</span>{tip}</p>)}</div>}
         <div className="tour-actions"><span>{index + 1} / {steps.length}</span><div>{index > 0 && <button type="button" className="tour-back" onClick={() => setIndex(i => i - 1)}>{label("Back", "Retour")}</button>}<button type="button" className="tour-next" onClick={() => index === steps.length - 1 ? finish() : setIndex(i => i + 1)}>{index === steps.length - 1 ? label("Finish", "Terminer") : label("Next", "Suivant")}</button></div></div>
       </section>
