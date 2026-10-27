@@ -1,60 +1,81 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { isBorderlessEdition } from "./edition";
 import "./onboarding.css";
 
 const KEY = "split.onboarding.v2.completed";
-
-const steps = [
-  { title: "Welcome to SPLIT", eyebrow: "GET STARTED", body: "SPLIT lets you save and restore positions in Deadlock, organize your practice routes, and show your current activity on Discord.", note: "SPLIT is a practice companion. Position tools are not intended for live matches." },
-  { title: "Save and load positions", eyebrow: "SAVE STATES", body: "You have eight slots in each preset. Save your current position to a slot, then load it to return there. Give slots names and colors so you can find them quickly.", note: "Saved positions can include a screenshot for easy identification." },
-  { title: "Presets and favorites", eyebrow: "ORGANIZE", body: "Use four presets to keep different routes or practice sessions separate. Favorite Mode gives you a separate set of slots for positions you return to often.", note: "You can rename presets, import and export presets, and use Undo / Redo to reverse supported edits." },
-  { title: "Shortcuts and Quick Access", eyebrow: "PLAY FASTER", body: "Configure your save, load, preset, favorites, Undo and Redo shortcuts in Settings > Hotkeys.", note: isBorderlessEdition ? "Borderless also includes Quick Access, an in-game overlay for working with slots, and configurable in-game notifications." : "Fullscreen keeps keyboard-driven save states and Discord Presence. Quick Access and in-game notification overlays are available in the Borderless edition." },
-  { title: "Discord Rich Presence", eyebrow: "SHOW YOUR ACTIVITY", body: "SPLIT can display your Deadlock activity on Discord, including the Hideout, Explore NYC, matchmaking and matches. Hero portraits and context details update automatically when detected.", note: "Customize what appears in Settings > Discord. Discord must be running for others to see your activity." },
-  { title: "Make SPLIT yours", eyebrow: "SETTINGS", body: "Explore general settings, startup sound, shortcuts, Discord Presence and other options. You can revisit this guide from Settings > About at any time.", note: "You're ready to start practicing!" },
+type Section = "general" | "discord" | "hotkeys" | "notifications" | "diagnostics" | "about";
+type Step = { title: string; description: string; target: string; view: "slots" | "settings"; section?: Section };
+const steps: Step[] = [
+  { title: "Your presets", description: "Start here to organize your practice positions. You have four presets, each with eight independent slots. You can rename and switch between presets.", target: ".sidebar-nav button:first-child", view: "slots" },
+  { title: "Save State slots", description: "Each card represents a saved position. Save your current location, then load it to return to that spot in Deadlock. Slots can have names, colors and screenshots.", target: ".slots-grid .slot-card:first-child", view: "slots" },
+  { title: "Slot actions", description: "Open the three-dot menu on a slot to find its actions, including renaming, clearing, and copying a saved position when available.", target: ".slots-grid .slot-card:first-child .slot-card-menu", view: "slots" },
+  { title: "Undo and Redo", description: "Use these buttons to undo or redo supported changes to your saved positions. Their keyboard shortcuts are shown beside them.", target: ".header-history-actions", view: "slots" },
+  { title: "Favorites", description: "Favorite Mode provides a separate shared bank of eight slots, independent of your four presets. You can switch to it here or with a hotkey.", target: ".sidebar-nav button:nth-child(2)", view: "slots" },
+  { title: "Settings", description: "This is where you customize SPLIT. We'll walk through the main settings sections next.", target: ".sidebar-nav button:nth-child(3)", view: "settings", section: "general" },
+  { title: "General settings", description: "Customize desktop behavior, appearance, startup sound, and other preferences here.", target: ".general-settings-section", view: "settings", section: "general" },
+  ...(isBorderlessEdition ? [{ title: "Quick Access", description: "In the Borderless edition, enable the Quick Access overlay and configure its position here. It lets you work with slots while in Deadlock.", target: ".general-settings-section", view: "settings" as const, section: "general" as const }] : []),
+  { title: "Discord Rich Presence", description: "Choose what Discord displays for your Hideout, Explore NYC, matchmaking, and matches. Customize hero images, text, and activity details.", target: ".drp-settings-shell", view: "settings", section: "discord" },
+  { title: "Keyboard shortcuts", description: "Customize shortcuts for saving and loading slots, switching presets, favorites, and Undo / Redo.", target: ".settings-view", view: "settings", section: "hotkeys" },
+  ...(isBorderlessEdition ? [{ title: "In-game notifications", description: "Choose where in-game notifications appear, how long they remain visible, and whether they use slot colors.", target: ".settings-view", view: "settings" as const, section: "notifications" as const }] : []),
+  { title: "Diagnostics", description: "Check Deadlock detection and other technical information here if SPLIT isn't behaving as expected.", target: ".settings-view", view: "settings", section: "diagnostics" },
+  { title: "You're ready!", description: "You can reopen this guide at any time from Settings > About. Have fun practicing!", target: ".about-settings-section", view: "settings", section: "about" },
 ];
 
 export function isOnboardingCompleted(): boolean {
-  try { return window.localStorage.getItem(KEY) === "true"; }
-  catch { return false; }
+  try { return window.localStorage.getItem(KEY) === "true"; } catch { return false; }
 }
-
-export default function Onboarding({ onClose }: { onClose: () => void }) {
+type Props = { onClose: () => void; navigate: (view: "slots" | "settings", section?: Section) => void };
+type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
+export default function Onboarding({ onClose, navigate }: Props) {
   const [index, setIndex] = useState(0);
+  const [rect, setRect] = useState<Rect | null>(null);
   const step = steps[index];
+  useLayoutEffect(() => { navigate(step.view, step.section); }, [index, navigate, step.view, step.section]);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") event.preventDefault();
+    let frame = 0;
+    let attempts = 0;
+    const update = () => {
+      const el = document.querySelector<HTMLElement>(step.target);
+      if (el) {
+        if (attempts === 0) el.scrollIntoView({ block: "nearest", behavior: "instant" });
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          const p = 7;
+          setRect({ top: Math.max(0, r.top - p), left: Math.max(0, r.left - p), right: Math.min(innerWidth, r.right + p), bottom: Math.min(innerHeight, r.bottom + p), width: r.width + p * 2, height: r.height + p * 2 });
+        } else setRect(null);
+      } else setRect(null);
+      if (++attempts < 45) frame = requestAnimationFrame(update);
     };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+    update();
+    const listener = () => { attempts = 44; update(); };
+    window.addEventListener("resize", listener);
+    window.addEventListener("scroll", listener, true);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", listener); window.removeEventListener("scroll", listener, true); };
+  }, [index, step.target]);
   const finish = () => {
-    try { window.localStorage.setItem(KEY, "true"); } catch { /* storage unavailable */ }
+    try { window.localStorage.setItem(KEY, "true"); } catch { /* unavailable */ }
     onClose();
   };
+  const w = window.innerWidth, h = window.innerHeight;
+  const tipWidth = Math.min(370, w - 32);
+  const tipLeft = rect ? Math.max(16, Math.min(w - tipWidth - 16, rect.left)) : Math.max(16, (w - tipWidth) / 2);
+  const tipTop = rect ? (rect.bottom + 245 < h ? rect.bottom + 18 : rect.top > 260 ? rect.top - 242 : Math.max(16, h - 255)) : Math.max(16, (h - 250) / 2);
   return (
-    <div className="onboarding-backdrop">
-      <section className="onboarding-panel" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-        <div className="onboarding-top">
-          <span className="onboarding-brand">SPLIT <span>2.0</span></span>
-          <button type="button" className="onboarding-skip" onClick={finish}>Skip guide</button>
-        </div>
-        <div className="onboarding-progress" aria-label={`Step ${index + 1} of ${steps.length}`}>
-          {steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}
-        </div>
-        <div className="onboarding-content" key={index}>
-          <p className="onboarding-eyebrow">{step.eyebrow}</p>
-          <h2 id="onboarding-title">{step.title}</h2>
-          <p className="onboarding-body">{step.body}</p>
-          <p className="onboarding-note">{step.note}</p>
-        </div>
-        <footer className="onboarding-footer">
-          <span>{index + 1} / {steps.length}</span>
-          <div className="onboarding-actions">
-            {index > 0 && <button type="button" className="onboarding-secondary" onClick={() => setIndex(index - 1)}>Back</button>}
-            <button type="button" className="onboarding-primary" onClick={() => index === steps.length - 1 ? finish() : setIndex(index + 1)}>{index === steps.length - 1 ? "Get started" : "Next"}</button>
-          </div>
-        </footer>
+    <div className="tour-root" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+      {rect ? <>
+        <div className="tour-shade" style={{ left: 0, top: 0, width: w, height: rect.top }} />
+        <div className="tour-shade" style={{ left: 0, top: rect.bottom, width: w, height: h - rect.bottom }} />
+        <div className="tour-shade" style={{ left: 0, top: rect.top, width: rect.left, height: rect.bottom - rect.top }} />
+        <div className="tour-shade" style={{ left: rect.right, top: rect.top, width: w - rect.right, height: rect.bottom - rect.top }} />
+        <div className="tour-highlight" style={{ top: rect.top, left: rect.left, width: rect.right - rect.left, height: rect.bottom - rect.top }} />
+      </> : <div className="tour-shade" style={{ inset: 0 }} />}
+      <section className="tour-popover" style={{ left: tipLeft, top: tipTop, width: tipWidth }}>
+        <div className="tour-heading"><strong>SPLIT <small>GUIDE</small></strong><button type="button" onClick={finish}>Skip guide</button></div>
+        <div className="tour-progress">{steps.map((_, i) => <span key={i} className={i <= index ? "active" : ""} />)}</div>
+        <p className="tour-counter">STEP {index + 1} OF {steps.length}</p>
+        <h2 id="tour-title">{step.title}</h2>
+        <p className="tour-description">{step.description}</p>
+        <div className="tour-actions"><span>{index + 1} / {steps.length}</span><div>{index > 0 && <button type="button" className="tour-back" onClick={() => setIndex(i => i - 1)}>Back</button>}<button type="button" className="tour-next" onClick={() => index === steps.length - 1 ? finish() : setIndex(i => i + 1)}>{index === steps.length - 1 ? "Finish" : "Next"}</button></div></div>
       </section>
     </div>
   );
