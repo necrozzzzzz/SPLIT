@@ -1348,7 +1348,7 @@ function App() {
         } catch (reason) {
           if (sequence === startupSoundSaveSequenceRef.current) {
             setStartupSoundFeedback(
-              `Could not save startup sound settings: ${String(reason)}`,
+              `${runtimeUiText("Could not save startup sound settings: ", getLanguage())}${String(reason)}`,
             );
           }
         } finally {
@@ -1393,7 +1393,7 @@ function App() {
       await playStartupSound(startupSoundSettings.volume);
     } catch (reason) {
       setStartupSoundFeedback(
-        `Could not play the startup sound: ${String(reason)}`,
+        `${runtimeUiText("Could not play the startup sound: ", getLanguage())}${String(reason)}`,
       );
     }
   }, [startupSoundSettings.volume]);
@@ -5904,7 +5904,7 @@ function App() {
                         }
                       >
                         {loadingSlot === slot
-                          ? "Loading…"
+                          ? runtimeUiText("Loading…", language)
                           : runtimeUiText("Load", language)}
                       </button>
                     </>

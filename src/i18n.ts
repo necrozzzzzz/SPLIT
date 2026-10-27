@@ -3065,6 +3065,8 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Could not save startup sound settings: ": "Could not save startup sound settings: ",
+    "Could not play the startup sound: ": "Could not play the startup sound: ",
     "Preset name cannot be empty": "Preset name cannot be empty",
     "Invalid preset": "Invalid preset",
     "Screenshot for": "Screenshot for",
@@ -3234,6 +3236,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Could not save startup sound settings: ": "Impossible d’enregistrer les paramètres du son de démarrage : ",
+    "Could not play the startup sound: ": "Impossible de lire le son de démarrage : ",
     "Preset name cannot be empty": "Le nom du preset ne peut pas être vide",
     "Invalid preset": "Preset invalide",
     "Screenshot for": "Capture d’écran de",
@@ -3403,6 +3407,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Could not save startup sound settings: ": "No se pudo guardar la configuración del sonido de inicio: ",
+    "Could not play the startup sound: ": "No se pudo reproducir el sonido de inicio: ",
     "Preset name cannot be empty": "El nombre del preajuste no puede estar vacío",
     "Invalid preset": "Preajuste no válido",
     "Screenshot for": "Captura de pantalla de",
@@ -3572,6 +3578,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Could not save startup sound settings: ": "Startsound-Einstellungen konnten nicht gespeichert werden: ",
+    "Could not play the startup sound: ": "Startsound konnte nicht abgespielt werden: ",
     "Preset name cannot be empty": "Der Preset-Name darf nicht leer sein",
     "Invalid preset": "Ungültiges Preset",
     "Screenshot for": "Screenshot von",
@@ -3741,6 +3749,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Could not save startup sound settings: ": "Não foi possível salvar as configurações do som de inicialização: ",
+    "Could not play the startup sound: ": "Não foi possível reproduzir o som de inicialização: ",
     "Preset name cannot be empty": "O nome da predefinição não pode estar vazio",
     "Invalid preset": "Predefinição inválida",
     "Screenshot for": "Captura de tela de",
@@ -3910,6 +3920,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Could not save startup sound settings: ": "Не удалось сохранить настройки звука запуска: ",
+    "Could not play the startup sound: ": "Не удалось воспроизвести звук запуска: ",
     "Preset name cannot be empty": "Название пресета не может быть пустым",
     "Invalid preset": "Недопустимый пресет",
     "Screenshot for": "Скриншот для",
@@ -4079,6 +4091,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Could not save startup sound settings: ": "起動音の設定を保存できませんでした: ",
+    "Could not play the startup sound: ": "起動音を再生できませんでした: ",
     "Preset name cannot be empty": "プリセット名を空にすることはできません",
     "Invalid preset": "無効なプリセット",
     "Screenshot for": "スクリーンショット：",
@@ -4248,6 +4262,8 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Could not save startup sound settings: ": "无法保存启动音效设置：",
+    "Could not play the startup sound: ": "无法播放启动音效：",
     "Preset name cannot be empty": "预设名称不能为空",
     "Invalid preset": "无效的预设",
     "Screenshot for": "截图：",
