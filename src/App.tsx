@@ -632,7 +632,7 @@ function StatusDot({
   );
 }
 
-function DiagnosticInfo({ text }: { text: string }) {
+function DiagnosticInfo({ text, fix }: { text: string; fix?: string }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const close = (e: PointerEvent) => { if (ref.current?.open && !ref.current.contains(e.target as Node)) ref.current.open = false; };
@@ -642,7 +642,7 @@ function DiagnosticInfo({ text }: { text: string }) {
   return (
     <details ref={ref} className="diagnostic-info">
       <summary aria-label="What does this diagnostic mean?" title="What does this mean?">i</summary>
-      <div className="diagnostic-info-content">{text}</div>
+      <div className="diagnostic-info-content"><div className="diagnostic-info-label">WHAT IT MEANS</div><p>{text}</p>{fix && <><div className="diagnostic-info-separator" /><div className="diagnostic-info-label">IF SOMETHING IS WRONG</div><p>{fix}</p></>}</div>
     </details>
   );
 }
@@ -7229,7 +7229,7 @@ function App() {
             <span>
               SPLIT edition
             </span>
-            <DiagnosticInfo text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen uses keyboard shortcuts. This is informational, not an error. Launch the intended edition if this is not the one you expected."} />
+            <DiagnosticInfo text={"Shows which SPLIT edition is running. Borderless supports Quick Access and in-game notifications; Fullscreen uses keyboard shortcuts."} fix={"If this is not the edition you expected, launch the intended SPLIT executable."} />
           </div>
 
           <strong>
@@ -7252,7 +7252,7 @@ function App() {
             <span>
               SPLIT integration
             </span>
-            <DiagnosticInfo text={"Checks the configuration SPLIT uses to work with Deadlock. If Needs attention appears, click Repair integration, then Refresh. If repair fails, check your Deadlock installation path."} />
+            <DiagnosticInfo text={"Checks whether SPLIT's Deadlock integration is configured correctly."} fix={"Click Repair integration, then Refresh. If it still fails, check the Deadlock installation path."} />
           </div>
 
           <strong>
@@ -7286,7 +7286,7 @@ function App() {
             <span>
               Deadlock process
             </span>
-            <DiagnosticInfo text={"Shows whether SPLIT detects Deadlock. Not running is normal if the game is closed. If Deadlock is open but not detected, restart SPLIT, check the game installation path, then click Refresh."} />
+            <DiagnosticInfo text={"Shows whether SPLIT detects Deadlock. Not running is normal when the game is closed."} fix={"If Deadlock is open but not detected, restart SPLIT, check the installation path, then Refresh."} />
           </div>
 
           <strong>
@@ -7315,7 +7315,7 @@ function App() {
             <span>
               Hotkey hook
             </span>
-            <DiagnosticInfo text={"Listens for SPLIT shortcuts. If Down, close duplicate SPLIT instances and restart SPLIT. If Deadlock runs as administrator, try running SPLIT with the same privileges. Follow the HOW TO FIX steps below."} />
+            <DiagnosticInfo text={"Listens for SPLIT keyboard shortcuts."} fix={"If Down, close duplicate SPLIT instances and restart. Match Deadlock's administrator privileges if needed. See HOW TO FIX below."} />
           </div>
 
           <strong>
@@ -7400,7 +7400,7 @@ function App() {
             <span>
               Console watcher
             </span>
-            <DiagnosticInfo text={"Reads Deadlock's console log for game activity and position responses. If Down, verify the Deadlock installation path, start Deadlock once to create its log, then click Retry watcher. See HOW TO FIX below."} />
+            <DiagnosticInfo text={"Reads Deadlock's console log for activity and position responses."} fix={"If Down, check the installation path, launch Deadlock once, then click Retry watcher. See HOW TO FIX below."} />
           </div>
 
           <strong>
