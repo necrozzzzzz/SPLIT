@@ -4178,8 +4178,8 @@ function App() {
 
                   <small>
                     {detected
-                      ? "Installation found"
-                      : "Not detected automatically"}
+                      ? runtimeUiText("Installation found", language)
+                      : runtimeUiText("Not detected automatically", language)}
                   </small>
                 </div>
               </div>
@@ -4196,14 +4196,14 @@ function App() {
                 <div>
                   <strong>
                     {detected
-                      ? "Confirm folder"
-                      : "Choose folder"}
+                      ? runtimeUiText("Confirm folder", language)
+                      : runtimeUiText("Choose folder", language)}
                   </strong>
 
                   <small>
                     {setupWorking
-                      ? "Installation path verified"
-                      : "Verify the installation path"}
+                      ? runtimeUiText("Installation path verified", language)
+                      : runtimeUiText("Verify the installation path", language)}
                   </small>
                 </div>
               </div>
@@ -4224,8 +4224,8 @@ function App() {
 
                   <small>
                     {setupWorking
-                      ? "Configuring Deadlock…"
-                      : "Configure Deadlock automatically"}
+                      ? runtimeUiText("Configuring Deadlock…", language)
+                      : runtimeUiText("Configure Deadlock automatically", language)}
                   </small>
                 </div>
               </div>
@@ -4236,9 +4236,7 @@ function App() {
                 </span>
 
                 <p>
-                  SPLIT will configure the required
-                  Deadlock integration automatically
-                  after confirmation.
+                  {runtimeUiText("SPLIT will configure the required Deadlock integration automatically after confirmation.", language)}
                 </p>
               </div>
             </aside>
