@@ -644,6 +644,11 @@ function App() {
     "general",
   );
 
+  const navigateOnboarding = useCallback((view: "slots" | "settings", section?: SettingsSection) => {
+    setActiveView(view);
+    if (section) setActiveSettingsSection(section);
+  }, []);
+
   const [appVersion, setAppVersion] =
     useState<string | null>(null);
 
@@ -7956,7 +7961,7 @@ function App() {
       </div>
       )}
 
-      {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
+      {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} navigate={navigateOnboarding} />}
       {error && (
         <div className="error-box">
           Backend error: {error}
