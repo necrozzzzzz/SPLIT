@@ -354,6 +354,7 @@ function previewFor(
   section: PresenceSection,
   config: DiscordPresenceConfig,
   prefixPreview: string | null,
+  language: ReturnType<typeof getLanguage>,
 ) {
   switch (section) {
     case "hideout":
@@ -372,9 +373,9 @@ function previewFor(
       };
     case "sandbox":
       return {
-        details: "Sandbox",
+        details: discordUiText("Sandbox", language),
         state: compactState(
-          `${prefixPreview ?? config.sandbox.statePrefix}Practicing with ${SESSION_PREVIEW_HERO.name}`,
+          `${prefixPreview ?? config.sandbox.statePrefix}${discordUiText("Practicing with ", language)}${SESSION_PREVIEW_HERO.name}`,
           config.sandbox.partyDisplay,
         ),
         imageUrl: config.sandbox.showHeroImage
@@ -385,11 +386,11 @@ function previewFor(
     case "exploreNyc":
       return {
         details: config.exploreNyc.showHeroInDetails
-          ? `Exploring NYC with ${SESSION_PREVIEW_HERO.name}`
-          : "Exploring NYC",
+          ? `${discordUiText("Exploring NYC with ", language)}${SESSION_PREVIEW_HERO.name}`
+          : discordUiText("Exploring NYC", language),
         state: compactState(
           config.exploreNyc.showDistrict
-            ? `${prefixPreview ?? config.exploreNyc.districtPrefix}Haunted Lot`
+            ? `${prefixPreview ?? config.exploreNyc.districtPrefix}${discordUiText("Haunted Lot", language)}`
             : "Explore NYC",
           config.exploreNyc.partyDisplay,
         ),
@@ -399,7 +400,7 @@ function previewFor(
     case "loading":
       return {
         details: "Deadlock",
-        state: config.loading.showLoadingState ? "Loading..." : "Loading hidden",
+        state: config.loading.showLoadingState ? discordUiText("Loading...", language) : discordUiText("Loading hidden", language),
         imageUrl: config.loading.useDeadlockLogo ? deadlockLogoUrl : null,
         party: false,
       };
@@ -407,7 +408,7 @@ function previewFor(
       return {
         details: "Deadlock",
         state: compactState(
-          `${prefixPreview ?? config.mainMenu.statePrefix}In Menu`,
+          `${prefixPreview ?? config.mainMenu.statePrefix}${discordUiText("In Menu", language)}`,
           config.mainMenu.partyDisplay,
         ),
         imageUrl: config.mainMenu.useDeadlockLogo ? deadlockLogoUrl : null,
@@ -415,7 +416,7 @@ function previewFor(
       };
     case "matchmaking":
       return {
-        details: "Searching for Match",
+        details: discordUiText("Searching for Match", language),
         state: compactState(
           `${prefixPreview ?? config.matchmaking.statePrefix}Matchmaking`,
           config.matchmaking.partyDisplay,
@@ -425,9 +426,9 @@ function previewFor(
       };
     case "match":
       return {
-        details: "In Match",
+        details: discordUiText("In Match", language),
         state: compactState(
-          `${prefixPreview ?? config.match.statePrefix}Playing as ${SESSION_PREVIEW_HERO.name}`,
+          `${prefixPreview ?? config.match.statePrefix}${discordUiText("Playing as ", language)}${SESSION_PREVIEW_HERO.name}`,
           config.match.partyDisplay,
         ),
         imageUrl: config.match.showHeroImage
@@ -437,9 +438,9 @@ function previewFor(
       };
     case "spectating":
       return {
-        details: "Spectating a game",
+        details: discordUiText("Spectating a game", language),
         state: config.spectating.showMatchId
-          ? `${prefixPreview ?? config.spectating.matchIdPrefix}Match 110501755`
+          ? `${prefixPreview ?? config.spectating.matchIdPrefix}${discordUiText("Match ", language)}110501755`
           : "",
         imageUrl: deadlockLogoUrl,
         party: false,
@@ -457,7 +458,7 @@ function previewFor(
     default:
       return {
         details: "Deadlock",
-        state: `${prefixPreview ?? config.global.previewPrefix}In Menu`,
+        state: `${prefixPreview ?? config.global.previewPrefix}${discordUiText("In Menu", language)}`,
         imageUrl: deadlockLogoUrl,
         party: false,
       };
@@ -587,7 +588,7 @@ export default function DiscordPresenceSettings() {
     );
   }
 
-  const preview = previewFor(activeSection, config, prefixPreview);
+  const preview = previewFor(activeSection, config, prefixPreview, language);
   const activeLabel =
     SECTIONS.find((section) => section.key === activeSection)?.label ?? "Global";
   const districtControlsDisabled = !config.exploreNyc.showDistrict;
