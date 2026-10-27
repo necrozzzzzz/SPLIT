@@ -676,7 +676,7 @@ function App() {
       })
       .catch(() => {
         if (active) {
-          setAppVersion("Unavailable");
+          setAppVersion(runtimeUiText("Unavailable", getLanguage()));
         }
       });
 
@@ -7895,7 +7895,7 @@ function App() {
         <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>{t("replayGuide", language)}</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
-            <span>Version</span>
+            <span>{uiText("Version", language)}</span>
             <strong>{appVersion ?? runtimeUiText("Loading…", language)}</strong>
           </div>
         </div>

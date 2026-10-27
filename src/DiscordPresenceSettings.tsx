@@ -418,7 +418,7 @@ function previewFor(
       return {
         details: discordUiText("Searching for Match", language),
         state: compactState(
-          `${prefixPreview ?? config.matchmaking.statePrefix}Matchmaking`,
+          `${prefixPreview ?? config.matchmaking.statePrefix}${discordUiText("Matchmaking", language)}`,
           config.matchmaking.partyDisplay,
         ),
         imageUrl: deadlockLogoUrl,
@@ -447,7 +447,7 @@ function previewFor(
       };
     case "postMatch":
       return {
-        details: "Post Match",
+        details: discordUiText("Post Match", language),
         state: compactState(
           `${prefixPreview ?? config.postMatch.statePrefix}Deadlock`,
           config.postMatch.partyDisplay,
