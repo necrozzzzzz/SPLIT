@@ -82,10 +82,19 @@ export default function Onboarding({ onClose, navigate }: Props) {
       if (++attempts < 45) frame = requestAnimationFrame(update);
     };
     update();
+    // Discord settings load asynchronously. Their height changes after the
+    // initial tour measurement; observe layout changes instead of waiting for
+    // the user to scroll before refreshing the spotlight.
+    const resizeObserver = new ResizeObserver(() => update());
+    const observed = [
+      document.querySelector<HTMLElement>(".settings-view"),
+      document.querySelector<HTMLElement>(".drp-settings-shell"),
+    ].filter((el): el is HTMLElement => el !== null);
+    observed.forEach((el) => resizeObserver.observe(el));
     const listener = () => { attempts = 44; update(); };
     window.addEventListener("resize", listener);
     window.addEventListener("scroll", listener, true);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", listener); window.removeEventListener("scroll", listener, true); };
+    return () => { resizeObserver.disconnect(); cancelAnimationFrame(frame); window.removeEventListener("resize", listener); window.removeEventListener("scroll", listener, true); };
   }, [index, step.target]);
   const finish = () => {
     try { window.localStorage.setItem(KEY, "true"); } catch { /* unavailable */ }
