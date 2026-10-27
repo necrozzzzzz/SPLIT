@@ -308,7 +308,7 @@ function PrefixSelector({
               onChange(preset.value);
             }}
           >
-            {preset.label === "None" ? uiText("None", language) : discordUiText(preset.label, language)}
+            {preset.label === "None" ? discordUiText("None", language) : discordUiText(preset.label, language)}
           </button>
         ))}
         <button

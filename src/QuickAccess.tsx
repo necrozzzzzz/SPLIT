@@ -291,7 +291,7 @@ export default function QuickAccess() {
                 presetNames[
                   activePreset - 1
                 ] ??
-                `Preset ${activePreset}`
+                `${quickAccessText("Preset", getLanguage())} ${activePreset}`
               ),
         );
 

@@ -4686,7 +4686,7 @@ function App() {
                   >
                     <div className="favorite-destination-card-header">
                       <span className="favorite-destination-slot">
-                        {uiText("Favorite", language)} {favorite.slot}
+                        {runtimeUiText("Favorite", language)} {favorite.slot}
                       </span>
 
                       <span
@@ -4697,19 +4697,19 @@ function App() {
                         }`}
                       >
                         {favorite.occupied
-                          ? uiText("Occupied", language) : uiText("Empty", language)}
+                          ? runtimeUiText("Occupied", language) : runtimeUiText("Empty", language)}
                       </span>
                     </div>
 
                     <strong className="favorite-destination-name">
                       {favorite.occupied
                         ? favorite.name
-                        : uiText("Available slot", language)}
+                        : runtimeUiText("Available slot", language)}
                     </strong>
 
                     <span className="favorite-destination-hint">
                       {favorite.occupied
-                        ? uiText("Overwrite this favorite", language) : uiText("Save here", language)}
+                        ? runtimeUiText("Overwrite this favorite", language) : runtimeUiText("Save here", language)}
                     </span>
                   </button>
                 ),
@@ -4751,7 +4751,7 @@ function App() {
                   id="overwrite-favorite-title"
                   className="confirmation-title"
                 >
-                  {uiText("Replace Favorite", language)}{" "}
+                  {runtimeUiText("Replace Favorite", language)}{" "}
                   {pendingFavoriteOverwrite.target.slot}?
                 </h3>
 
@@ -4807,7 +4807,7 @@ function App() {
                 }
               >
                 {favoriteCopyWorking
-                  ? uiText("Replacing…", language) : uiText("Replace Favorite", language)}
+                  ? runtimeUiText("Replacing…", language) : runtimeUiText("Replace Favorite", language)}
               </button>
             </div>
           </section>
@@ -5736,7 +5736,7 @@ function App() {
               metadata?.name?.trim() ||
               (
                 favoriteMode
-                  ? `${uiText("Favorite", language)} ${slot}` : `${runtimeUiText("Slot", language)} ${slot}`
+                  ? `${runtimeUiText("Favorite", language)} ${slot}` : `${runtimeUiText("Slot", language)} ${slot}`
               );
 
 
@@ -5799,7 +5799,7 @@ function App() {
                   className={`slot-preview ${
                     position ? "filled" : "empty"
                   }`}
-                  title={position && metadata?.screenshot ? uiText("Right click to view screenshot", language)
+                  title={position && metadata?.screenshot ? runtimeUiText("Right click to view screenshot", language)
                       : undefined
                   }
                   onContextMenu={(event) => {
@@ -7897,7 +7897,7 @@ function App() {
         <button type="button" className="preset-button about-replay-guide" onClick={() => setShowOnboarding(true)}>{t("replayGuide", language)}</button>
         <div className="about-settings-list">
           <div className="about-settings-row">
-            <span>{uiText("Version", language)}</span>
+            <span>{runtimeUiText("Version", language)}</span>
             <strong>{appVersion ?? runtimeUiText("Loading…", language)}</strong>
           </div>
         </div>

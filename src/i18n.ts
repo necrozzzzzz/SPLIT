@@ -1981,6 +1981,7 @@ export const tourDemoLabels: Record<Language, Record<string, string>> = {
     "Tint applied! Try another color.": "颜色已应用！试试其他颜色。",
     "Try the slot actions above": "试试上方的存档槽操作",
     "Example": "示例",
+    "Close screenshot": "关闭截图",
     "Close": "关闭",
     "None": "无",
     "Cyan": "青色",
@@ -2460,6 +2461,7 @@ export function diagnosticText(english: string, language: Language): string {
 
 export const discordUiLabels: Record<Language, Record<string, string>> = {
   "en": {
+    "None": "None",
     "DISCORD": "DISCORD",
     "Sandbox": "Sandbox",
     "Exploring NYC": "Exploring NYC",
@@ -2516,6 +2518,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "preview"
   },
   "fr": {
+    "None": "Aucun",
     "DISCORD": "DISCORD",
     "Sandbox": "Bac à sable",
     "Exploring NYC": "Exploration de NYC",
@@ -2572,6 +2575,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "aperçu"
   },
   "es": {
+    "None": "Ninguno",
     "DISCORD": "DISCORD",
     "Sandbox": "Práctica",
     "Exploring NYC": "Explorando NYC",
@@ -2628,6 +2632,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "vista previa"
   },
   "de": {
+    "None": "Keine",
     "DISCORD": "DISCORD",
     "Sandbox": "Übungsmodus",
     "Exploring NYC": "NYC erkunden",
@@ -2684,6 +2689,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "Vorschau"
   },
   "pt": {
+    "None": "Nenhum",
     "DISCORD": "DISCORD",
     "Sandbox": "Treino",
     "Exploring NYC": "Explorando NYC",
@@ -2740,6 +2746,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "prévia"
   },
   "ru": {
+    "None": "Нет",
     "DISCORD": "ДИСКОРД",
     "Sandbox": "Тренировка",
     "Exploring NYC": "Исследование NYC",
@@ -2796,6 +2803,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "предпросмотр"
   },
   "ja": {
+    "None": "なし",
     "DISCORD": "DISCORD",
     "Sandbox": "練習モード",
     "Exploring NYC": "NYC を探索中",
@@ -2852,6 +2860,7 @@ export const discordUiLabels: Record<Language, Record<string, string>> = {
     "preview": "プレビュー"
   },
   "zh": {
+    "None": "无",
     "DISCORD": "DISCORD",
     "Sandbox": "练习模式",
     "Exploring NYC": "探索 NYC",
@@ -3065,6 +3074,7 @@ export function runtimeErrorText(english: string, language: Language): string {
 // Visible runtime and diagnostic messages (canonical English keys).
 export const runtimeUiMessages: Record<Language, Record<string, string>> = {
   "en": {
+    "Right click to view screenshot": "Right click to view screenshot",
     "Quick Access": "Quick Access",
     "Version": "Version",
     "Load Slot": "Load Slot",
@@ -3238,6 +3248,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unknown camera runtime error"
   },
   "fr": {
+    "Right click to view screenshot": "Clic droit pour voir la capture",
     "Quick Access": "Accès rapide",
     "Version": "Version",
     "Load Slot": "Charger l’emplacement",
@@ -3411,6 +3422,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erreur inconnue de la caméra"
   },
   "es": {
+    "Right click to view screenshot": "Clic derecho para ver la captura",
     "Quick Access": "Acceso rápido",
     "Version": "Versión",
     "Load Slot": "Cargar espacio",
@@ -3584,6 +3596,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Error de cámara desconocido"
   },
   "de": {
+    "Right click to view screenshot": "Rechtsklick für Screenshot",
     "Quick Access": "Schnellzugriff",
     "Version": "Version",
     "Load Slot": "Platz laden",
@@ -3757,6 +3770,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Unbekannter Kamerafehler"
   },
   "pt": {
+    "Right click to view screenshot": "Clique direito para ver a captura",
     "Quick Access": "Acesso rápido",
     "Version": "Versão",
     "Load Slot": "Carregar espaço",
@@ -3930,6 +3944,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Erro de câmera desconhecido"
   },
   "ru": {
+    "Right click to view screenshot": "ПКМ для просмотра скриншота",
     "Quick Access": "Быстрый доступ",
     "Version": "Версия",
     "Load Slot": "Загрузить слот",
@@ -4103,6 +4118,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "Неизвестная ошибка камеры"
   },
   "ja": {
+    "Right click to view screenshot": "右クリックで画像を表示",
     "Quick Access": "クイックアクセス",
     "Version": "バージョン",
     "Load Slot": "スロットを読み込む",
@@ -4276,6 +4292,7 @@ export const runtimeUiMessages: Record<Language, Record<string, string>> = {
     "Unknown camera runtime error": "不明なカメラエラー"
   },
   "zh": {
+    "Right click to view screenshot": "右键查看截图",
     "Quick Access": "快速访问",
     "Version": "版本",
     "Load Slot": "加载槽位",
