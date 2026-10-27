@@ -73,7 +73,12 @@ export default function Onboarding({ onClose, navigate }: Props) {
   const [language, setTourLanguage] = useState(getLanguage);
   useEffect(() => { const update = () => setTourLanguage(getLanguage()); window.addEventListener("split-language-change", update); return () => window.removeEventListener("split-language-change", update); }, []);
   const translated = language === "fr" ? frenchTour[step.title] : undefined;
-  const label = (en: string, _fr: string) => tourDemoText(en, language) !== en ? tourDemoText(en, language) : tourControl(en, language);
+  const label = (en: string, fr: string) => {
+    const demo = tourDemoText(en, language);
+    if (demo !== en) return demo;
+    const control = tourControl(en, language);
+    return language === "fr" && control === en ? fr : control;
+  };
   useEffect(() => { setDemoOpen(false); setDemoMenuOpen(false); setDemoColor(null); setDemoName("Slot 1"); setDemoDraft("Slot 1"); setDemoRenaming(false); }, [index]);
   useEffect(() => {
     if (!demoOpen) return;
