@@ -6349,7 +6349,7 @@ function App() {
                 <strong>{t("language", language)}</strong>
                 <span>{t("chooseLanguage", language)}</span>
               </div>
-              <select aria-label={t("language", language)} value={automaticLanguage ? "auto" : language} onChange={(event) => changeLanguage(event.target.value)}>
+              <select className="language-setting-select" aria-label={t("language", language)} value={automaticLanguage ? "auto" : language} onChange={(event) => changeLanguage(event.target.value)}>
                 <option value="auto">{t("auto", language)}</option>
                 {languages.map((code) => <option key={code} value={code}>{languageNames[code]}</option>)}
               </select>

@@ -7912,3 +7912,32 @@ select:hover:not(:disabled) {
 .quick-access-slot-copy > span, .quick-access-slot-name { overflow-wrap: anywhere; }
 .quick-access-viewer-header strong { min-width: 0; overflow-wrap: anywhere; }
 .quick-access-footer, .quick-access-slot-menu { overflow-wrap: anywhere; }
+
+/* Language picker: match SPLIT's dark controls instead of the native white field. */
+.general-setting-row .language-setting-select {
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: dark;
+  min-width: 180px;
+  width: min(268px, 46%);
+  min-height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(79, 209, 197, .28);
+  border-radius: 7px;
+  padding: 0 36px 0 12px;
+  color: #e1eeeb;
+  background-color: #142628;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ac6bf' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.general-setting-row .language-setting-select:hover { border-color: rgba(79, 209, 197, .55); background-color: #1b3032; }
+.general-setting-row .language-setting-select:focus-visible { outline: 2px solid rgba(79, 209, 197, .45); outline-offset: 2px; }
+.general-setting-row .language-setting-select option { color: #e1eeeb; background: #142628; }
+@media (max-width: 540px) {
+  .general-setting-row .language-setting-select { min-width: 130px; width: 48%; }
+}
