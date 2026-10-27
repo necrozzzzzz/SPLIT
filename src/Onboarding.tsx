@@ -198,24 +198,24 @@ export default function Onboarding({ onClose, navigate }: Props) {
         <div className="tour-shade" style={{ left: rect.right, top: rect.top, width: w - rect.right, height: rect.bottom - rect.top }} />
         <div className="tour-highlight" style={{ top: rect.top, left: rect.left, width: rect.right - rect.left, height: rect.bottom - rect.top }} />
       </> : <div className="tour-shade" style={{ inset: 0 }} />}
-      {step.title === "Save State slots" && demoSlotRect && <div className="tour-live-preview" style={{ position: "fixed", left: demoSlotRect.left, top: demoSlotRect.top, width: demoSlotRect.width, height: demoSlotRect.height }} onContextMenu={(event) => { event.preventDefault(); setDemoOpen(true); }} title="Right-click to view the example screenshot">
-        <img src="/tutorial-mina.jpg" alt="Example Deadlock screenshot featuring Mina" />
+      {step.title === "Save State slots" && demoSlotRect && <div className="tour-live-preview" style={{ position: "fixed", left: demoSlotRect.left, top: demoSlotRect.top, width: demoSlotRect.width, height: demoSlotRect.height }} onContextMenu={(event) => { event.preventDefault(); setDemoOpen(true); }} title={tourDemoText("Right-click to view the example screenshot", language)}>
+        <img src="/tutorial-mina.jpg" alt={tourDemoText("Example Deadlock screenshot featuring Mina", language)} />
         <span className="tour-live-preview-number">01</span>
         <span className="tour-live-preview-hint">{label("RIGHT-CLICK TO PREVIEW", "CLIC DROIT POUR AFFICHER")}</span>
       </div>}
       {step.title === "Save State slots" && demoCardRect && <div className="tour-live-rename" style={{ position: "fixed", left: demoCardRect.left, top: demoSlotRect ? demoSlotRect.bottom : demoCardRect.bottom - 56, width: demoCardRect.width, height: demoSlotRect ? Math.max(42, demoCardRect.bottom - demoSlotRect.bottom) : 56 }}>
-        {demoRenaming ? <input autoFocus aria-label="Rename example slot" maxLength={40} value={demoDraft} onChange={event => setDemoDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); } if (event.key === "Escape") { event.stopPropagation(); setDemoRenaming(false); setDemoDraft(demoName); } }} onBlur={() => { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); }} /> : <button type="button" className="tour-live-rename-button" onClick={() => { setDemoDraft(demoName); setDemoRenaming(true); }} title="Click to rename this example slot">{demoName}</button>}
-        <small>{demoRenaming ? "Press Enter to confirm · Esc to cancel" : "CLICK THE NAME TO TRY RENAMING"}</small>
+        {demoRenaming ? <input autoFocus aria-label={tourDemoText("Rename example slot", language)} maxLength={40} value={demoDraft} onChange={event => setDemoDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); } if (event.key === "Escape") { event.stopPropagation(); setDemoRenaming(false); setDemoDraft(demoName); } }} onBlur={() => { setDemoName(demoDraft.trim() || "Slot 1"); setDemoRenaming(false); }} /> : <button type="button" className="tour-live-rename-button" onClick={() => { setDemoDraft(demoName); setDemoRenaming(true); }} title={tourDemoText("Click to rename this example slot", language)}>{demoName}</button>}
+        <small>{demoRenaming ? tourDemoText("Press Enter to confirm · Esc to cancel", language) : tourDemoText("CLICK THE NAME TO TRY RENAMING", language)}</small>
       </div>}
       {step.title === "Slot actions" && demoCardRect && <div className="tour-demo-slot-card" style={{ left: demoCardRect.left, top: demoCardRect.top, width: demoCardRect.width, height: demoCardRect.height }}>
         <div className="tour-demo-slot-image">
-          <img src="/tutorial-mina.jpg" alt="Example Deadlock save state featuring Mina" />
+          <img src="/tutorial-mina.jpg" alt={tourDemoText("Example Deadlock save state featuring Mina", language)} />
           {demoColor && <div className="tour-demo-slot-tint" style={{ backgroundColor: demoColor }} />}
           <span>01</span>
         </div>
         <div className="tour-demo-slot-footer"><strong>{tourDemoText("Example · Mina", language)}</strong><small>{tourDemoText(demoColor ? "Tint applied! Try another color." : "Try the slot actions above", language)}</small></div>
         {!demoMenuOpen && <span className="tour-demo-slot-hint">{label("CLICK ··· TO TRY COLORS", "CLIQUEZ SUR ··· POUR TESTER LES COULEURS")}</span>}
-        <button className="tour-demo-slot-menu-trigger" type="button" aria-label="Open example slot actions" aria-expanded={demoMenuOpen} onClick={() => setDemoMenuOpen(v => !v)}>···</button>
+        <button className="tour-demo-slot-menu-trigger" type="button" aria-label={tourDemoText("Open example slot actions", language)} aria-expanded={demoMenuOpen} onClick={() => setDemoMenuOpen(v => !v)}>···</button>
         {demoMenuOpen && <div className="slot-card-menu-panel tour-demo-slot-menu">
           <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>{tourDemoText("Rename", language)} <span>{tourDemoText("Example", language)}</span></button>
           <button type="button" className="slot-menu-item" onClick={() => setDemoMenuOpen(false)}>{tourDemoText("View screenshot", language)} <span>{tourDemoText("Right click", language)}</span></button>
@@ -228,12 +228,12 @@ export default function Onboarding({ onClose, navigate }: Props) {
         </div>}
       </div>}
       {step.title === "Save State slots" && demoOpen && <div className="screenshot-viewer-backdrop tour-example-viewer" onClick={() => setDemoOpen(false)}>
-        <section className="screenshot-viewer" role="dialog" aria-modal="true" aria-label="Example screenshot for Mina" onClick={(event) => event.stopPropagation()}>
+        <section className="screenshot-viewer" role="dialog" aria-modal="true" aria-label={tourDemoText("Example screenshot for Mina", language)} onClick={(event) => event.stopPropagation()}>
           <header className="screenshot-viewer-header">
             <div><strong>{tourDemoText("Example slot · Mina", language)}</strong><span>{label("Example screenshot", "Capture d’écran d’exemple")}</span></div>
-            <button type="button" aria-label="Close screenshot" title="Close" onClick={() => setDemoOpen(false)}>×</button>
+            <button type="button" aria-label={tourDemoText("Close screenshot", language)} title="Close" onClick={() => setDemoOpen(false)}>×</button>
           </header>
-          <div className="screenshot-viewer-image"><img src="/tutorial-mina.jpg" alt="Deadlock gameplay screenshot featuring Mina" draggable={false} /></div>
+          <div className="screenshot-viewer-image"><img src="/tutorial-mina.jpg" alt={tourDemoText("Deadlock gameplay screenshot featuring Mina", language)} draggable={false} /></div>
           <footer className="screenshot-viewer-footer">{label("Example only — your saved positions are unchanged · Esc to close", "Exemple uniquement : vos sauvegardes restent intactes · Échap pour fermer")}</footer>
         </section>
       </div>}
