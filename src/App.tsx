@@ -50,6 +50,7 @@ import {
 } from "./startupSound";
 
 import DiscordPresenceSettings from "./DiscordPresenceSettings";
+import { getLanguage, setLanguage, languages, languageNames, t, type Language } from "./i18n";
 import Onboarding, { isOnboardingCompleted } from "./Onboarding";
 
 type DeadlockStatus = {
@@ -648,6 +649,21 @@ function DiagnosticInfo({ text, fix }: { text: string; fix?: string }) {
 }
 
 function App() {
+  const [language, updateLanguage] = useState<Language>(getLanguage);
+  const [automaticLanguage, setAutomaticLanguage] = useState(() => localStorage.getItem("split.language") === null);
+  const changeLanguage = (value: string) => {
+    if (value === "auto") {
+      localStorage.removeItem("split.language");
+      setAutomaticLanguage(true);
+      const detected = navigator.language.toLowerCase().split("-")[0];
+      updateLanguage(languages.includes(detected as Language) ? detected as Language : "en");
+    } else {
+      setLanguage(value as Language);
+      updateLanguage(value as Language);
+      setAutomaticLanguage(false);
+    }
+  };
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingCompleted());
   const [activeView, setActiveView] =
     useState<AppView>("slots");
@@ -5151,7 +5167,7 @@ function App() {
             className={activeView === "settings" ? "active" : ""}
             onClick={() => setActiveView("settings")}
           >
-            <span>Settings</span>
+            <span>{t("settings", language)}</span>
           </button>
         </nav>
 
@@ -5302,7 +5318,7 @@ function App() {
               )
             }
           >
-            General
+            {t("general", language)}
           </button>
 
           <button
@@ -6374,7 +6390,7 @@ function App() {
                 </p>
 
                 <h2>
-                  General settings
+                  {t("general", language)} settings
                 </h2>
 
                 <p>
@@ -6384,6 +6400,20 @@ function App() {
               </div>
             </div>
 
+
+          <div className="general-settings-group">
+            <h3>{t("language", language).toUpperCase()}</h3>
+            <div className="general-setting-row">
+              <div>
+                <strong>{t("language", language)}</strong>
+                <span>{t("chooseLanguage", language)}</span>
+              </div>
+              <select aria-label={t("language", language)} value={automaticLanguage ? "auto" : language} onChange={(event) => changeLanguage(event.target.value)}>
+                <option value="auto">{t("auto", language)}</option>
+                {languages.map((code) => <option key={code} value={code}>{languageNames[code]}</option>)}
+              </select>
+            </div>
+          </div>
 
           <div className="general-settings-group">
                 <h3>APPEARANCE</h3>
