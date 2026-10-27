@@ -156,6 +156,11 @@ fn copy_slot_to_favorite(
 }
 
 #[tauri::command]
+fn set_notification_language(language: String) {
+    notifications::set_language(&language);
+}
+
+#[tauri::command]
 fn get_notification_settings() -> notifications::NotificationSettings {
     deadlock::get_notification_settings()
 }
@@ -634,6 +639,7 @@ pub fn run() {
             import_preset,
             rename_preset,
             clear_preset,
+            set_notification_language,
             get_notification_settings,
             update_notification_settings,
             claim_startup_sound,
