@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -606,6 +607,42 @@ struct NativeVisualRenderer::Impl {
   std::vector<ParticleRef> world_texts;
   std::vector<ParticleRef> beams;
 
+  struct RetiredParticle {
+    ParticleRef ref;
+    std::chrono::steady_clock::time_point remove_after;
+  };
+  std::vector<RetiredParticle> retired_particles;
+
+  void ReapRetiredParticles() {
+    if (!remove_entity || retired_particles.empty()) return;
+    const auto now = std::chrono::steady_clock::now();
+    auto out = retired_particles.begin();
+    for (auto it = retired_particles.begin(); it != retired_particles.end(); ++it) {
+      if (now >= it->remove_after) {
+        if (void* entity = it->ref.Get()) {
+          remove_entity(entity);
+        }
+      } else {
+        if (out != it) *out = *it;
+        ++out;
+      }
+    }
+    retired_particles.erase(out, retired_particles.end());
+  }
+
+  void RetireParticle(const ParticleRef& particle) {
+    if (void* entity = particle.Get()) {
+      if (accept_input) {
+        static constexpr char kEmpty[] = "";
+        InputVariant empty{.pointer = kEmpty};
+        (void)accept_input(entity, "StopPlayEndCap", nullptr, nullptr,
+                           &empty, 0, nullptr);
+      }
+      retired_particles.push_back({
+          particle, std::chrono::steady_clock::now() + std::chrono::seconds(2)});
+    }
+  }
+
   void Command(std::string_view command) {
     if (!engine) return;
     auto** table = *static_cast<void***>(engine);
@@ -945,6 +982,7 @@ struct NativeVisualRenderer::Impl {
                      int data_control_point = 1,
                      const std::optional<std::uint32_t>& tint_rgba = std::nullopt,
                      int tint_control_point = 2) {
+    ReapRetiredParticles();
     void* entity_system = EntitySystem(error);
     if (!entity_system) return false;
 
@@ -1389,12 +1427,15 @@ bool NativeVisualRenderer::DrawTestParticle(
 }
 
 void NativeVisualRenderer::Clear() {
+  // Match Modlock's particle lifecycle: stop the effect, keep the entity alive
+  // for its end cap, and remove it later. Immediate removal of dozens of live
+  // info_particle_system entities can destabilize the server.
+  impl_->ReapRetiredParticles();
+  for (const auto& particle : impl_->particles) {
+    impl_->RetireParticle(particle);
+  }
+
   if (impl_->remove_entity) {
-    for (const auto& particle : impl_->particles) {
-      if (void* entity = particle.Get()) {
-        impl_->remove_entity(entity);
-      }
-    }
     for (const auto& text : impl_->world_texts) {
       if (void* entity = text.Get()) {
         impl_->remove_entity(entity);
