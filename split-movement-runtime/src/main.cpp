@@ -408,19 +408,30 @@ int main(int argc, char** argv) {
 
                   if (ghost_slot < 0) {
                     std::cout << "[SPLIT][PB Ghost] bot slot was not observed\n";
-                  } else if (!steering.Start(ghost_slot, std::move(*pb_ticks),
-                                             ghost_error)) {
-                    std::cout << "[SPLIT][PB Ghost] steering failed: "
-                              << ghost_error << "\n";
                   } else {
-                    const auto ghost_state = steering.Status();
-                    steering_was_active = ghost_state.active;
-                    std::cout << "[SPLIT][PB Ghost] started slot="
-                              << ghost_slot
-                              << " steps=" << ghost_state.total
-                              << " pb=" << std::fixed << std::setprecision(3)
-                              << *race_status.personal_best_seconds << "s\n";
+                    std::string visual_error;
+                    if (!pawn_probe.SetGhostVisual(ghost_slot, true, visual_error)) {
+                      std::cout << "[SPLIT][PB Ghost] visual setup failed: "
+                                << visual_error << "\n";
+                    } else {
+                      std::cout << "[SPLIT][PB Ghost] visual=translucent alpha=110\n";
+                    }
+
+                    if (!steering.Start(ghost_slot, std::move(*pb_ticks),
+                                       ghost_error)) {
+                      std::cout << "[SPLIT][PB Ghost] steering failed: "
+                                << ghost_error << "\n";
+                    } else {
+                      const auto ghost_state = steering.Status();
+                      steering_was_active = ghost_state.active;
+                      std::cout << "[SPLIT][PB Ghost] started slot="
+                                << ghost_slot
+                                << " steps=" << ghost_state.total
+                                << " pb=" << std::fixed << std::setprecision(3)
+                                << *race_status.personal_best_seconds << "s\n";
+                    }
                   }
+
                 }
               }
             } else if (race_event.type == split::movement::RaceEvent::Type::kSplit) {

@@ -28,6 +28,7 @@ class PawnProbe {
   PawnProbe& operator=(const PawnProbe&) = delete;
 
   std::optional<PawnSample> Observe(int slot, std::string& error);
+  bool SetGhostVisual(int slot, bool ghost, std::string& error);
 
  private:
   struct Impl;

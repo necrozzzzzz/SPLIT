@@ -236,6 +236,29 @@ bool Finite3(const std::array<float, 3>& value) {
   return std::isfinite(value[0]) && std::isfinite(value[1]) && std::isfinite(value[2]);
 }
 
+bool NotifyEntityStateChanged(void* entity) {
+  if (!entity) return false;
+  constexpr std::size_t kNetworkStateChangedSlot = 28;
+  auto*** object = reinterpret_cast<void***>(entity);
+  if (!object || !*object || !(*object)[kNetworkStateChangedSlot]) return false;
+
+  struct alignas(8) FullChange {
+    std::uint32_t flag = 0;
+    std::uint32_t padding = 0;
+    std::byte offsets_and_names[40]{};
+    std::int32_t unknown = -1;
+    std::int32_t array_index = -1;
+    std::int32_t path_index = -1;
+    std::int16_t mode = 0;
+    std::int16_t tail = 0;
+  } changed;
+
+  static_assert(sizeof(FullChange) == 64);
+  using Notify = void (*)(void*, const FullChange&);
+  reinterpret_cast<Notify>((*object)[kNetworkStateChangedSlot])(entity, changed);
+  return true;
+}
+
 struct Layout {
   std::size_t pawn_handle = 0;
   std::size_t body_component = 0;
@@ -247,6 +270,8 @@ struct Layout {
   std::size_t hero_component = 0;
   std::size_t spawned_hero = 0;
   std::size_t hero_id = 0;
+  std::size_t render_mode = 0;
+  std::size_t render_color = 0;
 };
 
 std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
@@ -270,6 +295,8 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
       {"CCitadelPlayerPawn", "m_CCitadelHeroComponent", 1, &layout.hero_component},
       {"CCitadelHeroComponent", "m_spawnedHero", 1, &layout.spawned_hero},
       {"CitadelHeroSpawnData_t", "m_nHeroID", sizeof(std::uint32_t), &layout.hero_id},
+      {"CBaseModelEntity", "m_nRenderMode", sizeof(std::uint8_t), &layout.render_mode},
+      {"CBaseModelEntity", "m_clrRender", sizeof(std::uint32_t), &layout.render_color},
   };
 
   for (const auto& field : wanted) {
@@ -374,6 +401,74 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
   }
 
   return sample;
+}
+
+
+bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
+  error.clear();
+  if (slot < 0 || slot >= 64) {
+    error = "player slot is outside the Deadlock slot range";
+    return false;
+  }
+
+  if (!impl_->layout) {
+    auto resolved = ResolveLayout(impl_->schema_system);
+    if (!resolved) {
+      error = resolved.error();
+      return false;
+    }
+    impl_->layout = *resolved;
+  }
+
+  if (!impl_->resource_service) {
+    impl_->resource_service =
+        ResolveInterface(L"engine2.dll", "GameResourceServiceServerV001", error);
+    if (!impl_->resource_service) return false;
+  }
+
+  void* entity_system =
+      Read<void*>(impl_->resource_service, kResourceServiceEntitySystemOffset);
+  if (!entity_system) {
+    error = "CGameResourceService has no live entity system";
+    return false;
+  }
+
+  auto* entity_list =
+      static_cast<unsigned char*>(entity_system) + kEntityListOffset;
+  auto* controller_identity =
+      IdentityOfIndex(entity_list, static_cast<std::uint32_t>(slot + 1));
+  void* controller = InstanceOf(controller_identity);
+  if (!controller) {
+    error = "controller is not live";
+    return false;
+  }
+
+  const auto pawn_handle =
+      Read<std::uint32_t>(controller, impl_->layout->pawn_handle);
+  auto* pawn_identity = IdentityOfHandle(entity_list, pawn_handle);
+  void* pawn = InstanceOf(pawn_identity);
+  if (!pawn) {
+    error = "pawn is not live";
+    return false;
+  }
+
+  constexpr std::uint8_t kRenderNormal = 0;
+  constexpr std::uint8_t kRenderTransColor = 1;
+  constexpr std::uint8_t kGhostAlpha = 110;
+  const std::uint8_t mode = ghost ? kRenderTransColor : kRenderNormal;
+  const std::uint32_t alpha = ghost ? kGhostAlpha : 255u;
+  const std::uint32_t color = 0x00ffffffu | (alpha << 24);
+
+  std::memcpy(static_cast<std::byte*>(pawn) + impl_->layout->render_mode,
+              &mode, sizeof(mode));
+  std::memcpy(static_cast<std::byte*>(pawn) + impl_->layout->render_color,
+              &color, sizeof(color));
+
+  if (!NotifyEntityStateChanged(pawn)) {
+    error = "ghost render state could not be replicated";
+    return false;
+  }
+  return true;
 }
 
 }  // namespace split::movement
