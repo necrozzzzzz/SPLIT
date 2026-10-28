@@ -41,6 +41,7 @@ void Help() {
       << "  status  print current recording stats\n"
       << "  save    save the current route as JSON\n"
       << "  replay      spawn SPLIT Ghost and replay current route\n"
+      << "  watch       watch the recorded route as a ghost replay\n"
       << "  race        arm a timed run using route start/finish\n"
       << "  racestatus  print timer / PB status\n"
       << "  racecancel  cancel the current timed run\n"
@@ -249,7 +250,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> race_requested{false};
   std::atomic<bool> retry_requested{false};
   std::atomic<bool> visual_test_requested{false};
-  std::atomic<int> visual_mode{0}; // both, ghost, tracer, off
+  std::atomic<int> visual_mode{2}; // both, ghost, tracer, off
   std::atomic<bool> show_rings{true};
   std::atomic<bool> show_checkpoints{true};
   std::atomic<bool> show_hud{true};
@@ -431,9 +432,10 @@ int main(int argc, char** argv) {
       recorder.Clear();
       visual_renderer.Clear();
       std::cout << "[SPLIT][Recorder] route cleared\n";
-    } else if (command == "replay") {
+    } else if (command == "replay" || command == "watch") {
       replay_requested.store(true, std::memory_order_release);
-      std::cout << "[SPLIT][Replay] replay requested\n";
+      std::cout << (command == "watch" ? "[SPLIT][Watch] watch requested\n"
+                                      : "[SPLIT][Replay] replay requested\n");
     } else if (command == "race") {
       race_requested.store(true, std::memory_order_release);
       std::cout << "[SPLIT][Race] arming route timer\n";
@@ -473,7 +475,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, race, retry, racestatus, racecancel, visualtest, visualdiagnostics, clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, visualdiagnostics, clear)\n";
     }
     return {};
   };
@@ -623,6 +625,9 @@ int main(int argc, char** argv) {
                 course.checkpoints = RouteCheckpoints(route_ticks, 3);
                 course.radius = 120.0f;
                 course.map = current_map;
+                course.name = "Recorded Route";
+                course.difficulty = "Unrated";
+                course.hero_id = first->hero_id;
 
                 std::string race_error;
                 if (!race_timer.Configure(course, race_error)) {
@@ -640,8 +645,31 @@ int main(int argc, char** argv) {
 
                   std::string marker_error;
                   if (show_rings.load(std::memory_order_relaxed)) {
+                    auto route_title_position = course.start;
+                    route_title_position[2] += 110.0f;
+                    if (!visual_renderer.DrawWorldTextMarker(
+                            route_title_position, course.name.c_str(),
+                            5.5f, 0xffff5adcu, marker_error)) {
+                      std::cout << "[SPLIT][WorldEffects] route title failed: "
+                                << marker_error << "\n";
+                    }
+
+                    auto route_meta_position = course.start;
+                    route_meta_position[2] += 78.0f;
+                    const std::string route_meta =
+                        course.difficulty + "  ·  Hero " +
+                        std::to_string(course.hero_id);
+                    marker_error.clear();
+                    if (!visual_renderer.DrawWorldTextMarker(
+                            route_meta_position, route_meta.c_str(),
+                            2.7f, 0xffffffffu, marker_error)) {
+                      std::cout << "[SPLIT][WorldEffects] route metadata failed: "
+                                << marker_error << "\n";
+                    }
+
+                    marker_error.clear();
                     if (visual_renderer.DrawWorldTextMarker(
-                            course.start, "START", 4.5f, 0xff78dc40u,
+                            course.start, "START", 3.4f, 0xff78dc40u,
                             marker_error)) {
                       std::cout << "[SPLIT][WorldEffects] START world text created\n";
                     } else {
@@ -651,7 +679,7 @@ int main(int argc, char** argv) {
 
                     marker_error.clear();
                     if (visual_renderer.DrawWorldTextMarker(
-                            course.finish, "FINISH", 4.5f, 0xff5078ffu,
+                            course.finish, "FINISH", 3.4f, 0xff5078ffu,
                             marker_error)) {
                       std::cout << "[SPLIT][WorldEffects] FINISH world text created\n";
                     } else {
@@ -707,117 +735,11 @@ int main(int argc, char** argv) {
             const auto race_event = race_timer.Observe(sample->position);
             if (race_event.type == split::movement::RaceEvent::Type::kStarted) {
               race_run_recorder.Start();
+              steering.Stop();
               std::cout << "[SPLIT][Race] GO checkpoints="
-                        << race_event.checkpoint_count << "\n";
-
-              if (visual_mode.load(std::memory_order_relaxed) == 0 ||
-                  visual_mode.load(std::memory_order_relaxed) == 1) {
-              const auto race_status = race_timer.Status();
-              std::vector<split::movement::RecordedTick> ghost_ticks;
-              bool ghost_is_pb = false;
-
-              if (race_status.personal_best_seconds &&
-                  pb_routes.Exists(race_status.course_id)) {
-                auto loaded_pb = pb_routes.Load(race_status.course_id);
-                if (!loaded_pb) {
-                  std::cout << "[SPLIT][PB Ghost] load failed: "
-                            << loaded_pb.error() << "\n";
-                } else {
-                  ghost_ticks = std::move(*loaded_pb);
-                  ghost_is_pb = !ghost_ticks.empty();
-                }
-              }
-
-              if (ghost_ticks.empty()) {
-                ghost_ticks = recorder.PlaybackTicks();
-                if (!ghost_ticks.empty()) {
-                  std::cout
-                      << "[SPLIT][PB Ghost] using recorded route as reference ghost\n";
-                }
-              }
-
-              if (ghost_ticks.empty()) {
-                std::cout
-                    << "[SPLIT][PB Ghost] no route is available for ghost playback\n";
-              } else {
-                const auto first_pb = ghost_ticks.front().pawn;
-                std::string ghost_error;
-                steering.Stop();
-
-                int ghost_slot = -1;
-                if (pb_ghost_slot >= 0) {
-                  const auto existing = hooks.ClientAt(pb_ghost_slot);
-                  if (existing && existing->is_bot &&
-                      existing->name == "SPLIT PB Ghost") {
-                    ghost_slot = pb_ghost_slot;
-                    std::cout << "[SPLIT][PB Ghost] reusing slot="
-                              << ghost_slot << "\n";
-                  } else {
-                    pb_ghost_slot = -1;
-                  }
-                }
-
-                if (ghost_slot < 0) {
-                  std::array<bool, 64> occupied_before{};
-                  for (int i = 0; i < 64; ++i) {
-                    occupied_before[i] = hooks.ClientAt(i).has_value();
-                  }
-
-                  if (!bot_factory.Create("SPLIT PB Ghost",
-                                          static_cast<int>(first_pb.team),
-                                          first_pb.hero_id,
-                                          first_pb.position,
-                                          ghost_error)) {
-                    std::cout << "[SPLIT][PB Ghost] creation failed: "
-                              << ghost_error << "\n";
-                  } else {
-                    for (int i = 0; i < 64; ++i) {
-                      const auto client = hooks.ClientAt(i);
-                      if (!occupied_before[i] && client && client->is_bot &&
-                          client->name == "SPLIT PB Ghost") {
-                        ghost_slot = i;
-                        pb_ghost_slot = i;
-                        break;
-                      }
-                    }
-                  }
-                }
-
-                if (ghost_slot < 0) {
-                  std::cout << "[SPLIT][PB Ghost] bot slot was not observed\n";
-                } else {
-                  std::string visual_error;
-                  if (!pawn_probe.SetGhostVisual(ghost_slot, true, visual_error)) {
-                    std::cout << "[SPLIT][PB Ghost] visual setup failed: "
-                              << visual_error << "\n";
-                  } else {
-                    std::cout << "[SPLIT][PB Ghost] render fields applied alpha=110 (visual result not verified)\n";
-                  }
-
-                  if (!steering.Start(ghost_slot, std::move(ghost_ticks),
-                                     ghost_error)) {
-                    std::cout << "[SPLIT][PB Ghost] steering failed: "
-                              << ghost_error << "\n";
-                  } else {
-                    const auto ghost_state = steering.Status();
-                    steering_was_active = ghost_state.active;
-                    std::cout << "[SPLIT][PB Ghost] started slot="
-                              << ghost_slot
-                              << " steps=" << ghost_state.total
-                              << " source=" << (ghost_is_pb ? "pb" : "reference");
-                    if (race_status.personal_best_seconds) {
-                      std::cout << " pb=" << std::fixed << std::setprecision(3)
-                                << *race_status.personal_best_seconds << "s";
-                    }
-                    std::cout << "\n";
-                  }
-                }
-              }
-              } else {
-                // Tracer/off modes do not start another 3D replay bot.
-                // Existing bot cleanup and native tracer drawing are separate work.
-                steering.Stop();
-              }
+                        << race_event.checkpoint_count
+                        << " mode=tracer-first"
+                        << " (use 'watch' for ghost replay)\n";
             } else if (race_event.type == split::movement::RaceEvent::Type::kSplit) {
               std::cout << std::fixed << std::setprecision(3)
                         << "[SPLIT][Race] SPLIT "
