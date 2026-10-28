@@ -74,6 +74,8 @@ constexpr std::string_view kManifestBuilderPattern =
     "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 4C 8B 02";
 constexpr std::string_view kAddManifestResourcePattern =
     "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B FA 48 8B D9 48 85 C9 74 ?? ?? ?? ?? 74";
+constexpr std::string_view kSetTransmitStatePattern =
+    "4C 8B C1 F0 83 A1 80 01 00 00 E3";
 constexpr std::string_view kKvAllocatePattern =
     "48 8B 05 ?? ?? ?? ?? 48 8B D1 48 8B 08 48 8B 01 48 FF 60 08 CC CC CC CC CC CC CC CC CC CC CC CC 48 8B 05 ?? ?? ?? ?? 4C 8B C9 4C 8B C2 49 8B D1";
 constexpr std::string_view kKvConstructPattern =
@@ -272,6 +274,97 @@ void* IdentityOf(void* entity) {
   return identity;
 }
 
+
+namespace schema {
+struct MetadataEntry { const char* name; const void* data; };
+struct Type { const void* vtable; const char* name; };
+struct Field {
+  const char* name;
+  const Type* type;
+  std::int32_t offset;
+  std::int32_t metadata_count;
+  const MetadataEntry* metadata;
+};
+struct ClassInfo;
+struct BaseClass { std::uint32_t offset; const ClassInfo* info; };
+struct ClassInfo {
+  const ClassInfo* self;
+  const char* name;
+  const char* project;
+  const char* cpp_name;
+  std::int32_t size;
+  std::uint16_t field_count;
+  std::uint16_t metadata_count;
+  std::uint8_t alignment;
+  std::uint8_t base_count;
+  const Field* fields;
+  const BaseClass* bases;
+  const void* data_map;
+  const MetadataEntry* metadata;
+  const void* type_scope;
+  const void* declared_class;
+  std::uint32_t flags;
+  std::uint32_t flags2;
+};
+}
+
+const schema::ClassInfo* FirstBaseOf(const schema::ClassInfo* info) {
+  return info && info->base_count > 0 && info->bases ? info->bases[0].info : nullptr;
+}
+
+std::expected<const schema::ClassInfo*, std::string> ClassInfoOf(
+    void* schema_system, const char* class_name) {
+  if (!schema_system) return std::unexpected("SchemaSystem_001 is null");
+
+  auto** schema_vtable = *static_cast<void***>(schema_system);
+  if (!schema_vtable) return std::unexpected("schema system vtable is null");
+
+  using FindTypeScopeFn = void* (*)(void*, const char*, const char**);
+  auto find_scope = reinterpret_cast<FindTypeScopeFn>(schema_vtable[13]);
+  void* scope = find_scope(schema_system, "server.dll", nullptr);
+  if (!scope) return std::unexpected("server.dll schema type scope is not open");
+
+  auto** scope_vtable = *static_cast<void***>(scope);
+  if (!scope_vtable) return std::unexpected("schema type scope vtable is null");
+
+  using FindClassFn = void (*)(void*, void*, const char*);
+  auto find_class = reinterpret_cast<FindClassFn>(scope_vtable[2]);
+  void* info = nullptr;
+  find_class(scope, &info, class_name);
+  if (!info) return std::unexpected(std::string("schema class not found: ") + class_name);
+
+  const auto* class_info = static_cast<const schema::ClassInfo*>(info);
+  if (class_info->self != class_info) {
+    return std::unexpected(std::string("schema class record invalid: ") + class_name);
+  }
+  return class_info;
+}
+
+std::expected<std::size_t, std::string> FieldOffset(
+    const schema::ClassInfo* info, const char* field_name, std::size_t minimum_size) {
+  for (; info; info = FirstBaseOf(info)) {
+    for (std::uint16_t i = 0; i < info->field_count; ++i) {
+      const auto& field = info->fields[i];
+      if (!field.name || std::strcmp(field.name, field_name) != 0) continue;
+
+      std::int32_t boundary = info->size;
+      for (std::uint16_t j = 0; j < info->field_count; ++j) {
+        const auto& next = info->fields[j];
+        if (next.offset > field.offset &&
+            (boundary <= field.offset || next.offset < boundary)) {
+          boundary = next.offset;
+        }
+      }
+      if (field.offset < 0 || boundary <= field.offset ||
+          static_cast<std::size_t>(boundary - field.offset) < minimum_size) {
+        return std::unexpected(std::string(field_name) + " storage span is invalid");
+      }
+      return static_cast<std::size_t>(field.offset);
+    }
+  }
+  return std::unexpected(std::string("schema field not found: ") + field_name);
+}
+
 std::uint64_t HashMix(std::uint64_t hash, std::uint64_t value) {
   constexpr std::uint64_t kPrime = 1099511628211ull;
   hash ^= value;
@@ -345,6 +438,7 @@ struct NativeVisualRenderer::Impl {
   using KvConstructFn = void* (*)(void*, void*, unsigned char);
   using KvSetFn = void* (*)(void*, const MemberName*, unsigned char);
   using RemoveEntityFn = void (*)(void*);
+  using SetTransmitStateFn = void (*)(void*, std::uint32_t);
 
   CreateEntityFn create_entity = nullptr;
   QueueSpawnFn queue_spawn = nullptr;
@@ -354,6 +448,10 @@ struct NativeVisualRenderer::Impl {
   KvConstructFn kv_construct = nullptr;
   KvSetFn kv_set = nullptr;
   RemoveEntityFn remove_entity = nullptr;
+  SetTransmitStateFn set_transmit_state = nullptr;
+  void* schema_system = nullptr;
+  std::size_t transmit_offset = 0;
+  std::size_t transmit_owned_offset = 0;
   std::vector<void*> particles;
 
   void Command(std::string_view command) {
@@ -456,6 +554,18 @@ struct NativeVisualRenderer::Impl {
     queue_spawn(entity_system, identity, key_values);
     execute_queued(entity_system);
 
+    if (set_transmit_state && schema_system) {
+      auto* component = static_cast<std::byte*>(particle) + transmit_offset;
+      std::uint8_t owned = 0;
+      std::memcpy(&owned, component + transmit_owned_offset, sizeof(owned));
+      if (owned == 0) {
+        owned = 1;
+        std::memcpy(component + transmit_owned_offset, &owned, sizeof(owned));
+      }
+      constexpr std::uint32_t kTransmitAlways = 4;
+      set_transmit_state(component, kTransmitAlways);
+    }
+
     static constexpr char kEmpty[] = "";
     InputVariant value{.pointer = kEmpty};
     if (!accept_input(particle, "Start", nullptr, nullptr, &value, 0, nullptr)) {
@@ -513,6 +623,43 @@ bool NativeVisualRenderer::Install(std::string& error) {
   impl_->remove_entity = reinterpret_cast<Impl::RemoveEntityFn>(
       FindUnique(server, kRemoveEntityPattern, "entity.remove", error));
   if (!impl_->remove_entity) return false;
+  impl_->set_transmit_state = reinterpret_cast<Impl::SetTransmitStateFn>(
+      FindUnique(server, kSetTransmitStatePattern, "network-transmit.set-state", error));
+  if (!impl_->set_transmit_state) return false;
+
+  std::string schema_error;
+  impl_->schema_system =
+      ResolveInterface(L"schemasystem.dll", "SchemaSystem_001", schema_error);
+  if (!impl_->schema_system) {
+    error = "SchemaSystem_001: " + schema_error;
+    return false;
+  }
+  auto base_entity = ClassInfoOf(impl_->schema_system, "CBaseEntity");
+  if (!base_entity) {
+    error = base_entity.error();
+    return false;
+  }
+  auto transmit_offset =
+      FieldOffset(*base_entity, "m_NetworkTransmitComponent", sizeof(std::uint8_t));
+  if (!transmit_offset) {
+    error = "CBaseEntity.m_NetworkTransmitComponent: " + transmit_offset.error();
+    return false;
+  }
+  auto transmit_component = ClassInfoOf(
+      impl_->schema_system, "CNetworkTransmitComponent");
+  if (!transmit_component) {
+    error = transmit_component.error();
+    return false;
+  }
+  auto transmit_owned_offset = FieldOffset(
+      *transmit_component, "m_nTransmitStateOwnedCounter", sizeof(std::uint8_t));
+  if (!transmit_owned_offset) {
+    error = "CNetworkTransmitComponent.m_nTransmitStateOwnedCounter: " +
+            transmit_owned_offset.error();
+    return false;
+  }
+  impl_->transmit_offset = *transmit_offset;
+  impl_->transmit_owned_offset = *transmit_owned_offset;
 
   void* manifest_builder = FindUnique(
       server, kManifestBuilderPattern, "game-rules.manifest-builder", error);
