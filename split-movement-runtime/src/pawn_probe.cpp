@@ -6,6 +6,7 @@
 #include <expected>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -239,6 +240,38 @@ std::expected<std::size_t, std::string> FieldOffset(const schema::ClassInfo* inf
   return std::unexpected(std::string("schema field not found: ") + field_name);
 }
 
+std::optional<std::size_t> OptionalFieldOffset(
+    void* schema_system, const char* class_name, const char* field_name,
+    std::size_t minimum_size) {
+  auto info = ClassInfoOf(schema_system, class_name);
+  if (!info) return std::nullopt;
+  auto offset = FieldOffset(*info, field_name, minimum_size);
+  return offset ? std::optional<std::size_t>{*offset} : std::nullopt;
+}
+
+template <typename T>
+struct UtlVector {
+  std::int32_t count = 0;
+  std::uint32_t padding = 0;
+  T* data = nullptr;
+  std::uint32_t capacity = 0;
+  std::uint32_t flags = 0;
+};
+static_assert(sizeof(UtlVector<std::uint32_t>) == 24);
+
+template <typename T>
+std::optional<UtlVector<T>> ReadUtlVector(const void* address,
+                                          std::int32_t max_count) {
+  UtlVector<T> value{};
+  std::memcpy(&value, address, sizeof(value));
+  if (value.count < 0 || value.count > max_count ||
+      static_cast<std::uint32_t>(value.count) > value.capacity ||
+      (value.count > 0 && !value.data)) {
+    return std::nullopt;
+  }
+  return value;
+}
+
 std::expected<const schema::ClassInfo*, std::string> ClassInfoOf(
     void* schema_system, const char* class_name) {
   if (!schema_system) return std::unexpected("SchemaSystem_001 is null");
@@ -309,6 +342,20 @@ struct Layout {
   std::size_t hero_id = 0;
   std::size_t render_mode = 0;
   std::size_t render_color = 0;
+
+  // Optional native movement-ability capability. These offsets mirror
+  // Modlock's PawnObserver and remain absent when the running schema differs.
+  std::optional<std::size_t> ability_handles;
+  std::optional<std::size_t> ability_owner;
+  std::optional<std::size_t> ability_slot;
+  std::optional<std::size_t> channeling;
+  std::optional<std::size_t> sliding;
+  std::optional<std::size_t> mantle_start_time;
+  std::optional<std::size_t> consecutive_wall_jumps;
+  std::optional<std::size_t> wall_contact_position;
+  std::optional<std::size_t> wall_jump_normal_used;
+  std::optional<std::size_t> wall_jump_facing;
+  std::optional<std::size_t> last_time_on_zipline;
 };
 
 std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
@@ -347,7 +394,113 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
     }
     *field.target = *offset;
   }
+
+  // Optional movement ability state. The handle vector is inline in the
+  // pawn's ability component, matching Modlock's current PawnObserver.
+  const auto ability_component = OptionalFieldOffset(
+      schema_system, "CCitadelPlayerPawn", "m_CCitadelAbilityComponent", 24);
+  const auto ability_vector = OptionalFieldOffset(
+      schema_system, "CCitadelAbilityComponent", "m_vecAbilities", 24);
+  if (ability_component && ability_vector) {
+    layout.ability_handles = *ability_component + *ability_vector;
+  }
+  layout.ability_owner = OptionalFieldOffset(
+      schema_system, "CBaseEntity", "m_hOwnerEntity", sizeof(std::uint32_t));
+  layout.ability_slot = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_eAbilitySlot", sizeof(std::uint16_t));
+  layout.channeling = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_bChanneling", sizeof(bool));
+  layout.sliding = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Slide", "m_bIsSliding", sizeof(bool));
+  layout.mantle_start_time = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Mantle", "m_flStartTime", sizeof(float));
+  layout.consecutive_wall_jumps = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Jump", "m_nConsecutiveWallJumps", sizeof(std::int8_t));
+  layout.wall_contact_position = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Jump",
+      "m_vLastValidWallJumpNormal_PlayerPosition", sizeof(float) * 3);
+  layout.wall_jump_normal_used = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Jump", "m_vWallJumpNormalUsed", sizeof(float) * 3);
+  layout.wall_jump_facing = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Jump", "m_eWallJumpFacing", sizeof(std::uint16_t));
+  layout.last_time_on_zipline = OptionalFieldOffset(
+      schema_system, "CCitadel_Ability_Jump", "m_flLastTimeOnZipLine", sizeof(float));
+
   return layout;
+}
+
+void ApplyMovementAbilityState(const Layout& layout, unsigned char* entity_list,
+                               void* pawn, std::uint32_t pawn_handle,
+                               PawnSample& sample) {
+  if (!layout.ability_handles || !layout.ability_owner || !layout.ability_slot) {
+    return;
+  }
+
+  constexpr std::uint16_t kMantleSlot = 0xA;
+  constexpr std::uint16_t kJumpSlot = 0xC;
+  constexpr std::uint16_t kSlideSlot = 0xD;
+  constexpr std::int32_t kMaxAbilities = 256;
+
+  const auto handles = ReadUtlVector<const std::uint32_t>(
+      static_cast<const std::byte*>(pawn) + *layout.ability_handles,
+      kMaxAbilities);
+  if (!handles) return;
+
+  for (std::int32_t i = 0; i < handles->count; ++i) {
+    const std::uint32_t handle = handles->data[i];
+    if (handle == kInvalidEHandleIndex) continue;
+
+    auto* identity = IdentityOfHandle(entity_list, handle);
+    auto* ability = static_cast<const std::byte*>(InstanceOf(identity));
+    if (!ability) continue;
+
+    const auto owner = Read<std::uint32_t>(ability, *layout.ability_owner);
+    if (owner != pawn_handle) continue;
+    const auto slot = Read<std::uint16_t>(ability, *layout.ability_slot);
+
+    if (slot == kMantleSlot) {
+      if (layout.channeling) {
+        sample.mantling = Read<bool>(ability, *layout.channeling);
+      }
+      if (layout.mantle_start_time) {
+        const float value = Read<float>(ability, *layout.mantle_start_time);
+        if (std::isfinite(value)) sample.mantle_start_time = value;
+      }
+      continue;
+    }
+
+    if (slot == kSlideSlot) {
+      if (layout.sliding) {
+        sample.sliding = Read<bool>(ability, *layout.sliding);
+      }
+      continue;
+    }
+
+    if (slot != kJumpSlot) continue;
+
+    if (layout.consecutive_wall_jumps) {
+      const auto count = Read<std::int8_t>(ability, *layout.consecutive_wall_jumps);
+      if (count >= 0) sample.consecutive_wall_jumps = count;
+    }
+    if (layout.wall_contact_position) {
+      std::array<float, 3> value{};
+      std::memcpy(value.data(), ability + *layout.wall_contact_position, sizeof(value));
+      if (Finite3(value)) sample.wall_contact_position = value;
+    }
+    if (layout.wall_jump_normal_used) {
+      std::array<float, 3> value{};
+      std::memcpy(value.data(), ability + *layout.wall_jump_normal_used, sizeof(value));
+      if (Finite3(value)) sample.wall_jump_normal = value;
+    }
+    if (layout.wall_jump_facing) {
+      sample.wall_jump_facing =
+          Read<std::uint16_t>(ability, *layout.wall_jump_facing);
+    }
+    if (layout.last_time_on_zipline) {
+      const float value = Read<float>(ability, *layout.last_time_on_zipline);
+      if (std::isfinite(value)) sample.zipline_time = value;
+    }
+  }
 }
 
 }  // namespace
@@ -431,6 +584,8 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
       Read<std::uint32_t>(pawn, impl_->layout->ground_entity);
   sample.ground_entity_handle = ground;
   sample.grounded = ground != kInvalidEHandleIndex;
+
+  ApplyMovementAbilityState(*impl_->layout, entity_list, pawn, pawn_handle, sample);
 
   if (!Finite3(sample.position) || !Finite3(sample.velocity)) {
     error = "pawn pose contains non-finite values";
