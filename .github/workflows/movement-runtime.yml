@@ -1,0 +1,24 @@
+name: Movement Runtime
+
+on:
+  push:
+    branches: [v2]
+    paths:
+      - "split-movement-runtime/**"
+      - ".github/workflows/movement-runtime.yml"
+  pull_request:
+    paths:
+      - "split-movement-runtime/**"
+      - ".github/workflows/movement-runtime.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S split-movement-runtime -B split-movement-runtime/build
+      - name: Build
+        run: cmake --build split-movement-runtime/build --config Release
+      - name: Smoke test
+        run: .\split-movement-runtime\build\Release\split-movement-runtime.exe

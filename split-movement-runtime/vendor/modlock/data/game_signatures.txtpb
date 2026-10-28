@@ -1,0 +1,777 @@
+# proto-file: src/gameinterop/signatures/signatures.proto
+# proto-message: modlock.gameinterop.signatures.GameSignatureFile
+#
+# Every byte pattern modlock scans for in the game binaries, then every
+# virtual function it calls through a dispatch table. After a game update, run
+# modlock-sigcheck against the new binaries and repair the failing entries
+# here; callers resolve by id and need no change while the native shapes hold.
+# A slot finds its function by pattern among its class's table entries, so a
+# slot whose function only moved keeps working and sigcheck reports the new
+# index to record. Entries sort by id.
+
+signatures {
+  id: "ability.create-and-register"
+  modules: GAME_MODULE_SERVER
+  pattern: "4C 89 4C 24 ?? 53 57 41 54 41 55 48 83 EC ?? 49 8B D9"
+  shape: "void* CreateAbility(CCitadelAbilityComponent*, definition, uint16 slot, uint64 upgrade, bool, KeyValues3* extra)"
+}
+
+# CCitadelPlayerPawn::RemoveItem, which finds and detaches the ability slot.
+signatures {
+  id: "ability.detach-slot"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 55 56 57 48 83 EC 60 41 0F B6 E8 48 8B F2 48 8B F9"
+  call_at: 0x8b
+  shape: "detaches the found ability slot inside RemoveItem"
+}
+
+# CCitadelPlayerPawn::RemoveItem, which finds and detaches the ability slot.
+signatures {
+  id: "ability.find-slot"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 55 56 57 48 83 EC 60 41 0F B6 E8 48 8B F2 48 8B F9"
+  call_at: 0x7b
+  shape: "finds the ability slot inside RemoveItem"
+}
+
+signatures {
+  id: "ability.refresh-charges"
+  modules: GAME_MODULE_SERVER
+  pattern: "FF 90 ?? ?? ?? ?? 84 C0 74 17 48 8B 1F 48 8B CF FF 93 ?? ?? ?? ?? 8B D0 48 8B CF FF 93 ?? ?? ?? ?? 45 33 D2 FF C5 49 83 C6 04"
+  shape: "HeroRefresh loop calling HasCharges (+2) and GetMaxCharges (+18) virtual slots; callers read the slot displacements"
+}
+
+# CCitadelPlayerPawn::RemoveItem, which finds and detaches the ability slot.
+signatures {
+  id: "ability.remove-item"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 55 56 57 48 83 EC 60 41 0F B6 E8 48 8B F2 48 8B F9"
+  shape: "void RemoveItem(CCitadelAbilityComponent*, CCitadelBaseAbility*, uint8)"
+}
+
+signatures {
+  id: "ability.select-slot"
+  modules: GAME_MODULE_SERVER
+  pattern: "4C 89 4C 24 ?? 53 57 41 54 41 55 48 83 EC ?? 49 8B D9"
+  call_at: 0x21
+  shape: "int32 SelectAbilitySlot(CCitadelAbilityComponent*, definition, uint16 requested)"
+}
+
+signatures {
+  id: "ability.set-upgrade-bits"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B C4 55 57 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 48 89 58 ?? 41 B9"
+  shape: "void SetUpgradeBits(CCitadelBaseAbility*, uint32 bits)"
+}
+
+signatures {
+  id: "ability.set-upgrade-low-word"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 55 41 54 41 56 41 57 48 8B EC 48 83 EC ?? 44 8B F2 4C 8B E1 E8 ?? ?? ?? ?? 44 8B F8 41 3B C6"
+  shape: "void (CCitadelBaseAbility*, uint32 value); sets m_nUpgradeInfo's low word, which CreateAndRegisterAbility takes from its upgrade value's high dword"
+}
+
+signatures {
+  id: "ability.swap-item-slots"
+  modules: GAME_MODULE_SERVER
+  pattern: "66 41 3B D0 0F 84 ?? ?? ?? ?? 66 44 89 44 24 18 66 89 54 24 10 55 57 41 56"
+  shape: "void SwapItemSlots(CCitadelAbilityComponent*, uint16, uint16)"
+}
+
+signatures {
+  id: "ability.think"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 4C 24 ?? 55 53 57 41 ?? 41 ?? 41 ?? 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 C7 45 D8 ?? ?? 00 00 48 89 45 D0"
+  shape: "CCitadelBaseAbility::AbilityThink"
+}
+
+signatures {
+  id: "bot.create"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 55 41 54 41 55 48 83 EC 38 4C 8B E1 49 8B E9 48 8B 0D ?? ?? ?? ?? 41 8B D8 44 8B EA"
+  shape: "CreateCitadelBot(const char* name, int team, int hero, const Vector* position)"
+}
+
+# The TEST AL,AL after the solo bot match check in the bot brain's hero
+# think, which then clears the bot's hero when a human plays the same one.
+signatures {
+  id: "bot.duplicate-hero-check"
+  modules: GAME_MODULE_SERVER
+  pattern: "84 C0 0F 84 ?? ?? ?? ?? 48 8D 94 24 88 00 00 00 48 8D 4C 24 70"
+  shape: "solo bot match test before the human hero comparison in the bot hero think"
+}
+
+signatures {
+  id: "combat.broadcast"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 54 24 10 89 4C 24 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 E1"
+  shape: "native combat event broadcast for damage, healing and shield events"
+}
+
+signatures {
+  id: "combat.fire-modifier-event"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 55 56 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 33 F6"
+  shape: "FireModifierEvent"
+}
+
+signatures {
+  id: "controller.create-hero-pawn"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B C4 48 89 48 ?? 55 57 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 48 89 58 ?? 48 8B F9 48 8B 0D"
+  shape: "CCitadelPlayerPawn* CreateHeroPawn(CCitadelPlayerController*, int team)"
+}
+
+# The game's keep-hero team change: it clears the controller's flag that has
+# CCitadelPlayerPawn::OnTeamChanged strip the hero, abilities and items, runs
+# ChangeTeam (slot 105) and sets the flag again.
+signatures {
+  id: "controller.change-team-keeping-hero"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 48 83 EC ?? 48 8B 01 48 8B D9 C6 81 ?? ?? ?? ?? 00 FF 90 ?? ?? ?? ?? C6 83 ?? ?? ?? ?? 01 48 83 C4 ?? 5B C3"
+  shape: "void ChangeTeamKeepingHero(CCitadelPlayerController*, int team)"
+}
+
+# Every hero's input reaches movement here: the network's commands for a
+# player, and the one command a bot's brain or scripted path builds each tick
+# in CCitadelPlayerBot::PhysicsSimulate. Each CUserCmd is 0xa8 bytes.
+signatures {
+  id: "controller.process-usercmds"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B C4 44 88 48 ?? 44 89 40 ?? 48 89 50 ?? 53"
+  shape: "int CBasePlayerController::ProcessUsercmds(CBasePlayerController*, CUserCmd* cmds, int count, bool paused, float margin)"
+}
+
+signatures {
+  id: "controller.set-pawn"
+  modules: GAME_MODULE_SERVER
+  pattern: "44 88 4C 24 ?? 53 57"
+  shape: "CBasePlayerController::SetPawn"
+}
+
+signatures {
+  id: "controller.spawn-observer"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B C4 55 53 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 48 89 78 ?? 4C 89 60"
+  shape: "void* SpawnObserverPawn(CCitadelPlayerController*)"
+}
+
+signatures {
+  id: "damage.construct"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 48 83 EC 50 F3 0F 10 84 24 80 00 00 00 48 8D 05"
+  shape: "CTakeDamageInfo constructor"
+}
+
+signatures {
+  id: "damage.destroy"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 33 ED 48 8D 05 ?? ?? ?? ?? ?? ?? ?? 48 8B F9 F7 81"
+  shape: "CTakeDamageInfo destructor"
+}
+
+signatures {
+  id: "entity-instance.accept-input"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 56 57 41 56 48 81 EC ?? ?? ?? ?? 4D 8B F0 48 8B F1"
+  shape: "bool AcceptInput(CEntityInstance*, const char* input, CEntityInstance* activator, CEntityInstance* caller, variant_t* value)"
+}
+
+# The allocator wrapper repeats; the neighboring realloc wrapper makes
+# the match unique.
+signatures {
+  id: "entity-keyvalues.allocate"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B 05 ?? ?? ?? ?? 48 8B D1 48 8B 08 48 8B 01 48 FF 60 08 CC CC CC CC CC CC CC CC CC CC CC CC 48 8B 05 ?? ?? ?? ?? 4C 8B C9 4C 8B C2 49 8B D1"
+  shape: "void* (size_t); engine MemAlloc_Alloc wrapper"
+}
+
+signatures {
+  id: "entity-keyvalues.construct"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 08 57 48 83 EC 20 33 FF 48 8B D9 48 89 79 28 48 89 79 30 44 88 41 25 48 85 D2 74 ??"
+  shape: "CEntityKeyValues* (storage, CKV3Arena*, EntityKVAllocatorType_t)"
+}
+
+signatures {
+  id: "entity-keyvalues.set-key-value"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 55 56 48 83 EC 30 66 83 79 22 00 41 0F B6 E8 48 8B F2 48 8B D9 7E ??"
+  shape: "KeyValues3* (CEntityKeyValues*, const CKV3MemberName*, bool)"
+}
+
+signatures {
+  id: "entity-system.find-class"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 54 24 ?? 57 48 83 EC ?? 49 8B D8 48 8B F9 48 85 D2 0F 84 ?? ?? ?? ?? 80 3A 00 0F 84 ?? ?? ?? ?? 48 81 C1"
+  shape: "CEntityClass* (CGameEntitySystem*, const char* designer_name, CUtlString* resolved_alias); the alias may be null"
+}
+
+signatures {
+  id: "entity-system.create-entity-by-name"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 83 EC ?? 48 8B 0D ?? ?? ?? ?? 41 8B C0"
+  shape: "CEntityInstance* (void* ignored, const char* class_name, int edict); reads the global entity system itself"
+}
+
+signatures {
+  id: "entity-system.execute-queued-creation"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 57 48 81 EC ?? ?? ?? ?? FF 81 ?? ?? ?? ?? 48 8D 44 24"
+  shape: "void (CGameEntitySystem*)"
+}
+
+signatures {
+  id: "entity-system.queue-spawn-entity"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 56 57 41 56 48 83 EC ?? F7 42"
+  shape: "void (CGameEntitySystem*, CEntityIdentity*, CEntityKeyValues*)"
+}
+
+# The VScript GetVelocity binding. For a MOVETYPE_VPHYSICS entity it reads the
+# first physics body's velocity; for any other, m_vecAbsVelocity.
+signatures {
+  id: "entity.abs-velocity"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 08 57 48 83 EC 30 80 B9 F5 02 00 00 05"
+  shape: "Vector* GetAbsVelocity(CBaseEntity*, Vector* out)"
+}
+
+# The VScript ApplyAbsVelocityImpulse binding. For a MOVETYPE_VPHYSICS entity
+# it adds the velocity to each physics body; for any other, to m_vecAbsVelocity.
+signatures {
+  id: "entity.apply-abs-velocity-impulse"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 18 56 48 83 EC 50 0F 57 C0"
+  shape: "void ApplyAbsVelocityImpulse(CBaseEntity*, const Vector*)"
+}
+
+# The VScript ApplyLocalAngularVelocityImpulse binding. For a MOVETYPE_VPHYSICS
+# entity it adds the angular velocity to each physics body; for any other, to
+# m_vecAngVelocity.
+signatures {
+  id: "entity.apply-local-angular-velocity-impulse"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 56 48 83 EC 70 F3 0F 10 05 ?? ?? ?? ??"
+  shape: "void ApplyLocalAngularVelocityImpulse(CBaseEntity*, const AngularImpulse*)"
+}
+
+signatures {
+  id: "entity.emit-sound"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 48 8B EC 48 81 EC ?? ?? ?? ?? 33 C0"
+  shape: "CBaseEntity::EmitSoundParams"
+}
+
+signatures {
+  id: "entity.remove"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 85 C9 74 ? 48 8B D1 48 8B 0D"
+  shape: "void UTIL_Remove(CEntityInstance*); queues removal at the next entity frame"
+}
+
+# The inner Teleport inlines this setter; the pawn movement update after
+# SetAbsOrigin still calls it.
+signatures {
+  id: "entity.set-abs-angles"
+  modules: GAME_MODULE_SERVER
+  pattern: "E8 ?? ?? ?? ?? 48 8B 03 48 8B CB FF 90 ?? ?? ?? ?? 0F 28 74 24 ?? 84 C0 75 ?? 48 8D 15 ?? ?? ?? ?? 48 8B CB E8"
+  call_at: 0x24
+  shape: "void SetAbsAngles(CBaseEntity*, const QAngle*)"
+}
+
+# CBaseEntity's inner Teleport, which calls the absolute-state setters.
+signatures {
+  id: "entity.set-abs-origin"
+  modules: GAME_MODULE_SERVER
+  pattern: "4C 89 4C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 53 55 56 57 41 54 41 56 41 57 48 83 EC 60 48 8B 1A"
+  call_at: 0x4ed
+  shape: "void SetAbsOrigin(CBaseEntity*, const Vector*)"
+}
+
+# CBaseEntity's inner Teleport, which calls the absolute-state setters.
+signatures {
+  id: "entity.set-abs-velocity"
+  modules: GAME_MODULE_SERVER
+  pattern: "4C 89 4C 24 20 4C 89 44 24 18 48 89 54 24 10 48 89 4C 24 08 53 55 56 57 41 54 41 56 41 57 48 83 EC 60 48 8B 1A"
+  call_at: 0x4cd
+  shape: "void SetAbsVelocity(CBaseEntity*, const Vector*)"
+}
+
+signatures {
+  id: "entity.set-move-type"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20 41 0F B6 F0 0F B6 EA 48 8B F9 38 91 F3 02 00 00"
+  shape: "void SetMoveType(CBaseEntity*, uint8 move_type, uint8 move_collide)"
+}
+
+signatures {
+  id: "entity.take-damage"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 55 53 56 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 49 8B D8"
+  shape: "CBaseEntity::TakeDamageOld(CTakeDamageInfo*)"
+}
+
+signatures {
+  id: "game-rules.add-resource"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B FA 48 8B D9 48 85 C9 74 ?? ?? ?? ?? 74"
+  shape: "adds one resource path to the session manifest"
+}
+
+# The citadel_force_koth_spawn callback: push rsi; sub rsp,30; mov rsi,[rip+disp32].
+signatures {
+  id: "game-rules.current"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 56 48 83 EC 30 48 8B 35 ?? ?? ?? ?? 48 85 F6 0F 84"
+  rip_relative_at: 6
+  shape: "CCitadelGameRules** global loaded by the force-KOTH callback"
+}
+
+# CCitadelGameRules::BuildGameSessionManifest.
+signatures {
+  id: "game-rules.manifest-builder"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 4C 8B 02"
+  shape: "CCitadelGameRules::BuildGameSessionManifest"
+}
+
+# CCitadelGameRules::BuildGameSessionManifest.
+signatures {
+  id: "game-rules.precache-call"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 4C 8B 02"
+  call_at: 0x382
+  shape: "hero precache helper called by the manifest builder"
+}
+
+# CCitadelGameRules::BuildGameSessionManifest.
+signatures {
+  id: "game-rules.precache-global"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 4C 8B 02"
+  rip_relative_at: 0x377
+  shape: "hero precache context loaded by the manifest builder"
+}
+
+# The citadel_toggle_server_pause callback.
+signatures {
+  id: "game-rules.refresh-pause"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 48 83 EC 20 48 8B 1D ?? ?? ?? ?? 48 85 DB 74 ?? 80 BB ?? ?? ?? ?? 00"
+  call_at: 0x51
+  shape: "void (CCitadelGameRules*); pause-modifier reconciliation"
+}
+
+# The citadel_force_koth_spawn callback: push rsi; sub rsp,30; mov rsi,[rip+disp32].
+signatures {
+  id: "game-rules.start-koth"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 56 48 83 EC 30 48 8B 35 ?? ?? ?? ?? 48 85 F6 0F 84"
+  call_at: 0xcb
+  shape: "void (CCitadelGameRules*); KOTH warning and spawn routine"
+}
+
+# The citadel_toggle_server_pause callback.
+signatures {
+  id: "game-rules.toggle-server-pause"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 48 83 EC 20 48 8B 1D ?? ?? ?? ?? 48 85 DB 74 ?? 80 BB ?? ?? ?? ?? 00"
+  shape: "citadel_toggle_server_pause callback"
+}
+
+signatures {
+  id: "hero-definition-manager.get-hero-by-id"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B C1 85 D2 74 04 3B 11 72 03 33 C0 C3 48 8B 40 08 48 63 CA 48 8B 04 C8 C3"
+  shape: "CHeroDefinition* GetHeroById(CHeroDefinitionManager*, unsigned hero_id)"
+}
+
+signatures {
+  id: "hero-definition-manager.get-manager"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 53 56 41 55 48 83 EC 30 8B DA 48 8B F1 E8"
+  call_at: 0xE
+  shape: "CHeroDefinitionManager* GetManager(); TLS-guarded getter"
+}
+
+signatures {
+  id: "hero-definition-manager.hero-name-to-id"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 57 48 83 EC ?? 49 8B C8"
+  shape: "int* HeroNameToId(CHeroDefinitionManager*, int* out_id, const char* name)"
+}
+
+signatures {
+  id: "modifier.add"
+  modules: GAME_MODULE_SERVER
+  pattern: "44 89 44 24 ?? 48 89 54 24 ?? 53 55 56 57 41 55"
+  shape: "CModifierProperty::AddModifier"
+}
+
+# A modifier's own deserializer calls this before it changes each networked
+# field.
+signatures {
+  id: "modifier.state-changed"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 8B D1 45 33 C9 48 8B 0D ?? ?? ?? ?? 41 B8 FF FF FF FF E9 08 00 00 00"
+  shape: "void ModifierStateChanged(CBaseModifier* modifier)"
+}
+
+# The source line stored at +0x1b changes between builds.
+signatures {
+  id: "movement.process"
+  modules: GAME_MODULE_SERVER
+  modules: GAME_MODULE_CLIENT
+  pattern: "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 70 48 8D 05 ?? ?? ?? ?? 48 C7 44 24 28 ?? ?? 00 00 48 89 44 24 20 4C 8D 44 24 40 0F 10 44 24 20 48 8D 05 ?? ?? ?? ?? 48 8B F2"
+  shape: "ProcessMovement(movement services, CMoveData*)"
+}
+
+signatures {
+  id: "network-transmit.set-state"
+  modules: GAME_MODULE_SERVER
+  pattern: "4C 8B C1 F0 83 A1 80 01 00 00 E3"
+  shape: "CNetworkTransmitComponent::SetTransmitState(component, flags): 4 always, 8 never, 0x10 by PVS"
+}
+
+signatures {
+  id: "pawn.add-item"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B F9 49 8B E9 B9"
+  shape: "CCitadelBaseAbility* AddItem(CCitadelPlayerPawn*, const char* name, uint64 upgrade, KeyValues3* extra)"
+}
+
+signatures {
+  id: "pawn.initialize-hero"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 55 41 56 48 83 EC ?? 0F B6 81"
+  shape: "CCitadelPlayerPawn::InitializeHeroOnPawn"
+}
+
+signatures {
+  id: "pawn.modify-currency"
+  modules: GAME_MODULE_SERVER
+  pattern: "44 89 44 24 ?? 55 56 41 54 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 4C 8B F1 4D 63 F9"
+  shape: "CCitadelPlayerPawn::ModifyCurrency"
+}
+
+signatures {
+  id: "pawn.reset-hero"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 74 24 ?? 57 48 83 EC 20 0F B6 81 ?? ?? ?? ?? 0F B6 F2"
+  shape: "int64 ResetHero(CCitadelPlayerPawn*, bool reset_abilities)"
+}
+
+signatures {
+  id: "pawn.respawn"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 08 57 48 83 EC 20 48 8B D9 0F B6 FA 48 8B 89 ?? ?? 00 00 48 85 C9"
+  shape: "void Respawn(CCitadelPlayerPawn*, bool force)"
+}
+
+signatures {
+  id: "pawn.select-hero-internal"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 55 41 54 41 55 41 56 48 8D AC 24"
+  shape: "void SelectHeroInternal(CCitadelPlayerPawn*, CHeroDefinition*)"
+}
+
+signatures {
+  id: "pawn.teleport-client-camera"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 08 48 89 74 24 18 48 89 7C 24 20 55 41 56 41 57 48 8D 6C 24 B9 48 81 EC D0 00 00 00 48 8B 02 49 8B F9 4D 8B D0"
+  shape: "teleports a pawn and its client camera together"
+}
+
+signatures {
+  id: "physics.trace-shape"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 56 41 57 48 8D AC 24"
+  shape: "TraceShape(physics, Ray_t*, Vector* start, Vector* end, CTraceFilter*, CGameTrace*)"
+}
+
+# A trace caller: mov [rsp+20],rcx; lea rdx,[rbp+90]; mov rcx,[rip+disp32]; call TraceShape.
+signatures {
+  id: "physics.query"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 4C 24 20 48 8D 95 90 00 00 00 48 8B 0D ?? ?? ?? ?? E8"
+  rip_relative_at: 12
+  shape: "CGamePhysicsQueryInterface* global passed to TraceShape"
+}
+
+signatures {
+  id: "preparation.damage-gate"
+  modules: GAME_MODULE_SERVER
+  pattern: "80 BE E0 02 00 00 00 0F 84 ?? ?? ?? ?? 4C 89 ?? 24"
+  shape: "TakeDamageOld's m_bTakesDamage test"
+}
+
+signatures {
+  id: "preparation.frozen-input"
+  modules: GAME_MODULE_SERVER
+  pattern: "F6 80 90 03 00 00 20 75 ?? 48 8D 94 24 ?? ?? ?? ?? 48 8B CE E8"
+  shape: "movement setup's FL_FROZEN test before it clears input"
+}
+
+signatures {
+  id: "projectile.contact"
+  modules: GAME_MODULE_SERVER
+  pattern: "40 55 56 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? 00 00 80 B9 ?? ?? 00 00 00"
+  shape: "projectile contact handler"
+}
+
+signatures {
+  id: "projectile.impact"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 50 44 8B 91 ?? ?? 00 00 45 33 ?? 41 0F B6 D9"
+  shape: "projectile impact handler"
+}
+
+signatures {
+  id: "server.reply-connection"
+  modules: GAME_MODULE_ENGINE
+  pattern: "48 8B C4 55 41 55 41 56"
+  shape: "CNetworkGameServerBase::ReplyConnection"
+}
+
+signatures {
+  id: "team.ability-query-filter"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B 5C 24 50 8B F1 33 FF 48 8B CA 41 8B E8 4C 8B F2 66 C7 43 37 0E 03"
+  shape: "void BuildAbilityQueryFilter(int team, CBaseEntity* caster, uint32 target_types, void*, CTraceFilter* filter); filter+8 includes and +0x10 excludes collision layers"
+}
+
+signatures {
+  id: "team.classify-target"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 56 41 57 48 83 EC 20 8B FA 4C 8B F1 E8 ?? ?? ?? ?? 41 0F B6 B6 ?? ?? ?? ?? 33 DB 48 0F BA E0 25"
+  shape: "uint32 ClassifyTarget(CBaseEntity* target, int observer_team); 0x1 friendly hero, 0x100 enemy hero"
+}
+
+signatures {
+  id: "team.collision"
+  modules: GAME_MODULE_SERVER
+  pattern: "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B F9 44 0F B6 F2 33 C9 E8 ?? ?? ?? ?? 48 BD 00 00 00 00 0C 00 00 00"
+  shape: "void SetTeamCollision(CBaseEntity*, bool keep_own_team); false skips the entity's own team layer"
+}
+
+signatures {
+  id: "vdata.lookup-by-hash"
+  modules: GAME_MODULE_SERVER
+  modules: GAME_MODULE_CLIENT
+  pattern: "40 53 48 83 EC ?? 89 54 24 ?? 8B D9"
+  shape: "void* LookupVData(int kind, uint32 hash); EDX is the full 32-bit hash"
+}
+
+# IVEngineServer2 counts IAppSystem's eleven slots, ISource2Engine's seven,
+# then its own declarations (sourcesdk public/eiface.h).
+slots {
+  id: "engine-server.globals"
+  module: "engine2.dll"
+  class_name: "CEngineServer"
+  index: 76
+  pattern: "48 8B 05 ?? ?? ?? ?? 48 85 C0 74 ?? 48 83 C0 58"
+  shape: "CGlobalVars* IVEngineServer2::GetServerGlobals()"
+}
+
+slots {
+  id: "engine-server.server-command"
+  module: "engine2.dll"
+  class_name: "CEngineServer"
+  index: 45
+  pattern: "48 8B 0D ?? ?? ?? ?? 4C 8B C2"
+  shape: "void IVEngineServer2::ServerCommand(const char* command)"
+}
+
+# The pawn overrides GetMaxHealth to evaluate progression and modifiers; the
+# base version reads m_iMaxHealth.
+slots {
+  id: "entity.max-health"
+  module: "server.dll"
+  class_name: "CBaseEntity"
+  index: 181
+  pattern: "8B 81 D4 02 00 00 C3"
+  shape: "int CBaseEntity::GetMaxHealth()"
+}
+
+# NetworkStateChanged follows RequiredEdictIndex in the current Windows ABI;
+# slot 27 writes an entity index to its hidden result.
+slots {
+  id: "entity.network-state-changed"
+  module: "server.dll"
+  class_name: "CBaseEntity"
+  index: 28
+  pattern: "48 8B C4 56 48 81 EC 40 01 00 00"
+  shape: "void CEntityInstance::NetworkStateChanged(const NetworkStateChangedData&)"
+}
+
+slots {
+  id: "entity.teleport"
+  module: "server.dll"
+  class_name: "CBaseEntity"
+  index: 163
+  pattern: "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20"
+  shape: "void CBaseEntity::Teleport(const Vector*, const QAngle*, const Vector*)"
+}
+
+slots {
+  id: "game-clients.command"
+  module: "server.dll"
+  class_name: "CSource2GameClients"
+  index: 17
+  pattern: "48 89 74 24 10 57 48 81 EC 80 00 00 00"
+  shape: "void ISource2GameClients::ClientCommand(CPlayerSlot, const CCommand&)"
+}
+
+slots {
+  id: "game-clients.disconnect"
+  module: "server.dll"
+  class_name: "CSource2GameClients"
+  index: 16
+  pattern: "48 89 5C 24 18 48 89 74 24 20"
+  shape: "void ISource2GameClients::ClientDisconnect(CPlayerSlot, ENetworkDisconnectionReason, ...)"
+}
+
+slots {
+  id: "game-clients.fully-connect"
+  module: "server.dll"
+  class_name: "CSource2GameClients"
+  index: 15
+  pattern: "40 53 48 83 EC 30 48 8B 0D ?? ?? ?? ??"
+  shape: "void ISource2GameClients::ClientFullyConnect(CPlayerSlot)"
+}
+
+slots {
+  id: "game-clients.put-in-server"
+  module: "server.dll"
+  class_name: "CSource2GameClients"
+  index: 13
+  pattern: "48 89 5C 24 10 48 89 6C 24 18 56 48 83 EC 30"
+  shape: "void ISource2GameClients::ClientPutInServer(CPlayerSlot, const char*, int, uint64)"
+}
+
+# ISource2GameEntities::CheckTransmit follows the eleven IAppSystem entries
+# and ApplyGameSettings.
+slots {
+  id: "game-entities.check-transmit"
+  module: "server.dll"
+  class_name: "CSource2GameEntities"
+  index: 12
+  pattern: "48 8B C4 4C 89 48 20 44 89 40 18"
+  shape: "void ISource2GameEntities::CheckTransmit(CCheckTransmitInfo**, int, CBitVec&, ...)"
+}
+
+slots {
+  id: "game-event-system.post-event"
+  module: "engine2.dll"
+  class_name: "CGameEventSystem"
+  index: 16
+  pattern: "48 89 5C 24 10 48 89 74 24 18"
+  shape: "void IGameEventSystem::PostEventAbstract(CSplitScreenSlot, bool, int, const uint64*, INetworkMessageInternal*, const CNetMessage*, unsigned long, NetChannelBufType_t)"
+}
+
+slots {
+  id: "game-server.game-frame"
+  module: "server.dll"
+  class_name: "CSource2Server"
+  index: 19
+  pattern: "48 89 5C 24 20 88 54 24 10"
+  shape: "void ISource2Server::GameFrame(bool simulating, bool first_tick, bool last_tick)"
+}
+
+# The Deadlock SDK's public/iserver.h declares Shutdown fifth.
+slots {
+  id: "network-game-server.shutdown"
+  module: "engine2.dll"
+  class_name: "CNetworkGameServer"
+  index: 4
+  pattern: "40 55 48 83 EC 20 80 3D ?? ?? ?? ?? 00"
+  shape: "void INetworkGameServer::Shutdown()"
+}
+
+# Since game build 6711 a message serializer is a plain record, and
+# INetworkMessages serializes and parses messages (sourcesdk
+# networksystem/inetworkmessages.h).
+slots {
+  id: "network-messages.find-by-id"
+  module: "networksystem.dll"
+  class_name: "CNetworkMessages"
+  index: 27
+  pattern: "48 89 5C 24 18 48 89 6C 24 20 56"
+  shape: "INetworkMessageInternal* INetworkMessages::FindNetworkMessageById(int)"
+}
+
+slots {
+  id: "network-messages.serialize"
+  module: "networksystem.dll"
+  class_name: "CNetworkMessages"
+  index: 4
+  pattern: "48 89 5C 24 18 56 48 83 EC 40"
+  shape: "bool INetworkMessages::SerializeAbstract(bf_write&, INetworkMessageInternal*, const CNetMessage*)"
+}
+
+slots {
+  id: "network-messages.unserialize"
+  module: "networksystem.dll"
+  class_name: "CNetworkMessages"
+  index: 3
+  pattern: "48 8B C4 53 48 81 EC 90 00 00 00"
+  shape: "bool INetworkMessages::UnserializeAbstract(bf_read&, INetworkMessageInternal*, CNetMessage*)"
+}
+
+slots {
+  id: "network-server-service.game-server"
+  module: "engine2.dll"
+  class_name: "CNetworkServerService"
+  index: 23
+  pattern: "48 8B 81 50 01 00 00 C3"
+  shape: "INetworkGameServer* INetworkServerService::GetIGameServer()"
+}
+
+slots {
+  id: "network-server-service.startup-server"
+  module: "engine2.dll"
+  class_name: "CNetworkServerService"
+  index: 26
+  pattern: "48 8B C4 55 57 41 57 48 83 EC 60"
+  shape: "void INetworkServerService::StartupServer(const GameSessionConfiguration_t&, ...)"
+}
+
+slots {
+  id: "player-controller.change-team"
+  module: "server.dll"
+  class_name: "CBasePlayerController"
+  index: 105
+  pattern: "40 55 56 41 57 48 8B EC"
+  shape: "void CBasePlayerController::ChangeTeam(int team)"
+}
+
+# ISchemaSystem appends FindTypeScopeForModule after IAppSystem's eleven
+# slots; ISchemaSystemTypeScope declares FindDeclaredClass third and
+# FindDeclaredEnum fourth.
+slots {
+  id: "schema-system.find-type-scope"
+  module: "schemasystem.dll"
+  class_name: "CSchemaSystem"
+  index: 13
+  pattern: "48 89 5C 24 10 48 89 74 24 18"
+  shape: "CSchemaSystemTypeScope* ISchemaSystem::FindTypeScopeForModule(const char*, int*)"
+}
+
+slots {
+  id: "schema-type-scope.find-declared-class"
+  module: "schemasystem.dll"
+  class_name: "CSchemaSystemTypeScope"
+  index: 2
+  pattern: "40 53 48 83 EC 20 48 8B 01 48 8B DA 49 8B D0 FF 90 C8 00 00 00"
+  shape: "SchemaClassInfoData_t* ISchemaSystemTypeScope::FindDeclaredClass(const char*)"
+}
+
+slots {
+  id: "schema-type-scope.find-declared-enum"
+  module: "schemasystem.dll"
+  class_name: "CSchemaSystemTypeScope"
+  index: 3
+  pattern: "40 53 48 83 EC 20 48 8B 01 48 8B DA 49 8B D0 FF 90 D8 00 00 00"
+  shape: "SchemaEnumInfoData_t* ISchemaSystemTypeScope::FindDeclaredEnum(const char*)"
+}
