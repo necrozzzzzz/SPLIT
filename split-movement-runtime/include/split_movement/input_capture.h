@@ -5,7 +5,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace split::movement {
 
@@ -16,13 +15,6 @@ struct InputSample {
   std::uint64_t held = 0;
   std::uint64_t pressed = 0;
   std::uint64_t sequence = 0;
-};
-
-struct PlaybackStatus {
-  bool active = false;
-  int slot = -1;
-  std::size_t index = 0;
-  std::size_t total = 0;
 };
 
 class InputCapture {
@@ -36,9 +28,11 @@ class InputCapture {
   bool Install(std::string& error);
   std::optional<InputSample> Latest(int slot) const;
 
-  bool StartPlayback(int slot, std::vector<InputSample> inputs, std::string& error);
-  void StopPlayback();
-  PlaybackStatus Playback() const;
+  // A steered bot keeps one command until MovementSteering advances the route.
+  // This mirrors Modlock's CommandHook::Driven path: ProcessUsercmds sees the
+  // same controls that ProcessMovement will consume for that steering step.
+  bool SetDrive(int slot, const InputSample& input, std::string& error);
+  void ClearDrive();
 
  private:
   struct Impl;

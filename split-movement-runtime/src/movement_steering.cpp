@@ -258,6 +258,7 @@ struct State {
   std::size_t index = 0;
   bool active = false;
   std::uint64_t last_held = 0;
+  InputCapture* input_capture = nullptr;
 };
 
 using SetAbsAnglesFn = void (*)(void*, const float*);
@@ -335,7 +336,7 @@ void MovementThunk(void* services, void* data) {
       tick = g_state.ticks[g_state.index++];
       previous_held = g_state.last_held;
       if (tick->input) {
-        g_state.last_held = tick->input->held | tick->input->pressed;
+        g_state.last_held = tick->input->held;
       }
       if (g_state.index >= g_state.ticks.size()) g_state.active = false;
     }
@@ -367,7 +368,7 @@ void MovementThunk(void* services, void* data) {
 
     auto buttons =
         Read<std::array<std::uint64_t, 3>>(services, g_state.layout->buttons + kButtonStates);
-    const std::uint64_t held = tick->input->held | tick->input->pressed;
+    const std::uint64_t held = tick->input->held;
     buttons[0] = held;
     buttons[1] = (held ^ previous_held) | tick->input->pressed;
     buttons[2] = 0;
@@ -390,12 +391,41 @@ void MovementThunk(void* services, void* data) {
       static_cast<void>(NotifyEntityStateChanged(pawn));
     }
   }
+
+  // This is the key Modlock synchronization rule: ProcessUsercmds keeps the
+  // steering command for the current step, and only ProcessMovement advances
+  // to the next command. That lets the bot's native brain/animation state see
+  // exactly the same input that movement consumes.
+  InputCapture* capture = nullptr;
+  std::optional<InputSample> next_input;
+  bool finished = false;
+  {
+    std::scoped_lock lock(g_state.mutex);
+    capture = g_state.input_capture;
+    if (g_state.active && g_state.index < g_state.ticks.size()) {
+      next_input = g_state.ticks[g_state.index].input;
+    } else {
+      finished = true;
+    }
+  }
+
+  if (capture) {
+    if (!finished && next_input) {
+      std::string ignored;
+      static_cast<void>(capture->SetDrive(slot, *next_input, ignored));
+    } else {
+      capture->ClearDrive();
+    }
+  }
 }
 
 }  // namespace
 
 struct MovementSteering::Impl {
-  explicit Impl(void* schema) { g_state.schema_system = schema; }
+  Impl(void* schema, InputCapture* input_capture) {
+    g_state.schema_system = schema;
+    g_state.input_capture = input_capture;
+  }
   safetyhook::InlineHook hook;
 
   ~Impl() {
@@ -410,14 +440,16 @@ struct MovementSteering::Impl {
       g_state.last_held = 0;
       g_state.layout.reset();
       g_state.layout_failed = false;
+      if (g_state.input_capture) g_state.input_capture->ClearDrive();
       g_state.schema_system = nullptr;
+      g_state.input_capture = nullptr;
       g_set_abs_angles = nullptr;
     }
   }
 };
 
-MovementSteering::MovementSteering(void* schema_system)
-    : impl_(std::make_unique<Impl>(schema_system)) {}
+MovementSteering::MovementSteering(void* schema_system, InputCapture* input_capture)
+    : impl_(std::make_unique<Impl>(schema_system, input_capture)) {}
 MovementSteering::~MovementSteering() = default;
 
 bool MovementSteering::Install(std::string& error) {
@@ -474,6 +506,19 @@ bool MovementSteering::Start(int slot, std::vector<RecordedTick> ticks,
     return false;
   }
 
+  const auto first_input = ticks.front().input;
+  if (!first_input) {
+    error = "first steering step has no input";
+    return false;
+  }
+  if (!g_state.input_capture) {
+    error = "steering has no ProcessUsercmds bridge";
+    return false;
+  }
+  if (!g_state.input_capture->SetDrive(slot, *first_input, error)) {
+    return false;
+  }
+
   std::scoped_lock lock(g_state.mutex);
   g_state.slot = slot;
   g_state.ticks = std::move(ticks);
@@ -484,6 +529,7 @@ bool MovementSteering::Start(int slot, std::vector<RecordedTick> ticks,
 }
 
 void MovementSteering::Stop() {
+  if (g_state.input_capture) g_state.input_capture->ClearDrive();
   std::scoped_lock lock(g_state.mutex);
   g_state.slot = -1;
   g_state.ticks.clear();

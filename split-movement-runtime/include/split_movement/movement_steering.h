@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "split_movement/input_capture.h"
 #include "split_movement/recorder.h"
 
 namespace split::movement {
@@ -19,7 +20,7 @@ struct SteeringStatus {
 
 class MovementSteering {
  public:
-  explicit MovementSteering(void* schema_system);
+  MovementSteering(void* schema_system, InputCapture* input_capture);
   ~MovementSteering();
 
   MovementSteering(const MovementSteering&) = delete;

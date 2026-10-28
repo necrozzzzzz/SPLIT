@@ -9,7 +9,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -129,6 +128,7 @@ void* FindUniquePattern(HMODULE module, std::string_view pattern, std::string& e
     error = "could not read server.dll PE image size";
     return nullptr;
   }
+
   const auto parsed = ParsePattern(pattern);
   if (parsed.empty() || parsed.size() > *size) {
     error = "invalid process-usercmds signature";
@@ -150,6 +150,7 @@ void* FindUniquePattern(HMODULE module, std::string_view pattern, std::string& e
     match = const_cast<std::uint8_t*>(base + at);
     if (++matches > 1) break;
   }
+
   if (matches == 0) {
     error = "controller.process-usercmds signature was not found";
     return nullptr;
@@ -166,27 +167,29 @@ struct SlotInput {
   std::optional<InputSample> sample;
 };
 
-struct PlaybackState {
+struct DriveState {
   std::mutex mutex;
   int slot = -1;
-  std::vector<InputSample> inputs;
-  std::size_t index = 0;
-  bool active = false;
+  std::optional<InputSample> input;
   std::uint64_t last_held = 0;
 };
 
 std::array<SlotInput, kMaxSlots> g_slots;
-PlaybackState g_playback;
+DriveState g_drive;
 safetyhook::InlineHook* g_hook = nullptr;
 std::atomic<std::uint64_t> g_sequence{0};
 const void* g_angles_vtable = nullptr;
 alignas(8) std::array<std::byte, kAnglesSize> g_lent{};
 
 void WriteCommand(std::byte* command, const InputSample& drive,
-                  std::uint64_t& last_held, std::byte* lent) {
-  const std::uint64_t held = drive.held | drive.pressed;
+                  std::uint64_t& last_held, std::byte* lent, bool first) {
+  // ProcessUsercmds receives the persistent steering command. Like Modlock,
+  // presses are not re-fired here on every command; held edges are enough for
+  // the game's command bookkeeping. MovementSteering supplies the recorded
+  // changed/press state to ProcessMovement itself.
+  const std::uint64_t held = drive.held;
   const std::array<std::uint64_t, 3> buttons{
-      held, (held ^ last_held) | drive.pressed, 0};
+      held, first ? (held ^ last_held) : 0, 0};
   Store(command, kCommandButtons, buttons);
   last_held = held;
 
@@ -220,6 +223,7 @@ int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count,
   std::byte* lent = nullptr;
 
   if (slot >= 0 && commands && count > 0) {
+    // Record the incoming real command before any bot steering rewrite.
     InputSample captured;
     captured.sequence = g_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
 
@@ -247,14 +251,9 @@ int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count,
 
     std::optional<InputSample> drive;
     {
-      std::scoped_lock lock(g_playback.mutex);
-      if (g_playback.active && g_playback.slot == slot) {
-        if (g_playback.index < g_playback.inputs.size()) {
-          drive = g_playback.inputs[g_playback.index++];
-        }
-        if (g_playback.index >= g_playback.inputs.size()) {
-          g_playback.active = false;
-        }
+      std::scoped_lock lock(g_drive.mutex);
+      if (g_drive.slot == slot && g_drive.input) {
+        drive = g_drive.input;
       }
     }
 
@@ -265,12 +264,10 @@ int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count,
         Store(lent, 0, g_angles_vtable);
       }
 
-      std::scoped_lock lock(g_playback.mutex);
+      std::scoped_lock lock(g_drive.mutex);
       for (int i = 0; i < count; ++i) {
-        auto one = *drive;
-        if (i > 0) one.pressed = 0;
         WriteCommand(commands + static_cast<std::size_t>(i) * kCommandStride,
-                     one, g_playback.last_held, lent);
+                     *drive, g_drive.last_held, lent, i == 0);
       }
     }
   }
@@ -278,6 +275,8 @@ int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count,
   const int result =
       g_hook->call<int>(controller, commands, count, paused, margin);
 
+  // A bot may borrow our angle protobuf message for the native call. Remove
+  // the borrowed pointer afterwards so the engine never owns/frees it.
   for (int i = 0; lent && i < count; ++i) {
     auto* command =
         commands + static_cast<std::size_t>(i) * kCommandStride;
@@ -305,12 +304,10 @@ struct InputCapture::Impl {
         std::scoped_lock lock(slot.mutex);
         slot.sample.reset();
       }
-      std::scoped_lock lock(g_playback.mutex);
-      g_playback.slot = -1;
-      g_playback.inputs.clear();
-      g_playback.index = 0;
-      g_playback.active = false;
-      g_playback.last_held = 0;
+      std::scoped_lock lock(g_drive.mutex);
+      g_drive.slot = -1;
+      g_drive.input.reset();
+      g_drive.last_held = 0;
     }
   }
 };
@@ -323,11 +320,13 @@ bool InputCapture::Install(std::string& error) {
     error = "input capture is already installed";
     return false;
   }
+
   HMODULE server = GetModuleHandleW(L"server.dll");
   if (!server) {
     error = "server.dll is not mapped";
     return false;
   }
+
   void* target = FindUniquePattern(server, kProcessUsercmdsPattern, error);
   if (!target) return false;
 
@@ -338,6 +337,7 @@ bool InputCapture::Install(std::string& error) {
     error = "could not create ProcessUsercmds inline hook";
     return false;
   }
+
   impl_->hook = std::move(hook);
   g_hook = &impl_->hook;
 
@@ -357,14 +357,9 @@ std::optional<InputSample> InputCapture::Latest(int slot) const {
   return state.sample;
 }
 
-bool InputCapture::StartPlayback(int slot, std::vector<InputSample> inputs,
-                                 std::string& error) {
+bool InputCapture::SetDrive(int slot, const InputSample& input, std::string& error) {
   if (slot < 0 || slot >= kMaxSlots) {
-    error = "playback slot is invalid";
-    return false;
-  }
-  if (inputs.empty()) {
-    error = "playback has no inputs";
+    error = "drive slot is invalid";
     return false;
   }
   if (!g_angles_vtable) {
@@ -372,32 +367,18 @@ bool InputCapture::StartPlayback(int slot, std::vector<InputSample> inputs,
     return false;
   }
 
-  std::scoped_lock lock(g_playback.mutex);
-  g_playback.slot = slot;
-  g_playback.inputs = std::move(inputs);
-  g_playback.index = 0;
-  g_playback.active = true;
-  g_playback.last_held = 0;
+  std::scoped_lock lock(g_drive.mutex);
+  if (g_drive.slot != slot) g_drive.last_held = 0;
+  g_drive.slot = slot;
+  g_drive.input = input;
   return true;
 }
 
-void InputCapture::StopPlayback() {
-  std::scoped_lock lock(g_playback.mutex);
-  g_playback.active = false;
-  g_playback.slot = -1;
-  g_playback.inputs.clear();
-  g_playback.index = 0;
-  g_playback.last_held = 0;
-}
-
-PlaybackStatus InputCapture::Playback() const {
-  std::scoped_lock lock(g_playback.mutex);
-  return PlaybackStatus{
-      .active = g_playback.active,
-      .slot = g_playback.slot,
-      .index = g_playback.index,
-      .total = g_playback.inputs.size(),
-  };
+void InputCapture::ClearDrive() {
+  std::scoped_lock lock(g_drive.mutex);
+  g_drive.slot = -1;
+  g_drive.input.reset();
+  g_drive.last_held = 0;
 }
 
 }  // namespace split::movement

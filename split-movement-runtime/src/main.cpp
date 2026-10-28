@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
   }
   std::cout << "SPLIT Movement Runtime: bot factory/replay guard installed.\n";
 
-  split::movement::MovementSteering steering(bridge.SchemaSystem());
+  split::movement::MovementSteering steering(bridge.SchemaSystem(), &input_capture);
   std::string steering_error;
   if (!steering.Install(steering_error)) {
     command_thread.request_stop();
