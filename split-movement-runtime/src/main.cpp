@@ -246,6 +246,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> replay_requested{false};
   std::atomic<bool> race_requested{false};
   std::atomic<bool> retry_requested{false};
+  std::atomic<bool> visual_test_requested{false};
   std::atomic<int> visual_mode{0}; // both, ghost, tracer, off
   std::atomic<bool> show_rings{true};
   std::atomic<bool> show_checkpoints{true};
@@ -315,6 +316,16 @@ int main(int argc, char** argv) {
     }
     // Report an available command bridge separately from actual client rendering.
     // Interface resolution alone cannot prove that debug shapes reach Deadlock.
+    if (command == "visualtest") {
+      if (!visual_renderer.Ready()) {
+        return "{\"queued\":false,\"reason\":\"renderer-interface-unavailable\"}";
+      }
+      if (human_slot.load(std::memory_order_relaxed) < 0) {
+        return "{\"queued\":false,\"reason\":\"player-not-connected\"}";
+      }
+      visual_test_requested.store(true, std::memory_order_release);
+      return "{\"queued\":true,\"note\":\"look-above-your-player-for-three-crossing-lines\"}";
+    }
     if (command == "visualdiagnostics") {
       return std::string("{\"rendererInterfaceReady\":") +
              (visual_renderer.Ready() ? "true" : "false") +
@@ -497,6 +508,10 @@ int main(int argc, char** argv) {
               return;
             }
 
+            if (visual_test_requested.exchange(false, std::memory_order_acq_rel)) {
+              visual_renderer.DrawTestMarker(sample->position);
+              std::cout << "[SPLIT][Visuals] test marker submitted; client visibility still unverified\n";
+            }
             last_pawn_error.clear();
             if (!pawn_announced) {
               pawn_announced = true;
