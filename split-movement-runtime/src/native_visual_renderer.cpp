@@ -429,7 +429,9 @@ struct NativeVisualRenderer::Impl {
   bool cheats_requested = false;
   bool particle_ready = false;
   bool manifest_ready = false;
+  bool transmit_ready = false;
   bool transmit_logged = false;
+  std::string optional_error;
 
   using ServerCommandFn = void (*)(void*, const char*);
   using CreateEntityFn = void* (*)(void*, const char*, int);
@@ -594,10 +596,8 @@ bool NativeVisualRenderer::Install(std::string& error) {
   return false;
 #else
   error.clear();
+  impl_->optional_error.clear();
 
-  // The Modlock-style particle path is independent from Source2EngineToServer001.
-  // Keep the old debug-command bridge only as an optional fallback for the
-  // pre-existing drawline renderer.
   std::string debug_error;
   impl_->engine =
       ResolveInterface(L"engine2.dll", "Source2EngineToServer001", debug_error);
@@ -614,6 +614,7 @@ bool NativeVisualRenderer::Install(std::string& error) {
     return false;
   }
 
+  // Core particle ABI: this is enough to create/start an info_particle_system.
   impl_->create_entity = reinterpret_cast<Impl::CreateEntityFn>(
       FindUnique(server, kCreateEntityPattern, "entity-system.create-entity-by-name", error));
   if (!impl_->create_entity) return false;
@@ -629,67 +630,6 @@ bool NativeVisualRenderer::Install(std::string& error) {
   impl_->remove_entity = reinterpret_cast<Impl::RemoveEntityFn>(
       FindUnique(server, kRemoveEntityPattern, "entity.remove", error));
   if (!impl_->remove_entity) return false;
-  impl_->set_transmit_state = reinterpret_cast<Impl::SetTransmitStateFn>(
-      FindUnique(server, kSetTransmitStatePattern, "network-transmit.set-state", error));
-  if (!impl_->set_transmit_state) return false;
-
-  std::string schema_error;
-  impl_->schema_system =
-      ResolveInterface(L"schemasystem.dll", "SchemaSystem_001", schema_error);
-  if (!impl_->schema_system) {
-    error = "SchemaSystem_001: " + schema_error;
-    return false;
-  }
-  auto base_entity = ClassInfoOf(impl_->schema_system, "CBaseEntity");
-  if (!base_entity) {
-    error = base_entity.error();
-    return false;
-  }
-  auto transmit_offset =
-      FieldOffset(*base_entity, "m_NetworkTransmitComponent", sizeof(std::uint8_t));
-  if (!transmit_offset) {
-    error = "CBaseEntity.m_NetworkTransmitComponent: " + transmit_offset.error();
-    return false;
-  }
-  auto transmit_component = ClassInfoOf(
-      impl_->schema_system, "CNetworkTransmitComponent");
-  if (!transmit_component) {
-    error = transmit_component.error();
-    return false;
-  }
-  auto transmit_owned_offset = FieldOffset(
-      *transmit_component, "m_nTransmitStateOwnedCounter", sizeof(std::uint8_t));
-  if (!transmit_owned_offset) {
-    error = "CNetworkTransmitComponent.m_nTransmitStateOwnedCounter: " +
-            transmit_owned_offset.error();
-    return false;
-  }
-  impl_->transmit_offset = *transmit_offset;
-  impl_->transmit_owned_offset = *transmit_owned_offset;
-
-  void* manifest_builder = FindUnique(
-      server, kManifestBuilderPattern, "game-rules.manifest-builder", error);
-  if (!manifest_builder) return false;
-  g_add_manifest_resource = reinterpret_cast<AddManifestResourceFn>(
-      FindUnique(server, kAddManifestResourcePattern,
-                 "game-rules.add-resource", error));
-  if (!g_add_manifest_resource) return false;
-
-  auto manifest_hook = safetyhook::create_inline(
-      manifest_builder, reinterpret_cast<void*>(&ManifestBuildThunk),
-      safetyhook::InlineHook::StartDisabled);
-  if (!manifest_hook) {
-    error = "inline hook on game session manifest builder failed";
-    return false;
-  }
-  g_manifest_hook = std::move(manifest_hook);
-  if (auto enabled = g_manifest_hook.enable(); !enabled) {
-    g_manifest_hook.reset();
-    g_add_manifest_resource = nullptr;
-    error = "could not enable game session manifest hook";
-    return false;
-  }
-  impl_->manifest_ready = true;
   impl_->kv_allocate = reinterpret_cast<Impl::KvAllocateFn>(
       FindUnique(server, kKvAllocatePattern, "entity-keyvalues.allocate", error));
   if (!impl_->kv_allocate) return false;
@@ -701,6 +641,84 @@ bool NativeVisualRenderer::Install(std::string& error) {
   if (!impl_->kv_set) return false;
 
   impl_->particle_ready = true;
+
+  // Optional extension 1: force transmission to clients.
+  std::string optional;
+  impl_->set_transmit_state = reinterpret_cast<Impl::SetTransmitStateFn>(
+      FindUnique(server, kSetTransmitStatePattern, "network-transmit.set-state", optional));
+  if (impl_->set_transmit_state) {
+    std::string schema_error;
+    impl_->schema_system =
+        ResolveInterface(L"schemasystem.dll", "SchemaSystem_001", schema_error);
+    if (!impl_->schema_system) {
+      optional = "SchemaSystem_001: " + schema_error;
+      impl_->set_transmit_state = nullptr;
+    } else {
+      auto base_entity = ClassInfoOf(impl_->schema_system, "CBaseEntity");
+      auto transmit_component = ClassInfoOf(
+          impl_->schema_system, "CNetworkTransmitComponent");
+      if (!base_entity) {
+        optional = base_entity.error();
+        impl_->set_transmit_state = nullptr;
+      } else if (!transmit_component) {
+        optional = transmit_component.error();
+        impl_->set_transmit_state = nullptr;
+      } else {
+        auto transmit_offset =
+            FieldOffset(*base_entity, "m_NetworkTransmitComponent", sizeof(std::uint8_t));
+        auto transmit_owned_offset = FieldOffset(
+            *transmit_component, "m_nTransmitStateOwnedCounter", sizeof(std::uint8_t));
+        if (!transmit_offset) {
+          optional = "CBaseEntity.m_NetworkTransmitComponent: " +
+                     transmit_offset.error();
+          impl_->set_transmit_state = nullptr;
+        } else if (!transmit_owned_offset) {
+          optional = "CNetworkTransmitComponent.m_nTransmitStateOwnedCounter: " +
+                     transmit_owned_offset.error();
+          impl_->set_transmit_state = nullptr;
+        } else {
+          impl_->transmit_offset = *transmit_offset;
+          impl_->transmit_owned_offset = *transmit_owned_offset;
+          impl_->transmit_ready = true;
+        }
+      }
+    }
+  }
+  if (!optional.empty()) {
+    impl_->optional_error = "transmit: " + optional;
+  }
+
+  // Optional extension 2: register particle resources in the next session manifest.
+  optional.clear();
+  void* manifest_builder = FindUnique(
+      server, kManifestBuilderPattern, "game-rules.manifest-builder", optional);
+  auto add_resource = reinterpret_cast<AddManifestResourceFn>(
+      FindUnique(server, kAddManifestResourcePattern,
+                 "game-rules.add-resource", optional));
+  if (manifest_builder && add_resource) {
+    g_add_manifest_resource = add_resource;
+    auto manifest_hook = safetyhook::create_inline(
+        manifest_builder, reinterpret_cast<void*>(&ManifestBuildThunk),
+        safetyhook::InlineHook::StartDisabled);
+    if (manifest_hook) {
+      g_manifest_hook = std::move(manifest_hook);
+      if (auto enabled = g_manifest_hook.enable(); enabled) {
+        impl_->manifest_ready = true;
+      } else {
+        g_manifest_hook.reset();
+        g_add_manifest_resource = nullptr;
+        optional = "could not enable game session manifest hook";
+      }
+    } else {
+      g_add_manifest_resource = nullptr;
+      optional = "inline hook on game session manifest builder failed";
+    }
+  }
+  if (!optional.empty()) {
+    if (!impl_->optional_error.empty()) impl_->optional_error += "; ";
+    impl_->optional_error += "manifest: " + optional;
+  }
+
   impl_->installed = true;
   return true;
 #endif
@@ -711,7 +729,19 @@ bool NativeVisualRenderer::Ready() const {
 }
 
 bool NativeVisualRenderer::ParticleReady() const {
-  return impl_->installed && impl_->particle_ready && impl_->manifest_ready;
+  return impl_->installed && impl_->particle_ready;
+}
+
+bool NativeVisualRenderer::ManifestReady() const {
+  return impl_->installed && impl_->manifest_ready;
+}
+
+bool NativeVisualRenderer::TransmitReady() const {
+  return impl_->installed && impl_->transmit_ready;
+}
+
+const std::string& NativeVisualRenderer::OptionalError() const {
+  return impl_->optional_error;
 }
 
 void NativeVisualRenderer::Invalidate() {
