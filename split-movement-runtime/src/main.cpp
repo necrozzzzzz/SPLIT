@@ -336,7 +336,7 @@ int main(int argc, char** argv) {
           << "\"showRings\":" << (show_rings.load() ? "true" : "false") << ","
           << "\"showCheckpoints\":" << (show_checkpoints.load() ? "true" : "false") << ","
           << "\"showHud\":" << (show_hud.load() ? "true" : "false") << ","
-          << "\"inGameVisualsReady\":false
+          << "\"inGameVisualsReady\":false"
           << "}";
       return out.str();
     }
