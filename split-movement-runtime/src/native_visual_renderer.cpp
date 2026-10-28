@@ -66,6 +66,8 @@ constexpr std::string_view kExecuteQueuedPattern =
     "48 89 5C 24 ?? 57 48 81 EC ?? ?? ?? ?? FF 81 ?? ?? ?? ?? 48 8D 44 24";
 constexpr std::string_view kAcceptInputPattern =
     "48 89 5C 24 ?? 48 89 6C 24 ?? 56 57 41 56 48 81 EC ?? ?? ?? ?? 4D 8B F0 48 8B F1";
+constexpr std::string_view kRemoveEntityPattern =
+    "48 85 C9 74 ? 48 8B D1 48 8B 0D";
 constexpr std::string_view kKvAllocatePattern =
     "48 8B 05 ?? ?? ?? ?? 48 8B D1 48 8B 08 48 8B 01 48 FF 60 08 CC CC CC CC CC CC CC CC CC CC CC CC 48 8B 05 ?? ?? ?? ?? 4C 8B C9 4C 8B C2 49 8B D1";
 constexpr std::string_view kKvConstructPattern =
@@ -203,6 +205,14 @@ struct RawKeyValues3 {
   std::uint64_t data = 0;
 };
 
+struct alignas(8) InputVariant {
+  const void* pointer = nullptr;
+  std::uint8_t type = 30;
+  std::uint8_t alignment = 0;
+  std::uint16_t flags = 0;
+};
+static_assert(sizeof(InputVariant) == 16);
+
 void SetKvString(RawKeyValues3& value, const char* text) {
   constexpr std::uint64_t kTypeMask = 0xffull << 2;
   constexpr std::uint64_t kSubtypeMask = 0xffull << 10;
@@ -303,6 +313,7 @@ struct NativeVisualRenderer::Impl {
   using KvAllocateFn = void* (*)(std::size_t);
   using KvConstructFn = void* (*)(void*, void*, unsigned char);
   using KvSetFn = void* (*)(void*, const MemberName*, unsigned char);
+  using RemoveEntityFn = void (*)(void*);
 
   CreateEntityFn create_entity = nullptr;
   QueueSpawnFn queue_spawn = nullptr;
@@ -311,6 +322,8 @@ struct NativeVisualRenderer::Impl {
   KvAllocateFn kv_allocate = nullptr;
   KvConstructFn kv_construct = nullptr;
   KvSetFn kv_set = nullptr;
+  RemoveEntityFn remove_entity = nullptr;
+  std::vector<void*> particles;
 
   void Command(std::string_view command) {
     if (!engine) return;
@@ -325,6 +338,103 @@ struct NativeVisualRenderer::Impl {
     if (cheats_requested) return;
     Command("sv_cheats 1\n");
     cheats_requested = true;
+  }
+
+  void* EntitySystem(std::string& error) const {
+    std::string interface_error;
+    void* resource_service = ResolveInterface(
+        L"engine2.dll", "GameResourceServiceServerV001", interface_error);
+    if (!resource_service) {
+      error = "GameResourceServiceServerV001: " + interface_error;
+      return nullptr;
+    }
+    void* entity_system = nullptr;
+    std::memcpy(&entity_system,
+                static_cast<std::byte*>(resource_service) +
+                    kResourceServiceEntitySystemOffset,
+                sizeof(entity_system));
+    if (!entity_system) {
+      error = "CGameResourceService has no live entity system";
+    }
+    return entity_system;
+  }
+
+  bool SpawnParticle(const std::array<float, 3>& position,
+                     const char* effect, std::string& error) {
+    void* entity_system = EntitySystem(error);
+    if (!entity_system) return false;
+
+    void* particle = create_entity(nullptr, "info_particle_system", -1);
+    if (!particle) {
+      error = "CreateEntityByName(info_particle_system) returned null";
+      return false;
+    }
+    void* identity = IdentityOf(particle);
+    if (!identity) {
+      if (remove_entity) remove_entity(particle);
+      error = "info_particle_system has no entity identity";
+      return false;
+    }
+
+    void* storage = kv_allocate(kEntityKeyValuesSize);
+    if (!storage) {
+      if (remove_entity) remove_entity(particle);
+      error = "CEntityKeyValues allocation returned null";
+      return false;
+    }
+    void* key_values = kv_construct(storage, nullptr, 0);
+    if (!key_values) {
+      if (remove_entity) remove_entity(particle);
+      error = "CEntityKeyValues construction returned null";
+      return false;
+    }
+
+    const MemberName effect_name = MakeMemberName("effect_name");
+    auto* effect_value =
+        static_cast<RawKeyValues3*>(kv_set(key_values, &effect_name, 0));
+    if (!effect_value) {
+      if (remove_entity) remove_entity(particle);
+      error = "could not create effect_name keyvalue";
+      return false;
+    }
+    SetKvString(*effect_value, effect);
+
+    const MemberName start_active = MakeMemberName("start_active");
+    auto* active_value =
+        static_cast<RawKeyValues3*>(kv_set(key_values, &start_active, 0));
+    if (!active_value) {
+      if (remove_entity) remove_entity(particle);
+      error = "could not create start_active keyvalue";
+      return false;
+    }
+    SetKvBool(*active_value, true);
+
+    constexpr std::size_t kTeleportSlot = 163;
+    auto*** object = reinterpret_cast<void***>(particle);
+    if (!object || !*object || !(*object)[kTeleportSlot]) {
+      if (remove_entity) remove_entity(particle);
+      error = "CBaseEntity::Teleport is unavailable for info_particle_system";
+      return false;
+    }
+    using TeleportFn = void (*)(void*, const float*, const float*, const float*);
+    const std::array<float, 3> angles{};
+    const std::array<float, 3> velocity{};
+    reinterpret_cast<TeleportFn>((*object)[kTeleportSlot])(
+        particle, position.data(), angles.data(), velocity.data());
+
+    queue_spawn(entity_system, identity, key_values);
+    execute_queued(entity_system);
+
+    static constexpr char kEmpty[] = "";
+    InputVariant value{.pointer = kEmpty};
+    if (!accept_input(particle, "Start", nullptr, nullptr, &value, 0, nullptr)) {
+      if (remove_entity) remove_entity(particle);
+      error = "info_particle_system rejected Start input";
+      return false;
+    }
+
+    particles.push_back(particle);
+    return true;
   }
 };
 
@@ -369,6 +479,9 @@ bool NativeVisualRenderer::Install(std::string& error) {
   impl_->accept_input = reinterpret_cast<Impl::AcceptInputFn>(
       FindUnique(server, kAcceptInputPattern, "entity-instance.accept-input", error));
   if (!impl_->accept_input) return false;
+  impl_->remove_entity = reinterpret_cast<Impl::RemoveEntityFn>(
+      FindUnique(server, kRemoveEntityPattern, "entity.remove", error));
+  if (!impl_->remove_entity) return false;
   impl_->kv_allocate = reinterpret_cast<Impl::KvAllocateFn>(
       FindUnique(server, kKvAllocatePattern, "entity-keyvalues.allocate", error));
   if (!impl_->kv_allocate) return false;
@@ -415,108 +528,25 @@ bool NativeVisualRenderer::DrawTestParticle(
       return false;
     }
   }
-
-  std::string interface_error;
-  void* resource_service = ResolveInterface(
-      L"engine2.dll", "GameResourceServiceServerV001", interface_error);
-  if (!resource_service) {
-    error = "GameResourceServiceServerV001: " + interface_error;
-    return false;
-  }
-
-  void* entity_system = nullptr;
-  std::memcpy(&entity_system,
-              static_cast<std::byte*>(resource_service) +
-                  kResourceServiceEntitySystemOffset,
-              sizeof(entity_system));
-  if (!entity_system) {
-    error = "CGameResourceService has no live entity system";
-    return false;
-  }
-
-  void* particle = impl_->create_entity(nullptr, "info_particle_system", -1);
-  if (!particle) {
-    error = "CreateEntityByName(info_particle_system) returned null";
-    return false;
-  }
-
-  void* identity = IdentityOf(particle);
-  if (!identity) {
-    error = "info_particle_system has no entity identity";
-    return false;
-  }
-
-  void* storage = impl_->kv_allocate(kEntityKeyValuesSize);
-  if (!storage) {
-    error = "CEntityKeyValues allocation returned null";
-    return false;
-  }
-  void* key_values = impl_->kv_construct(storage, nullptr, 0);
-  if (!key_values) {
-    error = "CEntityKeyValues construction returned null";
-    return false;
-  }
-
-  static constexpr char kEffect[] =
-      "particles/environment/powerup_spawner_ambient_ring.vpcf";
-  const MemberName effect_name = MakeMemberName("effect_name");
-  auto* effect_value = static_cast<RawKeyValues3*>(
-      impl_->kv_set(key_values, &effect_name, 0));
-  if (!effect_value) {
-    error = "could not create effect_name keyvalue";
-    return false;
-  }
-  SetKvString(*effect_value, kEffect);
-
-  const MemberName start_active = MakeMemberName("start_active");
-  auto* active_value = static_cast<RawKeyValues3*>(
-      impl_->kv_set(key_values, &start_active, 0));
-  if (!active_value) {
-    error = "could not create start_active keyvalue";
-    return false;
-  }
-  SetKvBool(*active_value, true);
-
   auto origin = position;
   origin[2] += 48.0f;
-  constexpr std::size_t kTeleportSlot = 163;
-  auto*** object = reinterpret_cast<void***>(particle);
-  if (!object || !*object || !(*object)[kTeleportSlot]) {
-    error = "CBaseEntity::Teleport is unavailable for info_particle_system";
-    return false;
-  }
-  using TeleportFn = void (*)(void*, const float*, const float*, const float*);
-  const std::array<float, 3> angles{};
-  const std::array<float, 3> velocity{};
-  reinterpret_cast<TeleportFn>((*object)[kTeleportSlot])(
-      particle, origin.data(), angles.data(), velocity.data());
-
-  impl_->queue_spawn(entity_system, identity, key_values);
-  impl_->execute_queued(entity_system);
-
-  struct alignas(8) Variant {
-    const void* pointer = nullptr;
-    std::uint8_t type = 30;
-    std::uint8_t alignment = 0;
-    std::uint16_t flags = 0;
-  };
-  static_assert(sizeof(Variant) == 16);
-  static constexpr char kEmpty[] = "";
-  Variant value{.pointer = kEmpty};
-  if (!impl_->accept_input(
-          particle, "Start", nullptr, nullptr, &value, 0, nullptr)) {
-    error = "info_particle_system rejected Start input";
-    return false;
-  }
-
-  return true;
+  return impl_->SpawnParticle(
+      origin, "particles/environment/powerup_spawner_ambient_ring.vpcf", error);
 #endif
 }
 
 void NativeVisualRenderer::Clear() {
-  if (!Ready()) return;
-  impl_->EnsureCheats();
-  impl_->Command("cleardraw\n");
+  if (impl_->remove_entity) {
+    for (void* particle : impl_->particles) {
+      if (particle) impl_->remove_entity(particle);
+    }
+  }
+  impl_->particles.clear();
+
+  if (Ready()) {
+    impl_->EnsureCheats();
+    impl_->Command("cleardraw\n");
+  }
   impl_->last_signature = 0;
 }
 
@@ -524,7 +554,7 @@ void NativeVisualRenderer::Render(
     const std::vector<RecordedTick>& route,
     const std::optional<RaceCourse>& course,
     const NativeVisualSettings& settings) {
-  if (!Ready()) return;
+  if (!ParticleReady() && !Ready()) return;
 
   std::uint64_t signature = 1469598103934665603ull;
   signature = HashMix(signature, settings.tracer ? 1u : 0u);
@@ -548,10 +578,9 @@ void NativeVisualRenderer::Render(
 
   if (impl_->last_signature == signature) return;
 
-  impl_->EnsureCheats();
-  impl_->Command("cleardraw\n");
+  Clear();
 
-  if (settings.tracer) {
+  if (settings.tracer && Ready()) {
     const auto points = SampleRoute(route);
     for (std::size_t i = 1; i < points.size(); ++i) {
       impl_->Command(LineCommand(points[i - 1], points[i]));
@@ -576,22 +605,39 @@ void NativeVisualRenderer::Render(
   };
 
   if (course && settings.rings) {
-    draw_ring(course->start, course->radius);
-    draw_ring(course->finish, course->radius);
+    std::string particle_error;
     auto start = course->start;
     auto finish = course->finish;
     start[2] += 8.0f;
     finish[2] += 8.0f;
-    impl_->Command(AxisCommand(start, 64, 220, 120));
-    impl_->Command(AxisCommand(finish, 255, 120, 80));
+
+    if (ParticleReady()) {
+      static constexpr char kRingEffect[] =
+          "particles/environment/powerup_spawner_ambient_ring.vpcf";
+      (void)impl_->SpawnParticle(start, kRingEffect, particle_error);
+      particle_error.clear();
+      (void)impl_->SpawnParticle(finish, kRingEffect, particle_error);
+    } else if (Ready()) {
+      draw_ring(course->start, course->radius);
+      draw_ring(course->finish, course->radius);
+      impl_->Command(AxisCommand(start, 64, 220, 120));
+      impl_->Command(AxisCommand(finish, 255, 120, 80));
+    }
   }
 
   if (course && settings.checkpoints) {
     for (const auto& checkpoint : course->checkpoints) {
-      draw_ring(checkpoint, course->radius * 0.72f);
       auto marker = checkpoint;
       marker[2] += 8.0f;
-      impl_->Command(AxisCommand(marker, 90, 170, 255));
+      if (ParticleReady()) {
+        std::string particle_error;
+        (void)impl_->SpawnParticle(
+            marker, "particles/generic/generic_ping_ground_arrow.vpcf",
+            particle_error);
+      } else if (Ready()) {
+        draw_ring(checkpoint, course->radius * 0.72f);
+        impl_->Command(AxisCommand(marker, 90, 170, 255));
+      }
     }
   }
 
