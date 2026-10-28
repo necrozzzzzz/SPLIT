@@ -22,6 +22,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -393,6 +394,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> show_hud{true};
   std::string last_pawn_error;
   std::string current_map = launch.map;
+  std::mutex route_cues_mutex;
   std::vector<MovementCue> route_cues;
 
   const auto route_directory =
@@ -592,7 +594,10 @@ int main(int argc, char** argv) {
     } else if (command == "hud on" || command == "hud off") {
       show_hud.store(command == "hud on");
     } else if (command == "record") {
-      route_cues.clear();
+      {
+        std::scoped_lock lock(route_cues_mutex);
+        route_cues.clear();
+      }
       movement_events.Clear();
       recorder.Start();
       std::cout << "[SPLIT][Recorder] recording started\n";
@@ -600,7 +605,10 @@ int main(int argc, char** argv) {
       if (recorder.Stats().recording) {
         PrintStats(recorder.Stop());
       } else {
-        route_cues.clear();
+        {
+          std::scoped_lock lock(route_cues_mutex);
+          route_cues.clear();
+        }
         movement_events.Clear();
         recorder.Start();
         std::cout << "[SPLIT][Recorder] recording started\n";
@@ -611,7 +619,10 @@ int main(int argc, char** argv) {
       PrintStats(recorder.Stats());
     } else if (command == "clear") {
       recorder.Clear();
-      route_cues.clear();
+      {
+        std::scoped_lock lock(route_cues_mutex);
+        route_cues.clear();
+      }
       movement_events.Clear();
       native_route_line_active.store(false, std::memory_order_release);
       visual_renderer.Clear();
@@ -770,6 +781,7 @@ int main(int argc, char** argv) {
                         << sample->position[2] << ")\n";
 
               if (recorder.Stats().recording && IsRouteCallout(movement.execution)) {
+                std::scoped_lock lock(route_cues_mutex);
                 const bool duplicate =
                     !route_cues.empty() &&
                     route_cues.back().label == label &&
@@ -924,8 +936,13 @@ int main(int argc, char** argv) {
                   // Direct native movement facts become the first reliable
                   // Hyperline-style route callouts. Compound techniques are
                   // added later by the recognizer, not guessed here.
+                  std::vector<MovementCue> callouts;
+                  {
+                    std::scoped_lock lock(route_cues_mutex);
+                    callouts = route_cues;
+                  }
                   std::size_t callout_count = 0;
-                  for (const auto& cue : route_cues) {
+                  for (const auto& cue : callouts) {
                     marker_error.clear();
                     if (visual_renderer.DrawWorldTextMarker(
                             cue.position, cue.label.c_str(),
