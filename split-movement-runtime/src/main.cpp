@@ -566,12 +566,7 @@ int main(int argc, char** argv) {
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
 
-            if (frame % 45 == 0 && race_timer.Course() &&
-                visual_renderer.ParticleReady()) {
-              visual_renderer.PulseParticles();
-            }
-
-            if (frame % 60 == 0 &&
+            if (frame % 60 == 0 && !race_timer.Course() &&
                 (visual_renderer.ParticleReady() || visual_renderer.Ready())) {
               const int mode = visual_mode.load(std::memory_order_relaxed);
               split::movement::NativeVisualSettings visual_settings;
@@ -637,22 +632,53 @@ int main(int argc, char** argv) {
                   std::cout << "[SPLIT][Race] arm failed: "
                             << race_error << "\n";
                 } else {
-                  // Render the freshly configured course immediately instead
-                  // of waiting for the next periodic visual pass.
-                  split::movement::NativeVisualSettings visual_settings;
-                  const int mode = visual_mode.load(std::memory_order_relaxed);
-                  visual_settings.tracer = mode == 0 || mode == 2;
-                  visual_settings.rings =
-                      show_rings.load(std::memory_order_relaxed);
-                  visual_settings.checkpoints =
-                      show_checkpoints.load(std::memory_order_relaxed);
-                  visual_renderer.Invalidate();
-                  visual_renderer.Render(route_ticks, race_timer.Course(),
-                                         visual_settings);
-                  std::cout << "[SPLIT][Visuals] race course render requested"
-                            << " rings=" << (visual_settings.rings ? "on" : "off")
+                  // Modlock-style ownership: create persistent world
+                  // entities once when the course is armed. They live until
+                  // racecancel/clear/world reset; the legacy Render() loop is
+                  // deliberately not involved.
+                  visual_renderer.Clear();
+
+                  std::string marker_error;
+                  if (show_rings.load(std::memory_order_relaxed)) {
+                    if (visual_renderer.DrawWorldTextMarker(
+                            course.start, "START", marker_error)) {
+                      std::cout << "[SPLIT][WorldEffects] START world text created\n";
+                    } else {
+                      std::cout << "[SPLIT][WorldEffects] START failed: "
+                                << marker_error << "\n";
+                    }
+
+                    marker_error.clear();
+                    if (visual_renderer.DrawWorldTextMarker(
+                            course.finish, "FINISH", marker_error)) {
+                      std::cout << "[SPLIT][WorldEffects] FINISH world text created\n";
+                    } else {
+                      std::cout << "[SPLIT][WorldEffects] FINISH failed: "
+                                << marker_error << "\n";
+                    }
+                  }
+
+                  if (show_checkpoints.load(std::memory_order_relaxed)) {
+                    for (std::size_t checkpoint_index = 0;
+                         checkpoint_index < course.checkpoints.size();
+                         ++checkpoint_index) {
+                      const std::string label =
+                          "CP " + std::to_string(checkpoint_index + 1);
+                      marker_error.clear();
+                      if (!visual_renderer.DrawWorldTextMarker(
+                              course.checkpoints[checkpoint_index],
+                              label.c_str(), marker_error)) {
+                        std::cout << "[SPLIT][WorldEffects] " << label
+                                  << " failed: " << marker_error << "\n";
+                      }
+                    }
+                  }
+
+                  std::cout << "[SPLIT][WorldEffects] persistent race objects created"
+                            << " startFinish="
+                            << (show_rings.load(std::memory_order_relaxed) ? "on" : "off")
                             << " checkpoints="
-                            << (visual_settings.checkpoints ? "on" : "off")
+                            << (show_checkpoints.load(std::memory_order_relaxed) ? "on" : "off")
                             << "\n";
 
                   const auto status = race_timer.Status();
