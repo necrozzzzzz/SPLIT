@@ -44,6 +44,8 @@ void Help() {
       << "  race        arm a timed run using route start/finish\n"
       << "  racestatus  print timer / PB status\n"
       << "  racecancel  cancel the current timed run\n"
+      << "  visualtest  spawn a native Source 2 particle near the player\n"
+      << "  visualdiagnostics  print native visual bridge status\n"
       << "  clear       discard the current route\n\n"
       << "DEADLOCK_DIR can replace --game-dir.\n";
 }
@@ -440,7 +442,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, race, retry, racestatus, racecancel, clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, race, retry, racestatus, racecancel, visualtest, visualdiagnostics, clear)\n";
     }
     return {};
   };
