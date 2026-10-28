@@ -894,11 +894,11 @@ void NativeVisualRenderer::Render(
     finish[2] += 8.0f;
 
     if (ParticleReady()) {
-      static constexpr char kRingEffect[] =
-          "particles/environment/powerup_spawner_ambient_ring.vpcf";
-      (void)impl_->SpawnParticle(start, kRingEffect, particle_error);
+      static constexpr char kStartFinishEffect[] =
+          "particles/environment/powerup_spawner_ambient.vpcf";
+      (void)impl_->SpawnParticle(start, kStartFinishEffect, particle_error);
       particle_error.clear();
-      (void)impl_->SpawnParticle(finish, kRingEffect, particle_error);
+      (void)impl_->SpawnParticle(finish, kStartFinishEffect, particle_error);
     } else if (Ready()) {
       draw_ring(course->start, course->radius);
       draw_ring(course->finish, course->radius);
