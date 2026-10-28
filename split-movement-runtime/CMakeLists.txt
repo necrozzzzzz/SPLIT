@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(split_movement_runtime VERSION 0.17.0 LANGUAGES CXX)
+project(split_movement_runtime VERSION 0.18.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,7 @@ FetchContent_MakeAvailable(safetyhook)
 
 add_executable(split-movement-runtime
   src/main.cpp
+  src/control_server.cpp
   src/runtime.cpp
   src/engine_bridge.cpp
   src/engine_runner.cpp
@@ -32,7 +33,7 @@ add_executable(split-movement-runtime
 )
 
 target_include_directories(split-movement-runtime PRIVATE include)
-target_link_libraries(split-movement-runtime PRIVATE safetyhook::safetyhook)
+target_link_libraries(split-movement-runtime PRIVATE safetyhook::safetyhook ws2_32)
 
 if(MSVC)
   target_compile_options(split-movement-runtime PRIVATE /W4 /permissive-)

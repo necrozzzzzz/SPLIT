@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    net::UdpSocket,
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -63,6 +64,9 @@ enum UserHotkeyAction {
     Undo,
     Redo,
     ToggleFavorites,
+    MovementRecordToggle,
+    MovementRace,
+    MovementReplay,
 }
 
 #[derive(Debug, Clone)]
@@ -236,6 +240,9 @@ pub struct HotkeySettings {
     pub redo: Hotkey,
     pub cycle_preset: Hotkey,
     pub favorite_mode: Hotkey,
+    pub movement_record: Hotkey,
+    pub movement_race: Hotkey,
+    pub movement_replay: Hotkey,
     pub quick_access: Hotkey,
 }
 
@@ -252,6 +259,9 @@ impl Default for HotkeySettings {
             redo: Hotkey::new("F10", false, false, false),
             cycle_preset: Hotkey::new("F12", false, false, false),
             favorite_mode: Hotkey::new("F11", false, false, false),
+            movement_record: Hotkey::new("R", true, false, true),
+            movement_race: Hotkey::new("T", true, false, true),
+            movement_replay: Hotkey::new("P", true, false, true),
             quick_access: Hotkey::new("CapsLock", false, false, false),
         }
     }
@@ -295,6 +305,9 @@ impl HotkeySettings {
             &self.undo,
             &self.redo,
             &self.favorite_mode,
+            &self.movement_record,
+            &self.movement_race,
+            &self.movement_replay,
             &self.quick_access,
         ] {
             validate_hotkey(hotkey, false)?;
@@ -313,7 +326,7 @@ impl HotkeySettings {
     }
 
     fn all(&self) -> Vec<(&'static str, &Hotkey)> {
-        let mut bindings = Vec::with_capacity(20);
+        let mut bindings = Vec::with_capacity(23);
         for (index, hotkey) in self.load_slots.iter().enumerate() {
             bindings.push((LOAD_LABELS[index], hotkey));
         }
@@ -325,13 +338,16 @@ impl HotkeySettings {
             ("Redo", &self.redo),
             ("Cycle Preset", &self.cycle_preset),
             ("Favorite Mode", &self.favorite_mode),
+            ("Movement Record", &self.movement_record),
+            ("Movement Race", &self.movement_race),
+            ("Movement Replay", &self.movement_replay),
             ("Quick Access", &self.quick_access),
         ]);
         bindings
     }
 
     fn all_mut(&mut self) -> Vec<&mut Hotkey> {
-        let mut bindings = Vec::with_capacity(20);
+        let mut bindings = Vec::with_capacity(23);
         bindings.extend(self.load_slots.iter_mut());
         bindings.extend(self.save_slots.iter_mut());
         bindings.extend([
@@ -339,6 +355,9 @@ impl HotkeySettings {
             &mut self.redo,
             &mut self.cycle_preset,
             &mut self.favorite_mode,
+            &mut self.movement_record,
+            &mut self.movement_race,
+            &mut self.movement_replay,
             &mut self.quick_access,
         ]);
         bindings
@@ -376,6 +395,16 @@ impl HotkeySettings {
             .or_else(|| (self.cycle_preset == *hotkey).then_some(UserHotkeyAction::CyclePreset))
             .or_else(|| {
                 (self.favorite_mode == *hotkey).then_some(UserHotkeyAction::ToggleFavorites)
+            })
+            .or_else(|| {
+                (self.movement_record == *hotkey)
+                    .then_some(UserHotkeyAction::MovementRecordToggle)
+            })
+            .or_else(|| {
+                (self.movement_race == *hotkey).then_some(UserHotkeyAction::MovementRace)
+            })
+            .or_else(|| {
+                (self.movement_replay == *hotkey).then_some(UserHotkeyAction::MovementReplay)
             })
     }
 }
@@ -2811,6 +2840,15 @@ physical ctrl={} alt={} shift={}",
     }
 }
 
+fn send_movement_command(command: &str) -> Result<(), String> {
+    let socket = UdpSocket::bind("127.0.0.1:0")
+        .map_err(|error| format!("Could not open Movement Lab control socket: {error}"))?;
+    socket
+        .send_to(command.as_bytes(), "127.0.0.1:27168")
+        .map_err(|error| format!("Could not send Movement Lab command '{command}': {error}"))?;
+    Ok(())
+}
+
 fn cycle_preset(app: &AppHandle) {
     match super::cycle_active_preset() {
         Ok(Some((preset, saved_slots))) => {
@@ -3072,6 +3110,36 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         }
                     }
 
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::MovementRecordToggle,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT][Movement] Record/Stop hotkey: {}", hotkey.display());
+                        if let Err(error) = send_movement_command("recordtoggle") {
+                            eprintln!("[SPLIT][Movement] {error}");
+                        }
+                    }
+
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::MovementRace,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT][Movement] Race hotkey: {}", hotkey.display());
+                        if let Err(error) = send_movement_command("race") {
+                            eprintln!("[SPLIT][Movement] {error}");
+                        }
+                    }
+
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::MovementReplay,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT][Movement] Replay hotkey: {}", hotkey.display());
+                        if let Err(error) = send_movement_command("replay") {
+                            eprintln!("[SPLIT][Movement] {error}");
+                        }
+                    }
+
                     HotkeyAction::Shutdown => {
                         break;
                     }
@@ -3118,6 +3186,9 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
             println!("[SPLIT]   Save = Alt+F1-F8");
 
             println!("[SPLIT]   Load = F1-F8");
+            println!("[SPLIT]   Movement Record/Stop = Ctrl+Shift+R");
+            println!("[SPLIT]   Movement Race = Ctrl+Shift+T");
+            println!("[SPLIT]   Movement Replay = Ctrl+Shift+P");
 
             let mut message = MSG::default();
 

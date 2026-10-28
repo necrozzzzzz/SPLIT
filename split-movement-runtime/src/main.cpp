@@ -1,4 +1,5 @@
 #include "split_movement/bot_factory.h"
+#include "split_movement/control_server.h"
 #include "split_movement/engine_bridge.h"
 #include "split_movement/engine_runner.h"
 #include "split_movement/native_hooks.h"
@@ -190,62 +191,83 @@ int main(int argc, char** argv) {
   split::movement::RaceTimer race_timer(route_directory);
   split::movement::PbRouteStore pb_routes(route_directory);
 
-  // Source2Main owns the main thread. Keep a tiny command reader beside it so
-  // this prototype can exercise recording without needing Tauri IPC yet.
+  auto handle_command = [&](std::string_view command) {
+    if (command == "record") {
+      recorder.Start();
+      std::cout << "[SPLIT][Recorder] recording started\n";
+    } else if (command == "recordtoggle") {
+      if (recorder.Stats().recording) {
+        PrintStats(recorder.Stop());
+      } else {
+        recorder.Start();
+        std::cout << "[SPLIT][Recorder] recording started\n";
+      }
+    } else if (command == "stop") {
+      PrintStats(recorder.Stop());
+    } else if (command == "status") {
+      PrintStats(recorder.Stats());
+    } else if (command == "clear") {
+      recorder.Clear();
+      std::cout << "[SPLIT][Recorder] route cleared\n";
+    } else if (command == "replay") {
+      replay_requested.store(true, std::memory_order_release);
+      std::cout << "[SPLIT][Replay] replay requested\n";
+    } else if (command == "race") {
+      race_requested.store(true, std::memory_order_release);
+      std::cout << "[SPLIT][Race] arming route timer\n";
+    } else if (command == "racecancel") {
+      race_timer.Cancel();
+      race_run_recorder.Clear();
+      std::cout << "[SPLIT][Race] cancelled\n";
+    } else if (command == "racestatus") {
+      const auto race = race_timer.Status();
+      const auto course = race_timer.Course();
+      const char* phase = "idle";
+      if (race.phase == split::movement::RaceStatus::Phase::kArmed) phase = "armed";
+      if (race.phase == split::movement::RaceStatus::Phase::kRunning) phase = "running";
+      if (race.phase == split::movement::RaceStatus::Phase::kFinished) phase = "finished";
+      std::cout << std::fixed << std::setprecision(3)
+                << "[SPLIT][Race] " << phase
+                << " elapsed=" << race.elapsed_seconds << "s";
+      if (race.personal_best_seconds) {
+        std::cout << " pb=" << *race.personal_best_seconds << "s";
+      }
+      if (race.last_seconds) {
+        std::cout << " last=" << *race.last_seconds << "s";
+      }
+      std::cout << " split=" << race.next_checkpoint
+                << "/" << (course ? course->checkpoints.size() : 0);
+      std::cout << "\n";
+    } else if (command == "save") {
+      auto saved = recorder.SaveJson(route_directory, current_map);
+      if (saved) {
+        std::cout << "[SPLIT][Recorder] saved " << saved->string() << "\n";
+      } else {
+        std::cout << "[SPLIT][Recorder] save failed: " << saved.error() << "\n";
+      }
+    } else if (!command.empty()) {
+      std::cout << "[SPLIT][Recorder] unknown command: " << command
+                << " (record, recordtoggle, stop, status, save, replay, race, racestatus, racecancel, clear)\n";
+    }
+  };
+
+  // Keep stdin as a debug fallback, but normal Movement Lab control now also
+  // arrives from SPLIT over a localhost-only UDP socket.
   std::jthread command_thread([&](std::stop_token stop) {
     std::string command;
     while (!stop.stop_requested() && std::getline(std::cin, command)) {
-      if (command == "record") {
-        recorder.Start();
-        std::cout << "[SPLIT][Recorder] recording started\n";
-      } else if (command == "stop") {
-        PrintStats(recorder.Stop());
-      } else if (command == "status") {
-        PrintStats(recorder.Stats());
-      } else if (command == "clear") {
-        recorder.Clear();
-        std::cout << "[SPLIT][Recorder] route cleared\n";
-      } else if (command == "replay") {
-        replay_requested.store(true, std::memory_order_release);
-        std::cout << "[SPLIT][Replay] replay requested\n";
-      } else if (command == "race") {
-        race_requested.store(true, std::memory_order_release);
-        std::cout << "[SPLIT][Race] arming route timer\n";
-      } else if (command == "racecancel") {
-        race_timer.Cancel();
-        race_run_recorder.Clear();
-        std::cout << "[SPLIT][Race] cancelled\n";
-      } else if (command == "racestatus") {
-        const auto race = race_timer.Status();
-        const char* phase = "idle";
-        if (race.phase == split::movement::RaceStatus::Phase::kArmed) phase = "armed";
-        if (race.phase == split::movement::RaceStatus::Phase::kRunning) phase = "running";
-        if (race.phase == split::movement::RaceStatus::Phase::kFinished) phase = "finished";
-        std::cout << std::fixed << std::setprecision(3)
-                  << "[SPLIT][Race] " << phase
-                  << " elapsed=" << race.elapsed_seconds << "s";
-        if (race.personal_best_seconds) {
-          std::cout << " pb=" << *race.personal_best_seconds << "s";
-        }
-        if (race.last_seconds) {
-          std::cout << " last=" << *race.last_seconds << "s";
-        }
-        std::cout << " split=" << race.next_checkpoint
-                  << "/" << race.personal_best_splits.size();
-        std::cout << "\n";
-      } else if (command == "save") {
-        auto saved = recorder.SaveJson(route_directory, current_map);
-        if (saved) {
-          std::cout << "[SPLIT][Recorder] saved " << saved->string() << "\n";
-        } else {
-          std::cout << "[SPLIT][Recorder] save failed: " << saved.error() << "\n";
-        }
-      } else if (!command.empty()) {
-        std::cout << "[SPLIT][Recorder] unknown command: " << command
-                  << " (record, stop, status, save, replay, race, racestatus, racecancel, clear)\n";
-      }
+      handle_command(command);
     }
   });
+
+  split::movement::ControlServer control_server;
+  std::string control_error;
+  if (!control_server.Start(27168, handle_command, control_error)) {
+    command_thread.request_stop();
+    std::cerr << "Movement control server failed: " << control_error << "\n";
+    return 1;
+  }
+  std::cout << "SPLIT Movement Runtime: local control listening on 127.0.0.1:27168.\n";
 
   std::string input_error;
   if (!input_capture.Install(input_error)) {
