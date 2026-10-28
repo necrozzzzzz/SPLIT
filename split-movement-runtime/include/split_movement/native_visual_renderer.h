@@ -33,6 +33,7 @@ class NativeVisualRenderer {
   const std::string& OptionalError() const;
   void Invalidate();
   bool DrawTestParticle(const std::array<float, 3>& position, std::string& error);
+  bool DrawVisibleMarker(const std::array<float, 3>& position, std::string& error);
   void Clear();
   void Render(const std::vector<RecordedTick>& route,
               const std::optional<RaceCourse>& course,
