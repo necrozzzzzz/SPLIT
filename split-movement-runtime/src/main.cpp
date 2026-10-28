@@ -279,7 +279,7 @@ int main(int argc, char** argv) {
       std::ostringstream out;
       out << "{"
           << "\"schemaVersion\":1,"
-          << "\"renderedInGame\":" << (visual_renderer.Ready() ? "true" : "false") << ","
+          << "\"renderedInGame\":false,"
           << "\"visualMode\":\"" << (mode == 1 ? "ghost" : mode == 2 ? "tracer" :
                                        mode == 3 ? "off" : "both") << "\","
           << "\"tracer\":" << (trail_enabled ? JsonRoutePolyline(recorder.PlaybackTicks()) : "[]") << ","
@@ -312,6 +312,13 @@ int main(int argc, char** argv) {
       }
       out << "}";
       return out.str();
+    }
+    // Report an available command bridge separately from actual client rendering.
+    // Interface resolution alone cannot prove that debug shapes reach Deadlock.
+    if (command == "visualdiagnostics") {
+      return std::string("{\"rendererInterfaceReady\":") +
+             (visual_renderer.Ready() ? "true" : "false") +
+             ",\"clientRenderVerified\":false,\"hudImplemented\":false}";
     }
     if (command == "state") {
       const auto stats = recorder.Stats();
@@ -346,7 +353,7 @@ int main(int argc, char** argv) {
           << "\"showRings\":" << (show_rings.load() ? "true" : "false") << ","
           << "\"showCheckpoints\":" << (show_checkpoints.load() ? "true" : "false") << ","
           << "\"showHud\":" << (show_hud.load() ? "true" : "false") << ","
-          << "\"inGameVisualsReady\":" << (visual_renderer.Ready() ? "true" : "false")"
+          << "\"inGameVisualsReady\":false""
           << "}";
       return out.str();
     }
