@@ -174,11 +174,13 @@ __int64 __fastcall ManifestBuildThunk(void* self, void** original_args) {
   void* manifest = original_args ? *original_args : nullptr;
   if (manifest && g_add_manifest_resource) {
     g_add_manifest_resource(
+        "particles/environment/powerup_spawner_ambient.vpcf", manifest);
+    g_add_manifest_resource(
         "particles/environment/powerup_spawner_ambient_ring.vpcf", manifest);
     g_add_manifest_resource(
         "particles/generic/generic_ping_ground_arrow.vpcf", manifest);
     if (!g_manifest_logged) {
-      std::cout << "[SPLIT][Visuals] registered 2 particle resources in game session manifest\n";
+      std::cout << "[SPLIT][Visuals] registered 3 particle resources in game session manifest\n";
       g_manifest_logged = true;
     }
   }
@@ -797,8 +799,21 @@ bool NativeVisualRenderer::DrawTestParticle(
   }
   auto origin = position;
   origin[2] += 48.0f;
-  return impl_->SpawnParticle(
-      origin, "particles/environment/powerup_spawner_ambient_ring.vpcf", error);
+  if (!impl_->SpawnParticle(
+          origin, "particles/environment/powerup_spawner_ambient.vpcf", error)) {
+    return false;
+  }
+
+  // Spawn a second, obviously directional shipped effect beside the player.
+  auto ping = origin;
+  ping[0] += 96.0f;
+  std::string ping_error;
+  if (!impl_->SpawnParticle(
+          ping, "particles/generic/generic_ping_ground_arrow.vpcf", ping_error)) {
+    std::cout << "[SPLIT][Visuals] secondary ping particle failed: "
+              << ping_error << "\n";
+  }
+  return true;
 #endif
 }
 
