@@ -18,7 +18,7 @@ mod screenshot;
 mod slots;
 mod watcher;
 pub use history::HistoryState;
-pub use hotkeys::HotkeySettings;
+pub use hotkeys::{HotkeySettings, MovementLabStatus};
 pub use parser::PositionSnapshot;
 pub use paths::{LaunchFolderState, StartupSoundSettings};
 pub use slots::{FavoriteSlotSummary, PresetExport, SlotMetadata};
@@ -347,6 +347,19 @@ pub fn update_notification_settings(
     let saved = paths::save_notification_settings(settings)?;
     crate::notifications::apply_settings(saved.clone());
     Ok(saved)
+}
+
+pub fn movement_lab_status() -> Result<MovementLabStatus, String> {
+    hotkeys::movement_status()
+}
+
+pub fn movement_lab_command(command: String) -> Result<(), String> {
+    match command.as_str() {
+        "recordtoggle" | "record" | "stop" | "race" | "replay" | "retry" | "racecancel" | "clear" => {
+            hotkeys::send_movement_command(&command)
+        }
+        _ => Err("Unsupported Movement Lab command".to_string()),
+    }
 }
 
 pub fn get_hotkey_settings() -> HotkeySettings {

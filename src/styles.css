@@ -7941,3 +7941,24 @@ select:hover:not(:disabled) {
 @media (max-width: 540px) {
   .general-setting-row .language-setting-select { min-width: 130px; width: 48%; }
 }
+
+.movement-lab { display: grid; gap: 18px; }
+.movement-runtime-card, .movement-splits-card { background: var(--panel, #17191d); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 20px; }
+.movement-runtime-card { display:flex; align-items:center; justify-content:space-between; gap:24px; }
+.movement-runtime-card h2 { margin:6px 0 7px; }
+.movement-runtime-card p { margin:0; opacity:.68; }
+.movement-runtime-badge { display:flex; align-items:center; gap:8px; white-space:nowrap; font-size:12px; font-weight:700; letter-spacing:.06em; }
+.movement-control-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.movement-action { min-height:72px; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; gap:10px; padding:14px 16px; border-radius:12px; }
+.movement-action kbd { opacity:.7; font-size:11px; }
+.movement-action.primary { border-color:rgba(98,255,143,.35); }
+.movement-action.danger { border-color:rgba(255,110,110,.4); }
+.movement-stats-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.movement-stats-grid article { min-height:82px; padding:15px 16px; border-radius:12px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.07); display:flex; flex-direction:column; justify-content:space-between; }
+.movement-stats-grid span { font-size:11px; text-transform:uppercase; letter-spacing:.08em; opacity:.55; }
+.movement-stats-grid strong { font-size:20px; text-transform:capitalize; }
+.movement-split-list { display:grid; gap:7px; margin-top:14px; }
+.movement-split-list > div { display:grid; grid-template-columns:40px 1fr 1fr; align-items:center; gap:12px; padding:10px 12px; border-radius:9px; background:rgba(255,255,255,.03); }
+.movement-split-list small { text-align:right; opacity:.65; }
+.movement-error { margin:0; }
+@media (max-width: 900px) { .movement-control-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .movement-stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }

@@ -249,6 +249,16 @@ fn test_notification(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_movement_lab_status() -> Result<deadlock::MovementLabStatus, String> {
+    deadlock::movement_lab_status()
+}
+
+#[tauri::command]
+fn movement_lab_command(command: String) -> Result<(), String> {
+    deadlock::movement_lab_command(command)
+}
+
+#[tauri::command]
 fn get_hotkey_settings() -> deadlock::HotkeySettings {
     deadlock::get_hotkey_settings()
 }
@@ -654,6 +664,8 @@ pub fn run() {
             reset_discord_presence_config,
             test_notification,
             get_hotkey_settings,
+            get_movement_lab_status,
+            movement_lab_command,
             update_hotkey_settings,
             reset_hotkey_settings,
             get_quick_access_settings,

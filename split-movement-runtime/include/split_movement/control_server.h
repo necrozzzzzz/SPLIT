@@ -10,7 +10,7 @@ namespace split::movement {
 
 class ControlServer {
  public:
-  using Handler = std::function<void(std::string_view)>;
+  using Handler = std::function<std::string(std::string_view)>;
 
   ControlServer();
   ~ControlServer();

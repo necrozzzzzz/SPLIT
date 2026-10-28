@@ -217,6 +217,10 @@ type HotkeySettings = {
   redo: Hotkey;
   cyclePreset: Hotkey;
   favoriteMode: Hotkey;
+  movementRecord: Hotkey;
+  movementRace: Hotkey;
+  movementReplay: Hotkey;
+  movementRetry: Hotkey;
   quickAccess: Hotkey;
 };
 
@@ -227,7 +231,7 @@ type QuickAccessSettings = {
 
 type HotkeyTarget =
   | { group: "loadSlots" | "saveSlots"; index: number }
-  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" | "quickAccess" };
+  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" | "movementRecord" | "movementRace" | "movementReplay" | "movementRetry" | "quickAccess" };
 
 const SLOT_COLORS = [
   {
@@ -293,6 +297,10 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
   redo: { key: "F10", ctrl: false, alt: false, shift: false },
   cyclePreset: { key: "F12", ctrl: false, alt: false, shift: false },
   favoriteMode: { key: "F11", ctrl: false, alt: false, shift: false },
+  movementRecord: { key: "R", ctrl: true, alt: false, shift: true },
+  movementRace: { key: "T", ctrl: true, alt: false, shift: true },
+  movementReplay: { key: "P", ctrl: true, alt: false, shift: true },
+  movementRetry: { key: "Y", ctrl: true, alt: false, shift: true },
   quickAccess: {
     key: "CapsLock",
     ctrl: false,
@@ -473,6 +481,17 @@ function findHotkeyConflictLabel(
     return runtimeUiText("Favorite Mode", language);
   }
 
+  for (const [group, label] of [
+    ["movementRecord", "Movement Record"],
+    ["movementRace", "Movement Race"],
+    ["movementReplay", "Movement Replay"],
+    ["movementRetry", "Movement Retry"],
+  ] as const) {
+    if (target.group !== group && hotkeysEqual(settings[group], candidate)) {
+      return runtimeUiText(label, language);
+    }
+  }
+
   if (
     target.group !== "quickAccess" &&
     hotkeysEqual(
@@ -559,7 +578,25 @@ type StatusTone =
   | "error"
   | "off";
 
-type AppView = "slots" | "settings";
+type AppView = "slots" | "movement" | "settings";
+
+type MovementLabStatus = {
+  version: string;
+  playerConnected: boolean;
+  humanSlot: number;
+  recording: boolean;
+  ticks: number;
+  hasRoute: boolean;
+  heroId: number;
+  racePhase: "idle" | "armed" | "running" | "finished";
+  elapsedSeconds: number;
+  lastSeconds: number | null;
+  personalBestSeconds: number | null;
+  currentSplits: number[];
+  personalBestSplits: number[];
+  nextCheckpoint: number;
+  checkpointCount: number;
+};
 
 type SlotColorDisplayMode =
   | "tint"
@@ -650,6 +687,40 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingCompleted());
   const [activeView, setActiveView] =
     useState<AppView>("slots");
+  const [movementStatus, setMovementStatus] = useState<MovementLabStatus | null>(null);
+  const [movementBusy, setMovementBusy] = useState<string | null>(null);
+  const [movementError, setMovementError] = useState<string | null>(null);
+
+  const refreshMovementStatus = useCallback(async () => {
+    try {
+      const next = await invoke<MovementLabStatus>("get_movement_lab_status");
+      setMovementStatus(next);
+      setMovementError(null);
+    } catch (reason) {
+      setMovementStatus(null);
+      setMovementError(String(reason));
+    }
+  }, []);
+
+  const runMovementCommand = useCallback(async (command: string) => {
+    setMovementBusy(command);
+    setMovementError(null);
+    try {
+      await invoke("movement_lab_command", { command });
+      window.setTimeout(() => void refreshMovementStatus(), 80);
+    } catch (reason) {
+      setMovementError(String(reason));
+    } finally {
+      setMovementBusy(null);
+    }
+  }, [refreshMovementStatus]);
+
+  useEffect(() => {
+    if (activeView !== "movement") return;
+    void refreshMovementStatus();
+    const timer = window.setInterval(() => void refreshMovementStatus(), 250);
+    return () => window.clearInterval(timer);
+  }, [activeView, refreshMovementStatus]);
 
   const [
     activeSettingsSection,
@@ -5116,6 +5187,13 @@ function App() {
           </button>
           <button
             type="button"
+            className={activeView === "movement" ? "active" : ""}
+            onClick={() => setActiveView("movement")}
+          >
+            <span>{runtimeUiText("Movement Lab", language)}</span>
+          </button>
+          <button
+            type="button"
             className={activeView === "settings" ? "active" : ""}
             onClick={() => setActiveView("settings")}
           >
@@ -5140,6 +5218,8 @@ function App() {
           <h1>
             {activeView === "settings"
               ? t("settings", language)
+              : activeView === "movement"
+                ? runtimeUiText("Movement Lab", language)
               : favoriteMode
                 ? t("favorites", language)
                 : t("savestates", language)}
@@ -5149,6 +5229,8 @@ function App() {
             <p className="subtitle">
               {activeView === "settings"
                 ? t("preferences", language)
+                : activeView === "movement"
+                  ? runtimeUiText("Record routes, race your ghost and track your PB.", language)
                 : presetNames[activePreset - 1] ?? `${runtimeUiText("Preset", language)} ${activePreset}`}
             </p>
           )}
@@ -5424,6 +5506,49 @@ function App() {
       </section>
       )}
 
+
+      {activeView === "movement" && (
+        <section className="movement-lab">
+          <div className="movement-runtime-card">
+            <div>
+              <span className="label">{runtimeUiText("MOVEMENT RUNTIME", language)}</span>
+              <h2>{movementStatus ? runtimeUiText("Runtime connected", language) : runtimeUiText("Runtime offline", language)}</h2>
+              <p>{movementStatus ? (movementStatus.playerConnected ? runtimeUiText("Deadlock player connected to the local Movement Lab server.", language) : runtimeUiText("Runtime is ready. Connect Deadlock to the local server.", language)) : runtimeUiText("Start split-movement-runtime.exe in server mode to use Movement Lab.", language)}</p>
+            </div>
+            <div className="movement-runtime-badge"><StatusDot tone={movementStatus ? "ok" : "off"} /><span>{movementStatus ? `v${movementStatus.version}` : runtimeUiText("OFFLINE", language)}</span></div>
+          </div>
+
+          <div className="movement-control-grid">
+            <button className={movementStatus?.recording ? "movement-action danger" : "movement-action primary"} disabled={!movementStatus || movementBusy !== null} onClick={() => void runMovementCommand("recordtoggle")}><strong>{movementStatus?.recording ? runtimeUiText("Stop recording", language) : runtimeUiText("Record route", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRecord)}</kbd></button>
+            <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("race")}><strong>{runtimeUiText("Race", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRace)}</kbd></button>
+            <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("replay")}><strong>{runtimeUiText("Replay", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementReplay)}</kbd></button>
+            <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("retry")}><strong>{runtimeUiText("Retry", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRetry)}</kbd></button>
+          </div>
+
+          <div className="movement-stats-grid">
+            <article><span>{runtimeUiText("Route", language)}</span><strong>{movementStatus?.hasRoute ? `${movementStatus.ticks.toLocaleString()} ticks` : "—"}</strong></article>
+            <article><span>{runtimeUiText("Race status", language)}</span><strong>{movementStatus?.racePhase ?? "—"}</strong></article>
+            <article><span>{runtimeUiText("Current", language)}</span><strong>{movementStatus && movementStatus.racePhase === "running" ? `${movementStatus.elapsedSeconds.toFixed(3)}s` : "—"}</strong></article>
+            <article><span>{runtimeUiText("Personal best", language)}</span><strong>{movementStatus?.personalBestSeconds != null ? `${movementStatus.personalBestSeconds.toFixed(3)}s` : "—"}</strong></article>
+            <article><span>{runtimeUiText("Last run", language)}</span><strong>{movementStatus?.lastSeconds != null ? `${movementStatus.lastSeconds.toFixed(3)}s` : "—"}</strong></article>
+            <article><span>{runtimeUiText("Checkpoint", language)}</span><strong>{movementStatus ? `${movementStatus.nextCheckpoint}/${movementStatus.checkpointCount}` : "—"}</strong></article>
+          </div>
+
+          {movementStatus && movementStatus.checkpointCount > 0 && (
+            <div className="movement-splits-card">
+              <div className="savestates-header"><div><p className="label">{runtimeUiText("SPLITS", language)}</p><h2>{runtimeUiText("Checkpoint times", language)}</h2></div></div>
+              <div className="movement-split-list">
+                {Array.from({ length: movementStatus.checkpointCount }, (_, index) => {
+                  const current = movementStatus.currentSplits[index];
+                  const pb = movementStatus.personalBestSplits[index];
+                  return <div key={index}><span>{index + 1}</span><strong>{current != null ? `${current.toFixed(3)}s` : "—"}</strong><small>{current != null && pb != null ? `${current - pb >= 0 ? "+" : ""}${(current - pb).toFixed(3)}s` : pb != null ? `PB ${pb.toFixed(3)}s` : "—"}</small></div>;
+                })}
+              </div>
+            </div>
+          )}
+          {movementError && <div className="error-box movement-error">{movementError}</div>}
+        </section>
+      )}
 
       {activeView === "slots" &&
         !loading &&

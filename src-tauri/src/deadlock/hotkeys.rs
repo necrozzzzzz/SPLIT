@@ -2849,13 +2849,52 @@ physical ctrl={} alt={} shift={}",
     }
 }
 
-fn send_movement_command(command: &str) -> Result<(), String> {
+pub fn send_movement_command(command: &str) -> Result<(), String> {
     let socket = UdpSocket::bind("127.0.0.1:0")
         .map_err(|error| format!("Could not open Movement Lab control socket: {error}"))?;
     socket
         .send_to(command.as_bytes(), "127.0.0.1:27168")
         .map_err(|error| format!("Could not send Movement Lab command '{command}': {error}"))?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MovementLabStatus {
+    pub version: String,
+    pub player_connected: bool,
+    pub human_slot: i32,
+    pub recording: bool,
+    pub ticks: usize,
+    pub has_route: bool,
+    pub hero_id: u32,
+    pub race_phase: String,
+    pub elapsed_seconds: f64,
+    pub last_seconds: Option<f64>,
+    pub personal_best_seconds: Option<f64>,
+    pub current_splits: Vec<f64>,
+    pub personal_best_splits: Vec<f64>,
+    pub next_checkpoint: usize,
+    pub checkpoint_count: usize,
+}
+
+pub fn movement_status() -> Result<MovementLabStatus, String> {
+    let socket = UdpSocket::bind("127.0.0.1:0")
+        .map_err(|error| format!("Could not open Movement Lab status socket: {error}"))?;
+    socket
+        .set_read_timeout(Some(Duration::from_millis(250)))
+        .map_err(|error| format!("Could not configure Movement Lab status socket: {error}"))?;
+    socket
+        .send_to(b"state", "127.0.0.1:27168")
+        .map_err(|error| format!("Could not query Movement Lab runtime: {error}"))?;
+
+    let mut buffer = [0u8; 4096];
+    let (received, _) = socket
+        .recv_from(&mut buffer)
+        .map_err(|error| format!("Movement Lab runtime did not answer: {error}"))?;
+
+    serde_json::from_slice(&buffer[..received])
+        .map_err(|error| format!("Movement Lab runtime returned invalid status: {error}"))
 }
 
 fn cycle_preset(app: &AppHandle) {

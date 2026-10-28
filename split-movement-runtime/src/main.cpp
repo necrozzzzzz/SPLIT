@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -74,6 +75,33 @@ double RouteDistance(const std::array<float, 3>& a,
   const double y = static_cast<double>(a[1]) - b[1];
   const double z = static_cast<double>(a[2]) - b[2];
   return std::sqrt(x * x + y * y + z * z);
+}
+
+std::string JsonNumberOrNull(const std::optional<double>& value) {
+  if (!value) return "null";
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(6) << *value;
+  return out.str();
+}
+
+std::string JsonNumberArray(const std::vector<double>& values) {
+  std::ostringstream out;
+  out << "[";
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    if (i > 0) out << ",";
+    out << std::fixed << std::setprecision(6) << values[i];
+  }
+  out << "]";
+  return out.str();
+}
+
+const char* RacePhaseName(split::movement::RaceStatus::Phase phase) {
+  switch (phase) {
+    case split::movement::RaceStatus::Phase::kArmed: return "armed";
+    case split::movement::RaceStatus::Phase::kRunning: return "running";
+    case split::movement::RaceStatus::Phase::kFinished: return "finished";
+    default: return "idle";
+  }
 }
 
 std::vector<std::array<float, 3>> RouteCheckpoints(
@@ -192,7 +220,32 @@ int main(int argc, char** argv) {
   split::movement::RaceTimer race_timer(route_directory);
   split::movement::PbRouteStore pb_routes(route_directory);
 
-  auto handle_command = [&](std::string_view command) {
+  auto handle_command = [&](std::string_view command) -> std::string {
+    if (command == "state") {
+      const auto stats = recorder.Stats();
+      const auto race = race_timer.Status();
+      const auto course = race_timer.Course();
+      const auto first = recorder.FirstPawn();
+      std::ostringstream out;
+      out << "{"
+          << "\"version\":\"" << split::movement::kRuntimeVersion << "\","
+          << "\"playerConnected\":" << (human_slot.load(std::memory_order_relaxed) >= 0 ? "true" : "false") << ","
+          << "\"humanSlot\":" << human_slot.load(std::memory_order_relaxed) << ","
+          << "\"recording\":" << (stats.recording ? "true" : "false") << ","
+          << "\"ticks\":" << stats.ticks << ","
+          << "\"hasRoute\":" << (stats.ticks > 0 ? "true" : "false") << ","
+          << "\"heroId\":" << (first ? first->hero_id : 0) << ","
+          << "\"racePhase\":\"" << RacePhaseName(race.phase) << "\","
+          << "\"elapsedSeconds\":" << race.elapsed_seconds << ","
+          << "\"lastSeconds\":" << JsonNumberOrNull(race.last_seconds) << ","
+          << "\"personalBestSeconds\":" << JsonNumberOrNull(race.personal_best_seconds) << ","
+          << "\"currentSplits\":" << JsonNumberArray(race.current_splits) << ","
+          << "\"personalBestSplits\":" << JsonNumberArray(race.personal_best_splits) << ","
+          << "\"nextCheckpoint\":" << race.next_checkpoint << ","
+          << "\"checkpointCount\":" << (course ? course->checkpoints.size() : 0)
+          << "}";
+      return out.str();
+    }
     if (command == "record") {
       recorder.Start();
       std::cout << "[SPLIT][Recorder] recording started\n";
@@ -251,8 +304,9 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, save, replay, race, retry, racestatus, racecancel, clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, race, retry, racestatus, racecancel, clear)\n";
     }
+    return {};
   };
 
   // Keep stdin as a debug fallback, but normal Movement Lab control now also
@@ -260,7 +314,7 @@ int main(int argc, char** argv) {
   std::jthread command_thread([&](std::stop_token stop) {
     std::string command;
     while (!stop.stop_requested() && std::getline(std::cin, command)) {
-      handle_command(command);
+      (void)handle_command(command);
     }
   });
 

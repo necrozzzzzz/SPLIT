@@ -92,7 +92,13 @@ bool ControlServer::Start(std::uint16_t port, Handler handler, std::string& erro
                  (command.front() == ' ' || command.front() == '\t')) {
             command.remove_prefix(1);
           }
-          if (!command.empty()) handler(command);
+          if (!command.empty()) {
+            const std::string response = handler(command);
+            if (!response.empty()) {
+              sendto(socket, response.data(), static_cast<int>(response.size()), 0,
+                     reinterpret_cast<const sockaddr*>(&sender), sender_size);
+            }
+          }
         }
       });
 
