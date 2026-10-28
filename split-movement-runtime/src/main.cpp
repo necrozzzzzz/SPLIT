@@ -630,6 +630,24 @@ int main(int argc, char** argv) {
                   std::cout << "[SPLIT][Race] arm failed: "
                             << race_error << "\n";
                 } else {
+                  // Render the freshly configured course immediately instead
+                  // of waiting for the next periodic visual pass.
+                  split::movement::NativeVisualSettings visual_settings;
+                  const int mode = visual_mode.load(std::memory_order_relaxed);
+                  visual_settings.tracer = mode == 0 || mode == 2;
+                  visual_settings.rings =
+                      show_rings.load(std::memory_order_relaxed);
+                  visual_settings.checkpoints =
+                      show_checkpoints.load(std::memory_order_relaxed);
+                  visual_renderer.Invalidate();
+                  visual_renderer.Render(route_ticks, race_timer.Course(),
+                                         visual_settings);
+                  std::cout << "[SPLIT][Visuals] race course render requested"
+                            << " rings=" << (visual_settings.rings ? "on" : "off")
+                            << " checkpoints="
+                            << (visual_settings.checkpoints ? "on" : "off")
+                            << "\n";
+
                   const auto status = race_timer.Status();
                   std::cout << std::fixed << std::setprecision(1)
                             << "[SPLIT][Race] armed"
