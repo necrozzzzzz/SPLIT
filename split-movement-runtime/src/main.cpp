@@ -212,6 +212,10 @@ int main(int argc, char** argv) {
   std::atomic<bool> replay_requested{false};
   std::atomic<bool> race_requested{false};
   std::atomic<bool> retry_requested{false};
+  std::atomic<int> visual_mode{0}; // both, ghost, tracer, off
+  std::atomic<bool> show_rings{true};
+  std::atomic<bool> show_checkpoints{true};
+  std::atomic<bool> show_hud{true};
   std::string last_pawn_error;
   std::string current_map = launch.map;
 
@@ -226,6 +230,10 @@ int main(int argc, char** argv) {
       const auto race = race_timer.Status();
       const auto course = race_timer.Course();
       const auto first = recorder.FirstPawn();
+      const int display_mode = visual_mode.load(std::memory_order_relaxed);
+      const char* display_mode_name =
+          display_mode == 1 ? "ghost" : display_mode == 2 ? "tracer" :
+          display_mode == 3 ? "off" : "both";
       std::ostringstream out;
       out << "{"
           << "\"version\":\"" << split::movement::kRuntimeVersion << "\","
@@ -245,11 +253,27 @@ int main(int argc, char** argv) {
           << "\"currentSplits\":" << JsonNumberArray(race.current_splits) << ","
           << "\"personalBestSplits\":" << JsonNumberArray(race.personal_best_splits) << ","
           << "\"nextCheckpoint\":" << race.next_checkpoint << ","
-          << "\"checkpointCount\":" << (course ? course->checkpoints.size() : 0)
+          << "\"checkpointCount\":" << (course ? course->checkpoints.size() : 0) << ","
+          << "\"visualMode\":\"" << display_mode_name << "\","
+          << "\"showRings\":" << (show_rings.load() ? "true" : "false") << ","
+          << "\"showCheckpoints\":" << (show_checkpoints.load() ? "true" : "false") << ","
+          << "\"showHud\":" << (show_hud.load() ? "true" : "false")
           << "}";
       return out.str();
     }
-    if (command == "record") {
+    if (command == "visual both" || command == "visual ghost" ||
+        command == "visual tracer" || command == "visual off") {
+      visual_mode.store(command == "visual ghost" ? 1 :
+                        command == "visual tracer" ? 2 :
+                        command == "visual off" ? 3 : 0);
+      std::cout << "[SPLIT][Display] visual=" << command.substr(7) << "\n";
+    } else if (command == "rings on" || command == "rings off") {
+      show_rings.store(command == "rings on");
+    } else if (command == "checkpoints on" || command == "checkpoints off") {
+      show_checkpoints.store(command == "checkpoints on");
+    } else if (command == "hud on" || command == "hud off") {
+      show_hud.store(command == "hud on");
+    } else if (command == "record") {
       recorder.Start();
       std::cout << "[SPLIT][Recorder] recording started\n";
     } else if (command == "recordtoggle") {
