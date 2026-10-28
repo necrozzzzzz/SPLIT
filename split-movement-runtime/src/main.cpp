@@ -397,6 +397,8 @@ int main(int argc, char** argv) {
   std::string current_map = launch.map;
   std::mutex route_cues_mutex;
   std::vector<MovementCue> route_cues;
+  std::mutex movement_sample_mutex;
+  std::optional<split::movement::PawnSample> latest_movement_sample;
   std::optional<split::movement::PawnSample> previous_movement_sample;
 
   const auto route_directory =
@@ -422,6 +424,33 @@ int main(int argc, char** argv) {
   }
 
   auto handle_command = [&](std::string_view command) -> std::string {
+    if (command == "movementstate") {
+      std::optional<split::movement::PawnSample> snapshot;
+      {
+        std::scoped_lock lock(movement_sample_mutex);
+        snapshot = latest_movement_sample;
+      }
+      if (!snapshot) return "{\"ready\":false}";
+      std::ostringstream out;
+      out << "{"
+          << "\"ready\":true,"
+          << "\"mantling\":" << (snapshot->mantling ? "true" : "false") << ","
+          << "\"sliding\":" << (snapshot->sliding ? "true" : "false") << ","
+          << "\"mantleStart\":";
+      if (snapshot->mantle_start_time) out << *snapshot->mantle_start_time;
+      else out << "null";
+      out << ",\"wallJumps\":";
+      if (snapshot->consecutive_wall_jumps) out << static_cast<int>(*snapshot->consecutive_wall_jumps);
+      else out << "null";
+      out << ",\"wallFacing\":";
+      if (snapshot->wall_jump_facing) out << *snapshot->wall_jump_facing;
+      else out << "null";
+      out << ",\"ziplineTime\":";
+      if (snapshot->zipline_time) out << *snapshot->zipline_time;
+      else out << "null";
+      out << "}";
+      return out.str();
+    }
     if (command == "visualstate") {
       const auto course = race_timer.Course();
       const auto race = race_timer.Status();
@@ -676,7 +705,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, clear)\n";
     }
     return {};
   };
@@ -801,15 +830,38 @@ int main(int argc, char** argv) {
               previous_movement_sample.reset();
             }
 
-            // Hyperline's Primitives emits mantleStart when the native mantle
-            // ability enters its channeling state. Use the same exact state
-            // transition as our first compound recognizer input.
-            if (previous_movement_sample &&
-                !previous_movement_sample->mantling && sample->mantling) {
+            {
+              std::scoped_lock lock(movement_sample_mutex);
+              latest_movement_sample = *sample;
+            }
+
+            // Hyperline treats a changed mantleStart timestamp as a mantle
+            // restart even when channeling never visibly drops between frames.
+            bool mantle_started = false;
+            if (previous_movement_sample) {
+              mantle_started =
+                  (!previous_movement_sample->mantling && sample->mantling);
+              if (sample->mantle_start_time) {
+                const float now = *sample->mantle_start_time;
+                const bool new_timestamp =
+                    !previous_movement_sample->mantle_start_time ||
+                    std::fabs(now - *previous_movement_sample->mantle_start_time) > 0.0001f;
+                mantle_started = mantle_started || (new_timestamp && now > 0.0f);
+              }
+            } else if (sample->mantle_start_time && *sample->mantle_start_time > 0.0f) {
+              mantle_started = sample->mantling;
+            }
+
+            if (mantle_started) {
               std::cout << "[SPLIT][MovementState] Mantle start at ("
                         << sample->position[0] << ", "
                         << sample->position[1] << ", "
-                        << sample->position[2] << ")\n";
+                        << sample->position[2] << ")"
+                        << " startTime="
+                        << (sample->mantle_start_time
+                                ? std::to_string(*sample->mantle_start_time)
+                                : std::string("n/a"))
+                        << "\n";
               if (recorder.Stats().recording) {
                 std::scoped_lock lock(route_cues_mutex);
                 const bool duplicate =
