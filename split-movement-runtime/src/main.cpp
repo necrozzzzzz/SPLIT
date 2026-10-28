@@ -452,6 +452,11 @@ int main(int argc, char** argv) {
       return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
     if (command == "tracertest") {
+      if (native_route_line_active.load(std::memory_order_acquire)) {
+        return "{\"queued\":true,\"note\":\"hyperline-route-line-already-active\","
+               "\"created\":0}";
+      }
+
       const auto ticks = recorder.PlaybackTicks();
       if (ticks.size() < 2) {
         return "{\"queued\":false,\"reason\":\"no-recorded-route\"}";
@@ -473,6 +478,7 @@ int main(int argc, char** argv) {
               << "\"segment\":" << (i - 1)
               << ",\"created\":" << created
               << ",\"detail\":\"" << beam_error << "\"}";
+          native_route_line_active.store(false, std::memory_order_release);
           return out.str();
         }
         ++created;
