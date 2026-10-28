@@ -7,13 +7,14 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <string_view>
+#include <vector>
 
 namespace split::movement {
 
 struct RaceCourse {
   std::array<float, 3> start{};
   std::array<float, 3> finish{};
+  std::vector<std::array<float, 3>> checkpoints;
   float radius = 120.0f;
   std::string map;
 };
@@ -30,6 +31,9 @@ struct RaceStatus {
   double elapsed_seconds = 0.0;
   std::optional<double> last_seconds;
   std::optional<double> personal_best_seconds;
+  std::vector<double> current_splits;
+  std::vector<double> personal_best_splits;
+  std::size_t next_checkpoint = 0;
   bool last_was_pb = false;
   std::uint64_t course_id = 0;
 };
@@ -38,12 +42,17 @@ struct RaceEvent {
   enum class Type {
     kNone,
     kStarted,
+    kSplit,
     kFinished,
   };
 
   Type type = Type::kNone;
   double elapsed_seconds = 0.0;
+  std::size_t checkpoint_index = 0;
+  std::size_t checkpoint_count = 0;
   std::optional<double> previous_pb_seconds;
+  std::optional<double> pb_split_seconds;
+  std::optional<double> split_delta_seconds;
   bool personal_best = false;
 };
 

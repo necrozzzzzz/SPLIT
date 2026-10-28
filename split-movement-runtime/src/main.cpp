@@ -11,6 +11,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iomanip>
@@ -18,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -62,6 +64,46 @@ void PrintStats(const split::movement::RecordingStats& stats) {
     std::cout << " frames=" << stats.first_frame << ".." << stats.last_frame;
   }
   std::cout << "\n";
+}
+
+double RouteDistance(const std::array<float, 3>& a,
+                     const std::array<float, 3>& b) {
+  const double x = static_cast<double>(a[0]) - b[0];
+  const double y = static_cast<double>(a[1]) - b[1];
+  const double z = static_cast<double>(a[2]) - b[2];
+  return std::sqrt(x * x + y * y + z * z);
+}
+
+std::vector<std::array<float, 3>> RouteCheckpoints(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    std::size_t count = 3) {
+  std::vector<std::array<float, 3>> checkpoints;
+  if (ticks.size() < 2 || count == 0) return checkpoints;
+
+  std::vector<double> cumulative(ticks.size(), 0.0);
+  for (std::size_t i = 1; i < ticks.size(); ++i) {
+    cumulative[i] = cumulative[i - 1] +
+                    RouteDistance(ticks[i - 1].pawn.position,
+                                  ticks[i].pawn.position);
+  }
+
+  const double total = cumulative.back();
+  if (!(total > 0.0)) return checkpoints;
+
+  checkpoints.reserve(count);
+  std::size_t cursor = 1;
+  for (std::size_t split = 1; split <= count; ++split) {
+    const double target =
+        total * static_cast<double>(split) /
+        static_cast<double>(count + 1);
+
+    while (cursor + 1 < cumulative.size() &&
+           cumulative[cursor] < target) {
+      ++cursor;
+    }
+    checkpoints.push_back(ticks[cursor].pawn.position);
+  }
+  return checkpoints;
 }
 
 }  // namespace
@@ -183,6 +225,8 @@ int main(int argc, char** argv) {
         if (race.last_seconds) {
           std::cout << " last=" << *race.last_seconds << "s";
         }
+        std::cout << " split=" << race.next_checkpoint
+                  << "/" << race.personal_best_splits.size();
         std::cout << "\n";
       } else if (command == "save") {
         auto saved = recorder.SaveJson(route_directory, current_map);
@@ -257,12 +301,14 @@ int main(int argc, char** argv) {
             if (race_requested.exchange(false, std::memory_order_acq_rel)) {
               const auto first = recorder.FirstPawn();
               const auto last = recorder.LastPawn();
-              if (!first || !last) {
+              const auto route_ticks = recorder.PlaybackTicks();
+              if (!first || !last || route_ticks.empty()) {
                 std::cout << "[SPLIT][Race] no recorded route is available\n";
               } else {
                 split::movement::RaceCourse course;
                 course.start = first->position;
                 course.finish = last->position;
+                course.checkpoints = RouteCheckpoints(route_ticks, 3);
                 course.radius = 120.0f;
                 course.map = current_map;
 
@@ -283,7 +329,8 @@ int main(int argc, char** argv) {
                             << " finish=(" << course.finish[0] << ", "
                                           << course.finish[1] << ", "
                                           << course.finish[2] << ")"
-                            << " radius=" << course.radius;
+                            << " radius=" << course.radius
+                            << " checkpoints=" << course.checkpoints.size();
                   if (status.personal_best_seconds) {
                     std::cout << std::setprecision(3)
                               << " pb=" << *status.personal_best_seconds << "s";
@@ -295,7 +342,25 @@ int main(int argc, char** argv) {
 
             const auto race_event = race_timer.Observe(sample->position);
             if (race_event.type == split::movement::RaceEvent::Type::kStarted) {
-              std::cout << "[SPLIT][Race] GO\n";
+              std::cout << "[SPLIT][Race] GO checkpoints="
+                        << race_event.checkpoint_count << "\n";
+            } else if (race_event.type == split::movement::RaceEvent::Type::kSplit) {
+              std::cout << std::fixed << std::setprecision(3)
+                        << "[SPLIT][Race] SPLIT "
+                        << (race_event.checkpoint_index + 1)
+                        << "/" << race_event.checkpoint_count
+                        << " " << race_event.elapsed_seconds << "s";
+              if (race_event.split_delta_seconds) {
+                const double delta = *race_event.split_delta_seconds;
+                std::cout << (delta <= 0.0 ? " (" : " (+");
+                if (delta <= 0.0) {
+                  std::cout << delta;
+                } else {
+                  std::cout << delta;
+                }
+                std::cout << "s vs PB split)";
+              }
+              std::cout << "\n";
             } else if (race_event.type == split::movement::RaceEvent::Type::kFinished) {
               std::cout << std::fixed << std::setprecision(3)
                         << "[SPLIT][Race] FINISH "
