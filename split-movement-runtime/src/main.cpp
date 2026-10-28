@@ -174,6 +174,72 @@ std::vector<std::array<float, 3>> RouteCheckpoints(
   return checkpoints;
 }
 
+
+std::vector<std::array<float, 3>> RoutePolyline(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    std::size_t max_points = 48) {
+  std::vector<std::array<float, 3>> points;
+  if (ticks.empty() || max_points == 0) return points;
+  if (ticks.size() == 1 || max_points == 1) {
+    points.push_back(ticks.front().pawn.position);
+    return points;
+  }
+
+  std::vector<double> cumulative(ticks.size(), 0.0);
+  for (std::size_t i = 1; i < ticks.size(); ++i) {
+    cumulative[i] = cumulative[i - 1] +
+                    RouteDistance(ticks[i - 1].pawn.position,
+                                  ticks[i].pawn.position);
+  }
+
+  const double total = cumulative.back();
+  if (!(total > 0.0)) {
+    points.push_back(ticks.front().pawn.position);
+    return points;
+  }
+
+  const std::size_t count = (std::min)(max_points, ticks.size());
+  points.reserve(count);
+  std::size_t cursor = 1;
+
+  for (std::size_t sample = 0; sample < count; ++sample) {
+    const double target =
+        total * static_cast<double>(sample) /
+        static_cast<double>(count - 1);
+
+    while (cursor + 1 < cumulative.size() &&
+           cumulative[cursor] < target) {
+      ++cursor;
+    }
+
+    if (target <= 0.0) {
+      points.push_back(ticks.front().pawn.position);
+      continue;
+    }
+    if (target >= total) {
+      points.push_back(ticks.back().pawn.position);
+      continue;
+    }
+
+    const std::size_t right = cursor;
+    const std::size_t left = right > 0 ? right - 1 : 0;
+    const double segment = cumulative[right] - cumulative[left];
+    const double t = segment > 0.0
+        ? (target - cumulative[left]) / segment
+        : 0.0;
+
+    std::array<float, 3> point{};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+      const double a = ticks[left].pawn.position[axis];
+      const double b = ticks[right].pawn.position[axis];
+      point[axis] = static_cast<float>(a + (b - a) * t);
+    }
+    points.push_back(point);
+  }
+
+  return points;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -343,20 +409,32 @@ int main(int argc, char** argv) {
       if (ticks.size() < 2) {
         return "{\"queued\":false,\"reason\":\"no-recorded-route\"}";
       }
-      const std::size_t end_index = ticks.size() > 20
-          ? (std::min)(ticks.size() - 1, ticks.size() / 4)
-          : ticks.size() - 1;
-      std::string beam_error;
-      if (!visual_renderer.DrawBeamSegment(
-              ticks.front().pawn.position,
-              ticks[end_index].pawn.position,
-              beam_error)) {
-        std::ostringstream out;
-        out << "{\"queued\":false,\"reason\":\"beam-failed\",\"detail\":\""
-            << beam_error << "\"}";
-        return out.str();
+
+      const auto path = RoutePolyline(ticks, 48);
+      if (path.size() < 2) {
+        return "{\"queued\":false,\"reason\":\"route-has-no-distance\"}";
       }
-      return "{\"queued\":true,\"note\":\"native-beam-segment-created\"}";
+
+      std::size_t created = 0;
+      std::string beam_error;
+      for (std::size_t i = 1; i < path.size(); ++i) {
+        beam_error.clear();
+        if (!visual_renderer.DrawBeamSegment(path[i - 1], path[i], beam_error)) {
+          std::ostringstream out;
+          out << "{\"queued\":false,\"reason\":\"beam-failed\","
+              << "\"segment\":" << (i - 1)
+              << ",\"created\":" << created
+              << ",\"detail\":\"" << beam_error << "\"}";
+          return out.str();
+        }
+        ++created;
+      }
+
+      std::ostringstream out;
+      out << "{\"queued\":true,\"note\":\"native-route-polyline-created\","
+          << "\"points\":" << path.size()
+          << ",\"segments\":" << created << "}";
+      return out.str();
     }
     if (command == "visualdiagnostics") {
       auto escape_json = [](std::string_view value) {
