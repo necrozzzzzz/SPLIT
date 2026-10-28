@@ -447,6 +447,7 @@ int main(int argc, char** argv) {
   std::optional<std::uint64_t> last_mantle_end_frame;
   std::optional<std::uint64_t> last_slide_start_frame;
   std::optional<std::uint64_t> last_slide_end_frame;
+  std::optional<std::uint64_t> last_jump_press_frame;
 
   const auto route_directory =
       std::filesystem::current_path() / "routes";
@@ -850,6 +851,11 @@ int main(int argc, char** argv) {
             }
 
             const auto latest_input = input_capture.Latest(slot);
+            constexpr std::uint64_t kJumpButton = std::uint64_t{1} << 48;
+            if (latest_input && (latest_input->pressed & kJumpButton) != 0) {
+              last_jump_press_frame = frame;
+            }
+
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
 
@@ -888,6 +894,7 @@ int main(int argc, char** argv) {
               last_mantle_end_frame.reset();
               last_slide_start_frame.reset();
               last_slide_end_frame.reset();
+              last_jump_press_frame.reset();
             }
 
             {
@@ -992,7 +999,16 @@ int main(int argc, char** argv) {
                   previous_movement_sample->sliding ||
                   (last_slide_end_frame && frame >= *last_slide_end_frame &&
                    frame - *last_slide_end_frame <= kCoalesceTicks);
-              if (from_slide) {
+
+              // A physical launch (vent, knockback, bounce, etc.) also causes
+              // grounded -> airborne. Hyperline's slide hop is an authored
+              // jump technique, so require the actual IN_MANTLE/Jump press.
+              const bool jumped =
+                  last_jump_press_frame &&
+                  frame >= *last_jump_press_frame &&
+                  frame - *last_jump_press_frame <= kCoalesceTicks;
+
+              if (from_slide && jumped) {
                 std::cout << "[SPLIT][Recognizer] Slide hop at ("
                           << sample->position[0] << ", "
                           << sample->position[1] << ", "
@@ -1001,6 +1017,8 @@ int main(int argc, char** argv) {
                   std::scoped_lock lock(route_cues_mutex);
                   route_cues.push_back({"Slide hop", sample->position, frame});
                 }
+              } else if (from_slide && !jumped) {
+                std::cout << "[SPLIT][Recognizer] slide takeoff ignored: no Jump press\n";
               }
             }
 
