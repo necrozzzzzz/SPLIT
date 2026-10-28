@@ -7,7 +7,7 @@
 namespace split::movement {
 
 inline constexpr std::string_view kRuntimeName = "SPLIT Movement Runtime";
-inline constexpr std::string_view kRuntimeVersion = "0.5.17";
+inline constexpr std::string_view kRuntimeVersion = "0.5.18";
 
 struct RuntimeStatus {
   bool game_layout_valid = false;
