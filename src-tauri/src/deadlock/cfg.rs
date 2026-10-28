@@ -28,7 +28,7 @@ const LEGACY_TRANSPORT_BINDS: [&str; 9] = [
 ];
 
 pub(crate) const PREPARE_BIND: &str =
-    "bind \"F13\" \"exec savestate; exec savestate_prepare\"";
+    "bind \"F13\" \"exec savestate; exec savestate_prepare; exec split_movement_visual\"";
 pub(crate) const PRESENTATION_RESUME_BIND: &str = "bind \"F24\" \"r_force_no_present 0\"";
 pub(crate) const MOMENTUM_RESET_BIND: &str = "bind \"F14\" \"ent_fire !self addmodifier modifier_citadel_root; ent_fire !self removemodifier modifier_citadel_root\"";
 pub(crate) const GHOST_FRAME_BIND: &str = "bind \"F24\" \"exec split_ghost_frame\"";
