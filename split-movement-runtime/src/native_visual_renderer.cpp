@@ -163,6 +163,25 @@ void NativeVisualRenderer::Invalidate() {
   impl_->last_signature = 0;
 }
 
+void NativeVisualRenderer::DrawTestMarker(const std::array<float, 3>& position) {
+  if (!Ready()) return;
+  for (float coordinate : position) {
+    if (!std::isfinite(coordinate)) return;
+  }
+  impl_->EnsureCheats();
+  auto center = position;
+  center[2] += 110.0f;
+  for (std::size_t axis = 0; axis < 3; ++axis) {
+    auto start = center;
+    auto end = center;
+    start[axis] -= 65.0f;
+    end[axis] += 65.0f;
+    impl_->Command(LineCommand(start, end));
+  }
+  // Force route redraw on next scheduled update.
+  Invalidate();
+}
+
 void NativeVisualRenderer::Clear() {
   if (!Ready()) return;
   impl_->EnsureCheats();
