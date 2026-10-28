@@ -946,10 +946,6 @@ void NativeVisualRenderer::PulseParticles() {
     return false;
   });
 
-  if (restarted > 0) {
-    std::cout << "[SPLIT][Visuals] pulsed " << restarted
-              << " persistent particle markers\n";
-  }
 #endif
 }
 
