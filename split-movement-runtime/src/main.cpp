@@ -215,6 +215,24 @@ std::vector<MovementCue> ConsolidateMovementCues(
       // Prefer the strongest technique name over its component labels.
       absorb(i, "Mantle", 96, 8);
       absorb(i, "Wall jump", 12, 12);
+    } else if (cues[i].label == "Corner boost" ||
+               cues[i].label == "Edge boost") {
+      absorb(i, "Wall jump", 12, 12);
+    } else if (cues[i].label == "Mantle strafe") {
+      absorb(i, "Mantle", 112, 16);
+      absorb(i, "Mantle slide", 16, 16);
+      absorb(i, "Slide", 16, 8);
+    } else if (cues[i].label == "Dash cancel") {
+      absorb(i, "Slide", 16, 8);
+      absorb(i, "Ground dash", 24, 4);
+    } else if (cues[i].label == "Superglide") {
+      absorb(i, "Mantle", 16, 8);
+    } else if (cues[i].label == "Short hop") {
+      absorb(i, "Slide", 16, 8);
+      absorb(i, "Ground dash", 24, 4);
+    } else if (cues[i].label == "Instant air dash" ||
+               cues[i].label == "Zipline dash") {
+      absorb(i, "Air dash", 4, 4);
     }
   }
 
@@ -224,6 +242,433 @@ std::vector<MovementCue> ConsolidateMovementCues(
     if (!hidden[i]) out.push_back(cues[i]);
   }
   return out;
+}
+
+
+struct TechniquePrimitive {
+  std::string kind;
+  std::uint64_t frame = 0;
+  std::array<float, 3> position{};
+  std::array<float, 3> velocity{};
+};
+
+double HorizontalSpeed(const std::array<float, 3>& velocity) {
+  return std::hypot(static_cast<double>(velocity[0]),
+                    static_cast<double>(velocity[1]));
+}
+
+std::optional<double> HeadingTurnDegrees(
+    const std::array<float, 3>& from,
+    const std::array<float, 3>& to) {
+  const double from_speed = HorizontalSpeed(from);
+  const double to_speed = HorizontalSpeed(to);
+  if (!(from_speed > 0.0) || !(to_speed > 0.0)) return std::nullopt;
+  const double cosine = std::clamp(
+      (static_cast<double>(from[0]) * to[0] +
+       static_cast<double>(from[1]) * to[1]) /
+          (from_speed * to_speed),
+      -1.0, 1.0);
+  return std::acos(cosine) * 180.0 / std::numbers::pi;
+}
+
+const split::movement::RecordedTick* RecordedAt(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    std::uint64_t frame) {
+  const auto it = std::lower_bound(
+      ticks.begin(), ticks.end(), frame,
+      [](const split::movement::RecordedTick& tick, std::uint64_t wanted) {
+        return tick.frame < wanted;
+      });
+  return it != ticks.end() && it->frame == frame ? &*it : nullptr;
+}
+
+std::optional<double> PeakRecorded(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    std::uint64_t from, std::uint64_t to,
+    const std::function<double(const split::movement::PawnSample&)>& value) {
+  if (from > to) return std::nullopt;
+  double peak = -std::numeric_limits<double>::infinity();
+  for (std::uint64_t frame = from; frame <= to; ++frame) {
+    const auto* tick = RecordedAt(ticks, frame);
+    if (!tick) return std::nullopt;
+    peak = std::max(peak, value(tick->pawn));
+  }
+  return peak;
+}
+
+std::vector<TechniquePrimitive> BuildTechniquePrimitives(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    const std::vector<MovementCue>& raw_cues) {
+  std::vector<TechniquePrimitive> out;
+  out.reserve(raw_cues.size() + ticks.size() / 8);
+
+  const auto push = [&](std::string kind, const split::movement::RecordedTick& tick) {
+    if (!out.empty() && out.back().kind == kind &&
+        out.back().frame == tick.frame) {
+      return;
+    }
+    out.push_back({std::move(kind), tick.frame, tick.pawn.position,
+                   tick.pawn.velocity});
+  };
+
+  for (const auto& cue : raw_cues) {
+    std::string kind;
+    if (cue.label == "Ground dash") kind = "groundDash";
+    else if (cue.label == "Slide") kind = "slideStart";
+    else if (cue.label == "Wall jump") kind = "wallJump";
+    else if (cue.label == "Dash jump") kind = "dashJump";
+    else if (cue.label == "Air jump") kind = "airJump";
+    else if (cue.label == "Air dash") kind = "airDash";
+    else if (cue.label == "Bounce pad") kind = "bouncePad";
+    else continue;
+
+    if (const auto* tick = RecordedAt(ticks, cue.frame)) {
+      out.push_back({kind, cue.frame, cue.position, tick->pawn.velocity});
+    }
+  }
+
+  for (std::size_t i = 1; i < ticks.size(); ++i) {
+    const auto& before = ticks[i - 1];
+    const auto& now = ticks[i];
+
+    if (before.pawn.grounded && !now.pawn.grounded) push("takeoff", now);
+    if (!before.pawn.grounded && now.pawn.grounded) push("touchdown", now);
+
+    bool mantle_restarted = false;
+    if (now.pawn.mantle_start_time) {
+      mantle_restarted =
+          !before.pawn.mantle_start_time ||
+          std::fabs(*now.pawn.mantle_start_time -
+                    *before.pawn.mantle_start_time) > 0.0001f;
+    }
+    if (mantle_restarted ||
+        (!before.pawn.mantling && now.pawn.mantling)) {
+      push("mantleStart", now);
+    }
+    if (before.pawn.mantling && !now.pawn.mantling) {
+      push("mantleEnd", now);
+    }
+
+    if (!before.pawn.sliding && now.pawn.sliding) push("slideStart", now);
+    if (before.pawn.sliding && !now.pawn.sliding) push("slideEnd", now);
+
+    const bool before_riding =
+        before.pawn.zipline_time && now.pawn.zipline_time &&
+        *now.pawn.zipline_time > *before.pawn.zipline_time;
+    if (i >= 2) {
+      const auto& older = ticks[i - 2];
+      const bool older_riding =
+          older.pawn.zipline_time && before.pawn.zipline_time &&
+          *before.pawn.zipline_time > *older.pawn.zipline_time;
+      if (older_riding && !before_riding && now.pawn.zipline_time) {
+        push("ziplineLeft", now);
+      }
+    }
+  }
+
+  std::sort(out.begin(), out.end(),
+            [](const TechniquePrimitive& a, const TechniquePrimitive& b) {
+              if (a.frame != b.frame) return a.frame < b.frame;
+              return a.kind < b.kind;
+            });
+  out.erase(std::unique(out.begin(), out.end(),
+                        [](const TechniquePrimitive& a,
+                           const TechniquePrimitive& b) {
+                          return a.frame == b.frame && a.kind == b.kind;
+                        }),
+            out.end());
+  return out;
+}
+
+const TechniquePrimitive* LastPrimitive(
+    const std::vector<TechniquePrimitive>& recent, std::string_view kind,
+    std::uint64_t from, std::uint64_t to,
+    const TechniquePrimitive* skip = nullptr) {
+  for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
+    if (&*it == skip || it->kind != kind || it->frame < from ||
+        it->frame > to) {
+      continue;
+    }
+    return &*it;
+  }
+  return nullptr;
+}
+
+bool AnyPrimitive(const std::vector<TechniquePrimitive>& recent,
+                  std::string_view kind, std::uint64_t from,
+                  std::uint64_t to) {
+  return LastPrimitive(recent, kind, from, to) != nullptr;
+}
+
+std::optional<bool> WallContactFollowed(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    std::uint64_t frame) {
+  if (frame == 0) return std::nullopt;
+  const auto* now = RecordedAt(ticks, frame);
+  const auto* before = RecordedAt(ticks, frame - 1);
+  if (!now || !before || !now->pawn.wall_contact_position ||
+      !before->pawn.wall_contact_position) {
+    return std::nullopt;
+  }
+  return *now->pawn.wall_contact_position !=
+         *before->pawn.wall_contact_position;
+}
+
+std::vector<MovementCue> RecognizeRecordedTechniques(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    const std::vector<MovementCue>& raw_cues) {
+  constexpr std::uint64_t kWallJumpRiseTicks = 6;
+  constexpr std::uint64_t kWallJumpSettleTicks = 8;
+  constexpr std::uint64_t kMantleStrafeTicks = 12;
+  constexpr std::uint64_t kMantleExitTicks = 16;
+  constexpr std::uint64_t kMantleWallJumpTicks = 96;
+  constexpr std::uint64_t kDashCancelTicks = 24;
+  constexpr std::uint64_t kSuperglideSettleTicks = 2;
+  constexpr std::uint64_t kZiplineDashTicks = 90;
+  constexpr double kCornerBoostMinVerticalSpeed = 600.0;
+  constexpr double kEdgeBoostMinEntrySpeed = 150.0;
+  constexpr std::uint64_t kEdgeBoostMaxDetachedTicks = 16;
+  constexpr double kDashCancelMinSpeed = 500.0;
+  constexpr double kSuperglideMinSpeed = 500.0;
+  constexpr double kMantleWallJumpMinSpeed = 500.0;
+  constexpr double kMantleStrafeMinTurnDegrees = 45.0;
+  constexpr double kMantleStrafeMinRetention = 0.8;
+
+  const auto primitives = BuildTechniquePrimitives(ticks, raw_cues);
+  std::vector<MovementCue> recognized;
+
+  const auto add = [&](std::string label, const TechniquePrimitive& anchor) {
+    recognized.push_back(
+        {std::move(label), anchor.position, anchor.frame});
+  };
+
+  const auto dash_cancelled = [&](const TechniquePrimitive& slide) {
+    const auto from =
+        slide.frame > kDashCancelTicks ? slide.frame - kDashCancelTicks : 0;
+    const auto* dash =
+        LastPrimitive(primitives, "groundDash", from, slide.frame);
+    return dash &&
+           !AnyPrimitive(primitives, "takeoff", dash->frame, slide.frame) &&
+           HorizontalSpeed(slide.velocity) >= kDashCancelMinSpeed;
+  };
+
+  for (const auto& anchor : primitives) {
+    if (anchor.kind == "wallJump") {
+      bool classified = false;
+
+      // Exact Hyperline mantleWallJump rule.
+      const auto from =
+          anchor.frame > kMantleWallJumpTicks
+              ? anchor.frame - kMantleWallJumpTicks
+              : 0;
+      if (const auto* mantle_end =
+              LastPrimitive(primitives, "mantleEnd", from, anchor.frame)) {
+        const auto* exit = static_cast<const TechniquePrimitive*>(nullptr);
+        for (const auto& candidate : primitives) {
+          if (candidate.kind == "takeoff" &&
+              candidate.frame >= mantle_end->frame &&
+              candidate.frame <= anchor.frame) {
+            exit = &candidate;
+            break;
+          }
+        }
+        if (!exit) exit = mantle_end;
+        if (exit->frame >= mantle_end->frame &&
+            exit->frame - mantle_end->frame <= kMantleExitTicks &&
+            !AnyPrimitive(primitives, "touchdown", exit->frame + 1,
+                          anchor.frame)) {
+          const auto peak = PeakRecorded(
+              ticks, exit->frame,
+              std::max(exit->frame,
+                       anchor.frame > 0 ? anchor.frame - 1 : anchor.frame),
+              [](const split::movement::PawnSample& pawn) {
+                return HorizontalSpeed(pawn.velocity);
+              });
+          if (peak && *peak >= kMantleWallJumpMinSpeed) {
+            add("Mantle wall jump", anchor);
+            classified = true;
+          }
+        }
+      }
+      if (classified) continue;
+
+      // Exact Hyperline cornerBoost rule.
+      if (const auto peak = PeakRecorded(
+              ticks, anchor.frame, anchor.frame + kWallJumpRiseTicks,
+              [](const split::movement::PawnSample& pawn) {
+                return static_cast<double>(pawn.velocity[2]);
+              });
+          peak && *peak >= kCornerBoostMinVerticalSpeed) {
+        add("Corner boost", anchor);
+        continue;
+      }
+
+      // Exact Hyperline edgeBoost rule.
+      if (anchor.frame >= 2) {
+        const auto* entry = RecordedAt(ticks, anchor.frame - 1);
+        const auto followed_entry =
+            WallContactFollowed(ticks, anchor.frame - 1);
+        if (entry &&
+            HorizontalSpeed(entry->pawn.velocity) >= kEdgeBoostMinEntrySpeed &&
+            followed_entry && !*followed_entry) {
+          bool edge = false;
+          for (std::uint64_t back = 2;
+               back <= kEdgeBoostMaxDetachedTicks + 1 &&
+               back < anchor.frame;
+               ++back) {
+            const auto followed =
+                WallContactFollowed(ticks, anchor.frame - back);
+            if (!followed) continue;
+            edge = *followed;
+            break;
+          }
+          if (edge) {
+            add("Edge boost", anchor);
+            continue;
+          }
+        }
+      }
+      continue;
+    }
+
+    if (anchor.kind == "slideStart") {
+      // Mantle strafe has priority over mantle slide / dash cancel / slide.
+      const auto mantle_from = anchor.frame > 112 ? anchor.frame - 112 : 0;
+      if (const auto* mantle =
+              LastPrimitive(primitives, "mantleStart", mantle_from,
+                            anchor.frame)) {
+        const auto* start = RecordedAt(ticks, anchor.frame);
+        const auto* later =
+            RecordedAt(ticks, anchor.frame + kMantleStrafeTicks);
+        if (start && later) {
+          const auto turn =
+              HeadingTurnDegrees(mantle->velocity, later->pawn.velocity);
+          const double speed = HorizontalSpeed(start->pawn.velocity);
+          if (turn && *turn >= kMantleStrafeMinTurnDegrees && speed > 0.0 &&
+              HorizontalSpeed(later->pawn.velocity) >=
+                  kMantleStrafeMinRetention * speed) {
+            add("Mantle strafe", anchor);
+            continue;
+          }
+        }
+      }
+
+      // Exact two Hyperline mantleSlide requirements.
+      const auto start_from = anchor.frame > 96 ? anchor.frame - 96 : 0;
+      if (const auto* mantle_start =
+              LastPrimitive(primitives, "mantleStart", start_from,
+                            anchor.frame)) {
+        if (!AnyPrimitive(primitives, "mantleEnd",
+                          mantle_start->frame + 1,
+                          anchor.frame > 0 ? anchor.frame - 1
+                                           : anchor.frame)) {
+          add("Mantle slide", anchor);
+          continue;
+        }
+      }
+      const auto end_from = anchor.frame > 16 ? anchor.frame - 16 : 0;
+      if (LastPrimitive(primitives, "mantleEnd", end_from, anchor.frame)) {
+        add("Mantle slide", anchor);
+        continue;
+      }
+
+      if (dash_cancelled(anchor)) {
+        add("Dash cancel", anchor);
+        continue;
+      }
+      continue;
+    }
+
+    if (anchor.kind == "takeoff") {
+      // Exact Hyperline superglide requirement + settle peak.
+      const auto mantle_from = anchor.frame > 4 ? anchor.frame - 4 : 0;
+      if (LastPrimitive(primitives, "mantleEnd", mantle_from,
+                        anchor.frame)) {
+        const auto peak = PeakRecorded(
+            ticks, anchor.frame,
+            anchor.frame + kSuperglideSettleTicks,
+            [](const split::movement::PawnSample& pawn) {
+              return HorizontalSpeed(pawn.velocity);
+            });
+        if (peak && *peak >= kSuperglideMinSpeed) {
+          add("Superglide", anchor);
+          continue;
+        }
+      }
+
+      // Exact Hyperline shortHop: recent slideStart that itself qualifies as
+      // a dash cancel, with no touchdown between it and takeoff.
+      const auto slide_from = anchor.frame > 8 ? anchor.frame - 8 : 0;
+      if (const auto* slide =
+              LastPrimitive(primitives, "slideStart", slide_from,
+                            anchor.frame)) {
+        if (!AnyPrimitive(primitives, "touchdown", slide->frame + 1,
+                          anchor.frame) &&
+            dash_cancelled(*slide)) {
+          add("Short hop", anchor);
+          continue;
+        }
+      }
+      continue;
+    }
+
+    if (anchor.kind == "airDash") {
+      const auto takeoff_from = anchor.frame > 4 ? anchor.frame - 4 : 0;
+      if (const auto* takeoff =
+              LastPrimitive(primitives, "takeoff", takeoff_from,
+                            anchor.frame)) {
+        const bool touchdown =
+            AnyPrimitive(primitives, "touchdown", takeoff->frame + 1,
+                         anchor.frame > 0 ? anchor.frame - 1
+                                          : anchor.frame);
+        const auto dash_jump_from =
+            takeoff->frame > 2 ? takeoff->frame - 2 : 0;
+        const bool dash_jump =
+            AnyPrimitive(primitives, "dashJump", dash_jump_from,
+                         anchor.frame);
+        if (!touchdown && !dash_jump) {
+          add("Instant air dash", anchor);
+          continue;
+        }
+      }
+
+      const auto zip_from =
+          anchor.frame > kZiplineDashTicks
+              ? anchor.frame - kZiplineDashTicks
+              : 0;
+      if (const auto* left =
+              LastPrimitive(primitives, "ziplineLeft", zip_from,
+                            anchor.frame)) {
+        if (!AnyPrimitive(primitives, "touchdown", left->frame + 1,
+                          anchor.frame > 0 ? anchor.frame - 1
+                                           : anchor.frame)) {
+          add("Zipline dash", anchor);
+          continue;
+        }
+      }
+    }
+  }
+
+  return recognized;
+}
+
+std::vector<MovementCue> MergeRecognizedTechniques(
+    const std::vector<MovementCue>& raw,
+    const std::vector<MovementCue>& recognized) {
+  std::vector<MovementCue> merged = raw;
+  merged.insert(merged.end(), recognized.begin(), recognized.end());
+  std::sort(merged.begin(), merged.end(),
+            [](const MovementCue& a, const MovementCue& b) {
+              if (a.frame != b.frame) return a.frame < b.frame;
+              return a.label < b.label;
+            });
+  merged.erase(std::unique(merged.begin(), merged.end(),
+                           [](const MovementCue& a, const MovementCue& b) {
+                             return a.frame == b.frame &&
+                                    a.label == b.label;
+                           }),
+               merged.end());
+  return merged;
 }
 
 bool IsRouteCallout(split::movement::MovementExecution execution) {
@@ -1192,7 +1637,10 @@ int main(int argc, char** argv) {
                   std::vector<MovementCue> callouts;
                   {
                     std::scoped_lock lock(route_cues_mutex);
-                    callouts = ConsolidateMovementCues(route_cues);
+                    const auto exact =
+                        RecognizeRecordedTechniques(route_ticks, route_cues);
+                    callouts = ConsolidateMovementCues(
+                        MergeRecognizedTechniques(route_cues, exact));
                   }
                   std::size_t callout_count = 0;
                   for (const auto& cue : callouts) {
