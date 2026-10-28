@@ -337,15 +337,18 @@ bool NativeVisualRenderer::Install(std::string& error) {
   return false;
 #else
   error.clear();
-  impl_->engine =
-      ResolveInterface(L"engine2.dll", "Source2EngineToServer001", error);
-  if (!impl_->engine) return false;
 
-  auto** table = *static_cast<void***>(impl_->engine);
-  if (!table || !table[kServerCommandSlot]) {
-    error = "Source2EngineToServer001::ServerCommand is unavailable";
-    impl_->engine = nullptr;
-    return false;
+  // The Modlock-style particle path is independent from Source2EngineToServer001.
+  // Keep the old debug-command bridge only as an optional fallback for the
+  // pre-existing drawline renderer.
+  std::string debug_error;
+  impl_->engine =
+      ResolveInterface(L"engine2.dll", "Source2EngineToServer001", debug_error);
+  if (impl_->engine) {
+    auto** table = *static_cast<void***>(impl_->engine);
+    if (!table || !table[kServerCommandSlot]) {
+      impl_->engine = nullptr;
+    }
   }
 
   HMODULE server = GetModuleHandleW(L"server.dll");
