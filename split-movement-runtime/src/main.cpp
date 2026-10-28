@@ -363,6 +363,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> race_requested{false};
   std::atomic<bool> retry_requested{false};
   std::atomic<bool> visual_test_requested{false};
+  std::atomic<bool> native_route_line_active{false};
   std::atomic<int> visual_mode{2}; // both, ghost, tracer, off
   std::atomic<bool> show_rings{true};
   std::atomic<bool> show_checkpoints{true};
@@ -462,6 +463,7 @@ int main(int argc, char** argv) {
       }
 
       visual_renderer.Clear();
+      native_route_line_active.store(true, std::memory_order_release);
       std::size_t created = 0;
       std::string beam_error;
       for (std::size_t i = 1; i < line.size(); ++i) {
@@ -575,6 +577,7 @@ int main(int argc, char** argv) {
       PrintStats(recorder.Stats());
     } else if (command == "clear") {
       recorder.Clear();
+      native_route_line_active.store(false, std::memory_order_release);
       visual_renderer.Clear();
       std::cout << "[SPLIT][Recorder] route cleared\n";
     } else if (command == "replay" || command == "watch") {
@@ -590,6 +593,7 @@ int main(int argc, char** argv) {
     } else if (command == "racecancel") {
       race_timer.Cancel();
       race_run_recorder.Clear();
+      native_route_line_active.store(false, std::memory_order_release);
       visual_renderer.Clear();
       std::cout << "[SPLIT][Race] cancelled\n";
     } else if (command == "racestatus") {
@@ -714,6 +718,7 @@ int main(int argc, char** argv) {
             race_run_recorder.Push(frame, *sample, latest_input);
 
             if (frame % 60 == 0 && !race_timer.Course() &&
+                !native_route_line_active.load(std::memory_order_acquire) &&
                 (visual_renderer.ParticleReady() || visual_renderer.Ready())) {
               const int mode = visual_mode.load(std::memory_order_relaxed);
               split::movement::NativeVisualSettings visual_settings;
@@ -786,6 +791,7 @@ int main(int argc, char** argv) {
                   // entities once when the course is armed. They live until
                   // racecancel/clear/world reset; the legacy Render() loop is
                   // deliberately not involved.
+                  native_route_line_active.store(false, std::memory_order_release);
                   visual_renderer.Clear();
 
                   std::string marker_error;
