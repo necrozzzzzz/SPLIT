@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -34,6 +35,7 @@ class NativeHooks {
                DisconnectCallback on_disconnecting, std::string& error);
   bool Installed() const;
   std::uint64_t FrameCount() const;
+  std::optional<ClientConnection> ClientAt(int slot) const;
 
  private:
   struct Impl;

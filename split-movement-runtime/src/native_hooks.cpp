@@ -345,4 +345,16 @@ std::uint64_t NativeHooks::FrameCount() const {
   return impl_->frames.load(std::memory_order_relaxed);
 }
 
+std::optional<ClientConnection> NativeHooks::ClientAt(int slot) const {
+#if defined(_WIN32)
+  if (slot < 0 || slot >= static_cast<int>(g_clients.size())) return std::nullopt;
+  std::scoped_lock lock(g_clients_mutex);
+  if (g_clients[slot].slot != slot) return std::nullopt;
+  return g_clients[slot];
+#else
+  (void)slot;
+  return std::nullopt;
+#endif
+}
+
 }  // namespace split::movement

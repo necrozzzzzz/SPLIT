@@ -243,6 +243,10 @@ struct Layout {
   std::size_t abs_origin = 0;
   std::size_t abs_velocity = 0;
   std::size_t ground_entity = 0;
+  std::size_t team = 0;
+  std::size_t hero_component = 0;
+  std::size_t spawned_hero = 0;
+  std::size_t hero_id = 0;
 };
 
 std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
@@ -262,6 +266,10 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
       {"CGameSceneNode", "m_vecAbsOrigin", sizeof(float) * 3, &layout.abs_origin},
       {"CBaseEntity", "m_vecAbsVelocity", sizeof(float) * 3, &layout.abs_velocity},
       {"CBaseEntity", "m_hGroundEntity", sizeof(std::uint32_t), &layout.ground_entity},
+      {"CBaseEntity", "m_iTeamNum", sizeof(std::uint8_t), &layout.team},
+      {"CCitadelPlayerPawn", "m_CCitadelHeroComponent", 1, &layout.hero_component},
+      {"CCitadelHeroComponent", "m_spawnedHero", 1, &layout.spawned_hero},
+      {"CitadelHeroSpawnData_t", "m_nHeroID", sizeof(std::uint32_t), &layout.hero_id},
   };
 
   for (const auto& field : wanted) {
@@ -344,6 +352,10 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
   PawnSample sample;
   sample.slot = slot;
   sample.pawn_handle = pawn_handle;
+  sample.team = Read<std::uint8_t>(pawn, impl_->layout->team);
+  sample.hero_id = Read<std::uint32_t>(
+      pawn, impl_->layout->hero_component + impl_->layout->spawned_hero +
+                impl_->layout->hero_id);
   std::memcpy(sample.position.data(),
               static_cast<const std::byte*>(scene) + impl_->layout->abs_origin,
               sizeof(sample.position));

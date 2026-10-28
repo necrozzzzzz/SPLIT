@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace split::movement {
 
@@ -17,6 +18,13 @@ struct InputSample {
   std::uint64_t sequence = 0;
 };
 
+struct PlaybackStatus {
+  bool active = false;
+  int slot = -1;
+  std::size_t index = 0;
+  std::size_t total = 0;
+};
+
 class InputCapture {
  public:
   InputCapture();
@@ -27,6 +35,10 @@ class InputCapture {
 
   bool Install(std::string& error);
   std::optional<InputSample> Latest(int slot) const;
+
+  bool StartPlayback(int slot, std::vector<InputSample> inputs, std::string& error);
+  void StopPlayback();
+  PlaybackStatus Playback() const;
 
  private:
   struct Impl;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(split_movement_runtime VERSION 0.7.0 LANGUAGES CXX)
+project(split_movement_runtime VERSION 0.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +24,7 @@ add_executable(split-movement-runtime
   src/native_hooks.cpp
   src/pawn_probe.cpp
   src/input_capture.cpp
+  src/bot_factory.cpp
   src/recorder.cpp
 )
 

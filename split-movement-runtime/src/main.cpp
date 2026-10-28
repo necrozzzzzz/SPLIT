@@ -1,3 +1,4 @@
+#include "split_movement/bot_factory.h"
 #include "split_movement/engine_bridge.h"
 #include "split_movement/engine_runner.h"
 #include "split_movement/native_hooks.h"
@@ -6,6 +7,7 @@
 #include "split_movement/recorder.h"
 #include "split_movement/runtime.h"
 
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -29,6 +31,7 @@ void Help() {
       << "  stop    stop recording and print stats\n"
       << "  status  print current recording stats\n"
       << "  save    save the current route as JSON\n"
+      << "  replay  spawn SPLIT Ghost and replay current route\n"
       << "  clear   discard the current route\n\n"
       << "DEADLOCK_DIR can replace --game-dir.\n";
 }
@@ -126,6 +129,8 @@ int main(int argc, char** argv) {
   split::movement::MovementRecorder recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
+  bool playback_was_active = false;
+  std::atomic<bool> replay_requested{false};
   std::string last_pawn_error;
   std::string current_map = launch.map;
 
@@ -147,6 +152,9 @@ int main(int argc, char** argv) {
       } else if (command == "clear") {
         recorder.Clear();
         std::cout << "[SPLIT][Recorder] route cleared\n";
+      } else if (command == "replay") {
+        replay_requested.store(true, std::memory_order_release);
+        std::cout << "[SPLIT][Replay] replay requested\n";
       } else if (command == "save") {
         auto saved = recorder.SaveJson(route_directory, current_map);
         if (saved) {
@@ -156,7 +164,7 @@ int main(int argc, char** argv) {
         }
       } else if (!command.empty()) {
         std::cout << "[SPLIT][Recorder] unknown command: " << command
-                  << " (record, stop, status, save, clear)\n";
+                  << " (record, stop, status, save, replay, clear)\n";
       }
     }
   });
@@ -168,6 +176,15 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "SPLIT Movement Runtime: ProcessUsercmds input capture installed.\n";
+
+  split::movement::BotFactory bot_factory;
+  std::string bot_error;
+  if (!bot_factory.Install(bot_error)) {
+    command_thread.request_stop();
+    std::cerr << "Bot replay installation failed: " << bot_error << "\n";
+    return 1;
+  }
+  std::cout << "SPLIT Movement Runtime: bot factory/replay guard installed.\n";
 
   split::movement::NativeHooks hooks;
   std::string hook_error;
@@ -198,6 +215,69 @@ int main(int argc, char** argv) {
             }
 
             recorder.Push(frame, *sample, input_capture.Latest(slot));
+
+            if (replay_requested.exchange(false, std::memory_order_acq_rel)) {
+              const auto first = recorder.FirstPawn();
+              auto inputs = recorder.PlaybackInputs();
+              if (!first || inputs.empty()) {
+                std::cout << "[SPLIT][Replay] no recorded route is available\n";
+              } else if (first->team < 2 || first->team > 3 || first->hero_id == 0) {
+                std::cout << "[SPLIT][Replay] route has invalid team/hero metadata"
+                          << " team=" << static_cast<int>(first->team)
+                          << " hero=" << first->hero_id << "\n";
+              } else {
+                std::array<bool, 64> occupied_before{};
+                for (int i = 0; i < 64; ++i) {
+                  occupied_before[i] = hooks.ClientAt(i).has_value();
+                }
+
+                std::string replay_error;
+                input_capture.StopPlayback();
+                if (!bot_factory.Create("SPLIT Ghost", static_cast<int>(first->team),
+                                        first->hero_id, first->position, replay_error)) {
+                  std::cout << "[SPLIT][Replay] bot creation failed: "
+                            << replay_error << "\n";
+                } else {
+                  int bot_slot = -1;
+                  for (int i = 0; i < 64; ++i) {
+                    const auto client = hooks.ClientAt(i);
+                    if (!occupied_before[i] && client && client->is_bot &&
+                        client->name == "SPLIT Ghost") {
+                      bot_slot = i;
+                      break;
+                    }
+                  }
+
+                  if (bot_slot < 0) {
+                    std::cout << "[SPLIT][Replay] bot was created but its slot was not observed\n";
+                  } else if (!input_capture.StartPlayback(bot_slot, std::move(inputs),
+                                                          replay_error)) {
+                    std::cout << "[SPLIT][Replay] playback start failed: "
+                              << replay_error << "\n";
+                  } else {
+                    const auto playback = input_capture.Playback();
+                    playback_was_active = playback.active;
+                    std::cout << "[SPLIT][Replay] SPLIT Ghost slot=" << bot_slot
+                              << " hero=" << first->hero_id
+                              << " team=" << static_cast<int>(first->team)
+                              << " inputs=" << playback.total << "\n";
+                  }
+                }
+              }
+            }
+
+            const auto playback = input_capture.Playback();
+            if (playback.active && frame % 120 == 0) {
+              std::cout << "[SPLIT][Replay] replay " << playback.index
+                        << "/" << playback.total
+                        << " slot=" << playback.slot << "\n";
+            }
+            if (playback_was_active && !playback.active && playback.total > 0 &&
+                playback.index >= playback.total) {
+              std::cout << "[SPLIT][Replay] replay complete "
+                        << playback.index << "/" << playback.total << "\n";
+              playback_was_active = false;
+            }
 
             if (frame % 120 == 0) {
               std::cout << std::fixed << std::setprecision(1)

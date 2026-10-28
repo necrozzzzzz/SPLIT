@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -30,14 +31,20 @@ constexpr std::uint32_t kEfInvalidEHandle = 0x1;
 constexpr std::uint32_t kEfDeleteFlags = 0x10 | 0x200;
 constexpr int kMaxSlots = 64;
 
-// Current Deadlock CUserCmd layout, from the vendored 2026-10-28 engine data.
 constexpr std::size_t kCommandStride = 0xa8;
+constexpr std::size_t kCommandHasBits = 0x20;
 constexpr std::size_t kCommandBase = 0x48;
 constexpr std::size_t kCommandButtons = 0x78;
+constexpr std::size_t kBaseHasBits = 0x10;
 constexpr std::size_t kBaseAngles = 0x40;
 constexpr std::size_t kBaseForward = 0x58;
 constexpr std::size_t kBaseLeft = 0x5c;
+constexpr std::uint32_t kBaseAxesBits = 0x40 | 0x80;
+constexpr std::uint32_t kBaseAnglesBit = 0x4;
+constexpr std::size_t kAnglesHasBits = 0x10;
+constexpr std::uint32_t kAnglesXyzBits = 0x7;
 constexpr std::size_t kAnglesXyz = 0x18;
+constexpr std::size_t kAnglesSize = 0x28;
 
 constexpr std::string_view kProcessUsercmdsPattern =
     "48 8B C4 44 88 48 ?? 44 89 40 ?? 48 89 50 ?? 53";
@@ -49,9 +56,13 @@ T Load(const std::byte* base, std::size_t offset) {
   return value;
 }
 
+template <typename T>
+void Store(std::byte* base, std::size_t offset, const T& value) {
+  std::memcpy(base + offset, &value, sizeof(value));
+}
+
 std::optional<std::uint32_t> ReferenceHandle(void* entity) {
   if (!entity) return std::nullopt;
-
   auto* identity = Load<std::byte*>(static_cast<std::byte*>(entity), kIdentityOffset);
   if (!identity || Load<void*>(identity, 0) != entity) return std::nullopt;
 
@@ -81,20 +92,17 @@ std::vector<PatternByte> ParsePattern(std::string_view pattern) {
   for (std::size_t i = 0; i < pattern.size();) {
     while (i < pattern.size() && pattern[i] == ' ') ++i;
     if (i >= pattern.size()) break;
-
     if (pattern[i] == '?') {
       bytes.push_back({0, true});
       while (i < pattern.size() && pattern[i] == '?') ++i;
       continue;
     }
-
     auto nibble = [](char c) -> int {
       if (c >= '0' && c <= '9') return c - '0';
       if (c >= 'a' && c <= 'f') return c - 'a' + 10;
       if (c >= 'A' && c <= 'F') return c - 'A' + 10;
       return -1;
     };
-
     if (i + 1 >= pattern.size()) return {};
     const int hi = nibble(pattern[i]);
     const int lo = nibble(pattern[i + 1]);
@@ -121,7 +129,6 @@ void* FindUniquePattern(HMODULE module, std::string_view pattern, std::string& e
     error = "could not read server.dll PE image size";
     return nullptr;
   }
-
   const auto parsed = ParsePattern(pattern);
   if (parsed.empty() || parsed.size() > *size) {
     error = "invalid process-usercmds signature";
@@ -131,7 +138,6 @@ void* FindUniquePattern(HMODULE module, std::string_view pattern, std::string& e
   auto* base = reinterpret_cast<const std::uint8_t*>(module);
   void* match = nullptr;
   std::size_t matches = 0;
-
   for (std::size_t at = 0; at + parsed.size() <= *size; ++at) {
     bool ok = true;
     for (std::size_t j = 0; j < parsed.size(); ++j) {
@@ -141,12 +147,9 @@ void* FindUniquePattern(HMODULE module, std::string_view pattern, std::string& e
       }
     }
     if (!ok) continue;
-
     match = const_cast<std::uint8_t*>(base + at);
-    ++matches;
-    if (matches > 1) break;
+    if (++matches > 1) break;
   }
-
   if (matches == 0) {
     error = "controller.process-usercmds signature was not found";
     return nullptr;
@@ -163,45 +166,130 @@ struct SlotInput {
   std::optional<InputSample> sample;
 };
 
+struct PlaybackState {
+  std::mutex mutex;
+  int slot = -1;
+  std::vector<InputSample> inputs;
+  std::size_t index = 0;
+  bool active = false;
+  std::uint64_t last_held = 0;
+};
+
 std::array<SlotInput, kMaxSlots> g_slots;
+PlaybackState g_playback;
 safetyhook::InlineHook* g_hook = nullptr;
 std::atomic<std::uint64_t> g_sequence{0};
+const void* g_angles_vtable = nullptr;
+alignas(8) std::array<std::byte, kAnglesSize> g_lent{};
 
-int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count, bool paused,
-                         float margin) {
+void WriteCommand(std::byte* command, const InputSample& drive,
+                  std::uint64_t& last_held, std::byte* lent) {
+  const std::uint64_t held = drive.held | drive.pressed;
+  const std::array<std::uint64_t, 3> buttons{
+      held, (held ^ last_held) | drive.pressed, 0};
+  Store(command, kCommandButtons, buttons);
+  last_held = held;
+
+  auto* base = Load<std::byte*>(command, kCommandBase);
+  if (!base) return;
+
+  Store(command, kCommandHasBits,
+        Load<std::uint32_t>(command, kCommandHasBits) | 1u);
+  Store(base, kBaseHasBits,
+        Load<std::uint32_t>(base, kBaseHasBits) | kBaseAxesBits);
+  Store(base, kBaseForward, drive.forward);
+  Store(base, kBaseLeft, drive.left);
+
+  auto* angles = Load<std::byte*>(base, kBaseAngles);
+  if (!angles && lent) {
+    angles = lent;
+    Store(base, kBaseAngles, angles);
+    Store(base, kBaseHasBits,
+          Load<std::uint32_t>(base, kBaseHasBits) | kBaseAnglesBit);
+  }
+  if (angles) {
+    Store(angles, kAnglesHasBits,
+          Load<std::uint32_t>(angles, kAnglesHasBits) | kAnglesXyzBits);
+    Store(angles, kAnglesXyz, drive.angles);
+  }
+}
+
+int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count,
+                         bool paused, float margin) {
   const int slot = SlotOfController(controller);
+  std::byte* lent = nullptr;
 
   if (slot >= 0 && commands && count > 0) {
-    // The newest command in the batch is the state closest to the movement
-    // simulation that follows this call.
-    const auto* command =
+    InputSample captured;
+    captured.sequence = g_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    const auto* newest =
         commands + static_cast<std::size_t>(count - 1) * kCommandStride;
-
-    InputSample sample;
-    sample.sequence = g_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
-
     const auto buttons =
-        Load<std::array<std::uint64_t, 3>>(command, kCommandButtons);
-    sample.held = buttons[0];
-    // "changed" contains both rising and falling edges. Keep only rising
-    // edges so the recorder has a stable "pressed this command" mask.
-    sample.pressed = buttons[1] & buttons[0];
+        Load<std::array<std::uint64_t, 3>>(newest, kCommandButtons);
+    captured.held = buttons[0];
+    captured.pressed = buttons[1] & buttons[0];
 
-    if (const auto* base = Load<const std::byte*>(command, kCommandBase)) {
-      sample.forward = Load<float>(base, kBaseForward);
-      sample.left = Load<float>(base, kBaseLeft);
-
+    if (const auto* base = Load<const std::byte*>(newest, kCommandBase)) {
+      captured.forward = Load<float>(base, kBaseForward);
+      captured.left = Load<float>(base, kBaseLeft);
       if (const auto* angles = Load<const std::byte*>(base, kBaseAngles)) {
-        sample.angles = Load<std::array<float, 3>>(angles, kAnglesXyz);
+        captured.angles = Load<std::array<float, 3>>(angles, kAnglesXyz);
+        if (!g_angles_vtable) g_angles_vtable = Load<const void*>(angles, 0);
       }
     }
 
-    auto& state = g_slots[slot];
-    std::scoped_lock lock(state.mutex);
-    state.sample = sample;
+    {
+      auto& state = g_slots[slot];
+      std::scoped_lock lock(state.mutex);
+      state.sample = captured;
+    }
+
+    std::optional<InputSample> drive;
+    {
+      std::scoped_lock lock(g_playback.mutex);
+      if (g_playback.active && g_playback.slot == slot) {
+        if (g_playback.index < g_playback.inputs.size()) {
+          drive = g_playback.inputs[g_playback.index++];
+        }
+        if (g_playback.index >= g_playback.inputs.size()) {
+          g_playback.active = false;
+        }
+      }
+    }
+
+    if (drive) {
+      if (g_angles_vtable) {
+        lent = g_lent.data();
+        g_lent.fill(std::byte{});
+        Store(lent, 0, g_angles_vtable);
+      }
+
+      std::scoped_lock lock(g_playback.mutex);
+      for (int i = 0; i < count; ++i) {
+        auto one = *drive;
+        if (i > 0) one.pressed = 0;
+        WriteCommand(commands + static_cast<std::size_t>(i) * kCommandStride,
+                     one, g_playback.last_held, lent);
+      }
+    }
   }
 
-  return g_hook->call<int>(controller, commands, count, paused, margin);
+  const int result =
+      g_hook->call<int>(controller, commands, count, paused, margin);
+
+  for (int i = 0; lent && i < count; ++i) {
+    auto* command =
+        commands + static_cast<std::size_t>(i) * kCommandStride;
+    auto* base = Load<std::byte*>(command, kCommandBase);
+    if (base && Load<std::byte*>(base, kBaseAngles) == lent) {
+      Store(base, kBaseAngles, static_cast<std::byte*>(nullptr));
+      Store(base, kBaseHasBits,
+            Load<std::uint32_t>(base, kBaseHasBits) & ~kBaseAnglesBit);
+    }
+  }
+
+  return result;
 }
 
 }  // namespace
@@ -217,6 +305,12 @@ struct InputCapture::Impl {
         std::scoped_lock lock(slot.mutex);
         slot.sample.reset();
       }
+      std::scoped_lock lock(g_playback.mutex);
+      g_playback.slot = -1;
+      g_playback.inputs.clear();
+      g_playback.index = 0;
+      g_playback.active = false;
+      g_playback.last_held = 0;
     }
   }
 };
@@ -229,13 +323,11 @@ bool InputCapture::Install(std::string& error) {
     error = "input capture is already installed";
     return false;
   }
-
   HMODULE server = GetModuleHandleW(L"server.dll");
   if (!server) {
     error = "server.dll is not mapped";
     return false;
   }
-
   void* target = FindUniquePattern(server, kProcessUsercmdsPattern, error);
   if (!target) return false;
 
@@ -246,7 +338,6 @@ bool InputCapture::Install(std::string& error) {
     error = "could not create ProcessUsercmds inline hook";
     return false;
   }
-
   impl_->hook = std::move(hook);
   g_hook = &impl_->hook;
 
@@ -256,7 +347,6 @@ bool InputCapture::Install(std::string& error) {
     error = "could not enable ProcessUsercmds inline hook";
     return false;
   }
-
   return true;
 }
 
@@ -265,6 +355,49 @@ std::optional<InputSample> InputCapture::Latest(int slot) const {
   const auto& state = g_slots[slot];
   std::scoped_lock lock(state.mutex);
   return state.sample;
+}
+
+bool InputCapture::StartPlayback(int slot, std::vector<InputSample> inputs,
+                                 std::string& error) {
+  if (slot < 0 || slot >= kMaxSlots) {
+    error = "playback slot is invalid";
+    return false;
+  }
+  if (inputs.empty()) {
+    error = "playback has no inputs";
+    return false;
+  }
+  if (!g_angles_vtable) {
+    error = "no human view-angle message has been observed yet";
+    return false;
+  }
+
+  std::scoped_lock lock(g_playback.mutex);
+  g_playback.slot = slot;
+  g_playback.inputs = std::move(inputs);
+  g_playback.index = 0;
+  g_playback.active = true;
+  g_playback.last_held = 0;
+  return true;
+}
+
+void InputCapture::StopPlayback() {
+  std::scoped_lock lock(g_playback.mutex);
+  g_playback.active = false;
+  g_playback.slot = -1;
+  g_playback.inputs.clear();
+  g_playback.index = 0;
+  g_playback.last_held = 0;
+}
+
+PlaybackStatus InputCapture::Playback() const {
+  std::scoped_lock lock(g_playback.mutex);
+  return PlaybackStatus{
+      .active = g_playback.active,
+      .slot = g_playback.slot,
+      .index = g_playback.index,
+      .total = g_playback.inputs.size(),
+  };
 }
 
 }  // namespace split::movement

@@ -93,6 +93,26 @@ RecordingStats MovementRecorder::Stats() const {
   return BuildStats(recording_, ticks_, distance_, max_speed_);
 }
 
+std::vector<InputSample> MovementRecorder::PlaybackInputs() const {
+  std::scoped_lock lock(mutex_);
+  std::vector<InputSample> inputs;
+  inputs.reserve(ticks_.size());
+  std::uint64_t last_sequence = 0;
+  for (const auto& tick : ticks_) {
+    if (!tick.input) continue;
+    if (tick.input->sequence == last_sequence) continue;
+    last_sequence = tick.input->sequence;
+    inputs.push_back(*tick.input);
+  }
+  return inputs;
+}
+
+std::optional<PawnSample> MovementRecorder::FirstPawn() const {
+  std::scoped_lock lock(mutex_);
+  if (ticks_.empty()) return std::nullopt;
+  return ticks_.front().pawn;
+}
+
 std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
     const std::filesystem::path& directory, std::string_view map_name) const {
   std::vector<RecordedTick> ticks;
@@ -147,7 +167,9 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
         << ",\"vel\":[" << tick.pawn.velocity[0] << "," << tick.pawn.velocity[1] << ","
         << tick.pawn.velocity[2] << "]"
         << ",\"grounded\":" << (tick.pawn.grounded ? "true" : "false")
-        << ",\"pawn_handle\":" << tick.pawn.pawn_handle;
+        << ",\"pawn_handle\":" << tick.pawn.pawn_handle
+        << ",\"hero_id\":" << tick.pawn.hero_id
+        << ",\"team\":" << static_cast<unsigned>(tick.pawn.team);
 
     if (tick.input) {
       out << ",\"input\":{\"seq\":" << tick.input->sequence
