@@ -28,6 +28,9 @@ class NativeVisualRenderer {
   bool Install(std::string& error);
   bool Ready() const;
   bool ParticleReady() const;
+  bool ManifestReady() const;
+  bool TransmitReady() const;
+  const std::string& OptionalError() const;
   void Invalidate();
   bool DrawTestParticle(const std::array<float, 3>& position, std::string& error);
   void Clear();
