@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,6 +28,7 @@ class NativeVisualRenderer {
   bool Install(std::string& error);
   bool Ready() const;
   void Invalidate();
+  void DrawTestMarker(const std::array<float, 3>& position);
   void Clear();
   void Render(const std::vector<RecordedTick>& route,
               const std::optional<RaceCourse>& course,
