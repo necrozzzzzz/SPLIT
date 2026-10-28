@@ -179,6 +179,7 @@ int main(int argc, char** argv) {
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
   bool steering_was_active = false;
+  int pb_ghost_slot = -1;
   std::atomic<bool> replay_requested{false};
   std::atomic<bool> race_requested{false};
   std::string last_pawn_error;
@@ -363,46 +364,62 @@ int main(int argc, char** argv) {
                   std::cout << "[SPLIT][PB Ghost] saved PB route is empty\n";
                 } else {
                   const auto first_pb = pb_ticks->front().pawn;
-                  std::array<bool, 64> occupied_before{};
-                  for (int i = 0; i < 64; ++i) {
-                    occupied_before[i] = hooks.ClientAt(i).has_value();
-                  }
-
                   std::string ghost_error;
                   steering.Stop();
-                  if (!bot_factory.Create("SPLIT PB Ghost",
-                                          static_cast<int>(first_pb.team),
-                                          first_pb.hero_id,
-                                          first_pb.position,
-                                          ghost_error)) {
-                    std::cout << "[SPLIT][PB Ghost] creation failed: "
-                              << ghost_error << "\n";
-                  } else {
-                    int ghost_slot = -1;
+
+                  int ghost_slot = -1;
+                  if (pb_ghost_slot >= 0) {
+                    const auto existing = hooks.ClientAt(pb_ghost_slot);
+                    if (existing && existing->is_bot &&
+                        existing->name == "SPLIT PB Ghost") {
+                      ghost_slot = pb_ghost_slot;
+                      std::cout << "[SPLIT][PB Ghost] reusing slot="
+                                << ghost_slot << "\n";
+                    } else {
+                      pb_ghost_slot = -1;
+                    }
+                  }
+
+                  if (ghost_slot < 0) {
+                    std::array<bool, 64> occupied_before{};
                     for (int i = 0; i < 64; ++i) {
-                      const auto client = hooks.ClientAt(i);
-                      if (!occupied_before[i] && client && client->is_bot &&
-                          client->name == "SPLIT PB Ghost") {
-                        ghost_slot = i;
-                        break;
-                      }
+                      occupied_before[i] = hooks.ClientAt(i).has_value();
                     }
 
-                    if (ghost_slot < 0) {
-                      std::cout << "[SPLIT][PB Ghost] bot slot was not observed\n";
-                    } else if (!steering.Start(ghost_slot, std::move(*pb_ticks),
-                                               ghost_error)) {
-                      std::cout << "[SPLIT][PB Ghost] steering failed: "
+                    if (!bot_factory.Create("SPLIT PB Ghost",
+                                            static_cast<int>(first_pb.team),
+                                            first_pb.hero_id,
+                                            first_pb.position,
+                                            ghost_error)) {
+                      std::cout << "[SPLIT][PB Ghost] creation failed: "
                                 << ghost_error << "\n";
                     } else {
-                      const auto ghost_state = steering.Status();
-                      steering_was_active = ghost_state.active;
-                      std::cout << "[SPLIT][PB Ghost] started slot="
-                                << ghost_slot
-                                << " steps=" << ghost_state.total
-                                << " pb=" << std::fixed << std::setprecision(3)
-                                << *race_status.personal_best_seconds << "s\n";
+                      for (int i = 0; i < 64; ++i) {
+                        const auto client = hooks.ClientAt(i);
+                        if (!occupied_before[i] && client && client->is_bot &&
+                            client->name == "SPLIT PB Ghost") {
+                          ghost_slot = i;
+                          pb_ghost_slot = i;
+                          break;
+                        }
+                      }
                     }
+                  }
+
+                  if (ghost_slot < 0) {
+                    std::cout << "[SPLIT][PB Ghost] bot slot was not observed\n";
+                  } else if (!steering.Start(ghost_slot, std::move(*pb_ticks),
+                                             ghost_error)) {
+                    std::cout << "[SPLIT][PB Ghost] steering failed: "
+                              << ghost_error << "\n";
+                  } else {
+                    const auto ghost_state = steering.Status();
+                    steering_was_active = ghost_state.active;
+                    std::cout << "[SPLIT][PB Ghost] started slot="
+                              << ghost_slot
+                              << " steps=" << ghost_state.total
+                              << " pb=" << std::fixed << std::setprecision(3)
+                              << *race_status.personal_best_seconds << "s\n";
                   }
                 }
               }
@@ -559,6 +576,9 @@ int main(int argc, char** argv) {
           [&](int slot, std::uint64_t xuid) {
             std::cout << "[SPLIT][Movement] client disconnecting slot="
                       << slot << " xuid=" << xuid << "\n";
+            if (pb_ghost_slot == slot) {
+              pb_ghost_slot = -1;
+            }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
               pawn_announced = false;
