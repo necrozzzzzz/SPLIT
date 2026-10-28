@@ -34,8 +34,9 @@ class NativeVisualRenderer {
   void Invalidate();
   bool DrawTestParticle(const std::array<float, 3>& position, std::string& error);
   bool DrawVisibleMarker(const std::array<float, 3>& position, std::string& error);
+  bool DrawWorldTextMarker(const std::array<float, 3>& position,
+                           const char* message, std::string& error);
   void Clear();
-  void PulseParticles();
   void Render(const std::vector<RecordedTick>& route,
               const std::optional<RaceCourse>& course,
               const NativeVisualSettings& settings);
