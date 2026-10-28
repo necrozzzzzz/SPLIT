@@ -1,59 +1,68 @@
 # SPLIT Movement Runtime
 
-This is the native engine-side foundation for SPLIT's Movement Lab.
+Native engine-side foundation for SPLIT's Movement Lab.
 
-It is intentionally separate from the Tauri application. The desktop app will eventually launch/control this runtime; the runtime will own the Deadlock-specific engine integration needed for tick-perfect movement recording and ghost playback.
+## Architecture
 
-## Direction
+SPLIT does **not** depend on `modlock.exe`.
 
-We are **not** depending on `modlock.exe`.
+The runtime is a SPLIT-owned Windows process. It loads the Deadlock Source 2 modules itself, resolves the engine interfaces it needs, then will install the movement-specific hooks used for recording and ghost playback.
 
-Instead, SPLIT vendors the MIT-licensed engine-interoperability pieces we need from `paralin/modlock`, then integrates and maintains them inside a SPLIT-owned runtime.
+Selected MIT-licensed Modlock engine-interoperability sources are preserved under `vendor/modlock/` as upstream reference / integration material. See `THIRD_PARTY_NOTICES.md`.
 
-The initial imported scope contains the core pieces needed for the movement path:
+## Current milestone: live engine bridge
 
-- movement hook;
-- command/input hooks;
-- pawn observer;
-- schema/entity access;
-- signature and virtual-slot resolution;
-- connection tracking;
-- bot creation;
-- frame hook;
-- Windows module/native-memory support.
+The runtime can now:
 
-The upstream snapshot lives under:
+1. validate a Deadlock installation;
+2. register the game's DLL directories;
+3. load and pin `engine2.dll`;
+4. load and pin `server.dll`;
+5. resolve/load `schemasystem.dll`;
+6. call its `CreateInterface` export;
+7. resolve `SchemaSystem_001`.
 
-`vendor/modlock/`
+This is deliberately a **probe** for now. It does not start a map or install movement hooks yet.
 
-See `THIRD_PARTY_NOTICES.md` and the vendored `LICENSE`.
-
-## Current phase
-
-Phase 1 deliberately keeps the SPLIT-owned executable buildable while the vendored engine code is still isolated.
-
-The capability sequence is:
-
-1. engine/module + SchemaSystem bootstrap;
-2. frame hook;
-3. pawn observer;
-4. movement/command capture;
-5. bot creation/control;
-6. tick recorder;
-7. steer-style ghost replay;
-8. IPC to the Tauri app;
-9. route persistence, PBs, segments and community backend.
-
-The old `movement-lab-prototype/` remains a reference proof of the Modlock API idea, but it is **not** the architecture we are shipping.
-
-## Build the SPLIT-owned runtime
-
-From this directory:
+## Build
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
+```
+
+## Probe your Deadlock install
+
+From `split-movement-runtime`:
+
+```powershell
+.\build\Release\split-movement-runtime.exe --game-dir "C:\Program Files (x86)\Steam\steamapps\common\Deadlock"
+```
+
+or:
+
+```powershell
+$env:DEADLOCK_DIR="C:\Program Files (x86)\Steam\steamapps\common\Deadlock"
 .\build\Release\split-movement-runtime.exe
 ```
 
-At this stage the executable reports which native capabilities have been wired. They intentionally start as `not wired`; we enable them one by one as their dependency closure is integrated and tested.
+Expected milestone output:
+
+```text
+SPLIT Movement Runtime 0.2.0
+  game layout: ready
+  engine2.dll: ready
+  server.dll: ready
+  schemasystem.dll: ready
+  SchemaSystem_001: ready
+  movement hook: not ready
+  command hook: not ready
+  pawn observer: not ready
+  bot control: not ready
+```
+
+If `SchemaSystem_001` is ready, our standalone SPLIT-owned process has successfully entered the same Source 2 engine/interface layer needed by the later hooks.
+
+## Next
+
+The next milestone is the real engine handoff + frame/world lifecycle. Once a world is live, we install pawn observation and then movement/command hooks.
