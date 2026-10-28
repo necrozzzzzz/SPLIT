@@ -317,18 +317,20 @@ int main(int argc, char** argv) {
     // Report an available command bridge separately from actual client rendering.
     // Interface resolution alone cannot prove that debug shapes reach Deadlock.
     if (command == "visualtest") {
-      if (!visual_renderer.Ready()) {
-        return "{\"queued\":false,\"reason\":\"renderer-interface-unavailable\"}";
+      if (!visual_renderer.ParticleReady()) {
+        return "{\"queued\":false,\"reason\":\"particle-renderer-unavailable\"}";
       }
       if (human_slot.load(std::memory_order_relaxed) < 0) {
         return "{\"queued\":false,\"reason\":\"player-not-connected\"}";
       }
       visual_test_requested.store(true, std::memory_order_release);
-      return "{\"queued\":true,\"note\":\"look-above-your-player-for-three-crossing-lines\"}";
+      return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
     if (command == "visualdiagnostics") {
       return std::string("{\"rendererInterfaceReady\":") +
              (visual_renderer.Ready() ? "true" : "false") +
+             ",\"particleRendererReady\":" +
+             (visual_renderer.ParticleReady() ? "true" : "false") +
              ",\"clientRenderVerified\":false,\"hudImplemented\":false}";
     }
     if (command == "state") {
@@ -509,8 +511,13 @@ int main(int argc, char** argv) {
             }
 
             if (visual_test_requested.exchange(false, std::memory_order_acq_rel)) {
-              visual_renderer.DrawTestMarker(sample->position);
-              std::cout << "[SPLIT][Visuals] test marker submitted; client visibility still unverified\n";
+              std::string visual_test_error;
+              if (visual_renderer.DrawTestParticle(sample->position, visual_test_error)) {
+                std::cout << "[SPLIT][Visuals] Modlock-style info_particle_system spawned; check the game client\n";
+              } else {
+                std::cout << "[SPLIT][Visuals] native particle test failed: "
+                          << visual_test_error << "\n";
+              }
             }
             last_pawn_error.clear();
             if (!pawn_announced) {
