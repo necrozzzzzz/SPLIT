@@ -21,6 +21,15 @@ void Help() {
       << "DEADLOCK_DIR can replace --game-dir.\n";
 }
 
+void PrintClient(const char* stage, const split::movement::ClientConnection& client) {
+  std::cout << "[SPLIT][Movement] " << stage
+            << " slot=" << client.slot
+            << " xuid=" << client.xuid
+            << " bot=" << (client.is_bot ? "yes" : "no")
+            << " ready=" << (client.fully_connected ? "yes" : "no")
+            << " name=\"" << client.name << "\"\n";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -100,12 +109,27 @@ int main(int argc, char** argv) {
           [](std::string_view map) {
             std::cout << "[SPLIT][Movement] world ready: " << map << "\n";
           },
+          [](const split::movement::ClientConnection& client) {
+            PrintClient("client entered", client);
+          },
+          [](const split::movement::ClientConnection& client) {
+            PrintClient("client fully connected", client);
+            if (!client.is_bot) {
+              std::cout << "[SPLIT][Movement] human session ready on slot "
+                        << client.slot
+                        << "; pawn observation can now attach to this slot.\n";
+            }
+          },
+          [](int slot, std::uint64_t xuid) {
+            std::cout << "[SPLIT][Movement] client disconnecting slot="
+                      << slot << " xuid=" << xuid << "\n";
+          },
           hook_error)) {
     std::cerr << "Native hook installation failed: " << hook_error << "\n";
     return 1;
   }
 
-  std::cout << "SPLIT Movement Runtime: frame/world hooks installed.\n"
+  std::cout << "SPLIT Movement Runtime: frame/world/client hooks installed.\n"
             << "Starting dedicated server on 127.0.0.1:" << launch.port
             << " with map " << launch.map << ".\n";
 
