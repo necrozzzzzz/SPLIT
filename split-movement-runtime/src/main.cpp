@@ -418,7 +418,8 @@ std::optional<bool> WallContactFollowed(
 
 std::vector<MovementCue> RecognizeRecordedTechniques(
     const std::vector<split::movement::RecordedTick>& ticks,
-    const std::vector<MovementCue>& raw_cues) {
+    const std::vector<MovementCue>& raw_cues,
+    bool diagnostics) {
   constexpr std::uint64_t kWallJumpRiseTicks = 6;
   constexpr std::uint64_t kWallJumpSettleTicks = 8;
   constexpr std::uint64_t kMantleStrafeTicks = 12;
@@ -443,15 +444,32 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
     recognized.push_back(
         {std::move(label), anchor.position, anchor.frame});
   };
+  const auto diag = [&](std::string_view technique,
+                        const TechniquePrimitive& anchor,
+                        std::string_view detail) {
+    if (!diagnostics) return;
+    std::cout << "[SPLIT][TechDiag][" << technique << "] frame="
+              << anchor.frame << " " << detail << "\n";
+  };
 
   const auto dash_cancelled = [&](const TechniquePrimitive& slide) {
     const auto from =
         slide.frame > kDashCancelTicks ? slide.frame - kDashCancelTicks : 0;
     const auto* dash =
         LastPrimitive(primitives, "groundDash", from, slide.frame);
-    return dash &&
-           !AnyPrimitive(primitives, "takeoff", dash->frame, slide.frame) &&
-           HorizontalSpeed(slide.velocity) >= kDashCancelMinSpeed;
+    const bool airborne =
+        dash && AnyPrimitive(primitives, "takeoff", dash->frame, slide.frame);
+    const double speed = HorizontalSpeed(slide.velocity);
+    const bool ok = dash && !airborne && speed >= kDashCancelMinSpeed;
+    if (diagnostics && !ok) {
+      std::ostringstream detail;
+      detail << "groundDash=" << (dash ? "yes" : "no")
+             << " takeoffBetween=" << (airborne ? "yes" : "no")
+             << " slideSpeed=" << std::fixed << std::setprecision(1)
+             << speed << "/" << kDashCancelMinSpeed;
+      diag("Dash cancel", slide, detail.str());
+    }
+    return ok;
   };
 
   for (const auto& anchor : primitives) {
@@ -546,12 +564,34 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           const auto turn =
               HeadingTurnDegrees(mantle->velocity, later->pawn.velocity);
           const double speed = HorizontalSpeed(start->pawn.velocity);
-          if (turn && *turn >= kMantleStrafeMinTurnDegrees && speed > 0.0 &&
-              HorizontalSpeed(later->pawn.velocity) >=
-                  kMantleStrafeMinRetention * speed) {
+          const double later_speed = HorizontalSpeed(later->pawn.velocity);
+          const bool ok =
+              turn && *turn >= kMantleStrafeMinTurnDegrees && speed > 0.0 &&
+              later_speed >= kMantleStrafeMinRetention * speed;
+          if (ok) {
             add("Mantle strafe", anchor);
             continue;
           }
+          if (diagnostics) {
+            std::ostringstream detail;
+            detail << "mantleStart=yes"
+                   << " turn=";
+            if (turn) detail << std::fixed << std::setprecision(1) << *turn;
+            else detail << "n/a";
+            detail << "/" << kMantleStrafeMinTurnDegrees
+                   << " speed=" << std::fixed << std::setprecision(1)
+                   << speed
+                   << " laterSpeed=" << later_speed
+                   << " minRetention="
+                   << (kMantleStrafeMinRetention * speed);
+            diag("Mantle strafe", anchor, detail.str());
+          }
+        } else if (diagnostics) {
+          std::ostringstream detail;
+          detail << "mantleStart=yes"
+                 << " startSample=" << (start ? "yes" : "no")
+                 << " sampleAt+12=" << (later ? "yes" : "no");
+          diag("Mantle strafe", anchor, detail.str());
         }
       }
 
@@ -584,8 +624,9 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
     if (anchor.kind == "takeoff") {
       // Exact Hyperline superglide requirement + settle peak.
       const auto mantle_from = anchor.frame > 4 ? anchor.frame - 4 : 0;
-      if (LastPrimitive(primitives, "mantleEnd", mantle_from,
-                        anchor.frame)) {
+      if (const auto* mantle_end =
+              LastPrimitive(primitives, "mantleEnd", mantle_from,
+                            anchor.frame)) {
         const auto peak = PeakRecorded(
             ticks, anchor.frame,
             anchor.frame + kSuperglideSettleTicks,
@@ -596,6 +637,18 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           add("Superglide", anchor);
           continue;
         }
+        if (diagnostics) {
+          std::ostringstream detail;
+          detail << "mantleEnd=yes"
+                 << " delta=" << (anchor.frame - mantle_end->frame)
+                 << "/4 peakSpeed=";
+          if (peak) detail << std::fixed << std::setprecision(1) << *peak;
+          else detail << "n/a";
+          detail << "/" << kSuperglideMinSpeed;
+          diag("Superglide", anchor, detail.str());
+        }
+      } else if (diagnostics) {
+        diag("Superglide", anchor, "mantleEnd=no within=4");
       }
 
       // Exact Hyperline shortHop: recent slideStart that itself qualifies as
@@ -894,6 +947,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> visual_test_requested{false};
   std::atomic<bool> native_route_line_active{false};
   std::atomic<bool> reset_movement_recognizer{true};
+  std::atomic<bool> technique_diagnostics{false};
   std::atomic<int> visual_mode{2}; // both, ghost, tracer, off
   std::atomic<bool> show_rings{true};
   std::atomic<bool> show_checkpoints{true};
@@ -934,6 +988,19 @@ int main(int argc, char** argv) {
   }
 
   auto handle_command = [&](std::string_view command) -> std::string {
+    if (command == "techdiag on") {
+      technique_diagnostics.store(true, std::memory_order_release);
+      return "{\"techniqueDiagnostics\":true}";
+    }
+    if (command == "techdiag off") {
+      technique_diagnostics.store(false, std::memory_order_release);
+      return "{\"techniqueDiagnostics\":false}";
+    }
+    if (command == "techdiag") {
+      return technique_diagnostics.load(std::memory_order_acquire)
+          ? "{\"techniqueDiagnostics\":true}"
+          : "{\"techniqueDiagnostics\":false}";
+    }
     if (command == "movementstate") {
       std::optional<split::movement::PawnSample> snapshot;
       {
@@ -1215,7 +1282,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, techdiag [on|off], clear)\n";
     }
     return {};
   };
@@ -1655,7 +1722,9 @@ int main(int argc, char** argv) {
                   {
                     std::scoped_lock lock(route_cues_mutex);
                     const auto exact =
-                        RecognizeRecordedTechniques(route_ticks, route_cues);
+                        RecognizeRecordedTechniques(
+                            route_ticks, route_cues,
+                            technique_diagnostics.load(std::memory_order_acquire));
                     callouts = ConsolidateMovementCues(
                         MergeRecognizedTechniques(route_cues, exact));
                   }
