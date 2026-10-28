@@ -284,6 +284,34 @@ const split::movement::RecordedTick* RecordedAt(
   return it != ticks.end() && it->frame == frame ? &*it : nullptr;
 }
 
+
+std::optional<std::array<float, 3>> UsableHorizontalVelocityNear(
+    const std::vector<split::movement::RecordedTick>& ticks,
+    std::uint64_t frame, std::uint64_t radius = 4) {
+  const auto usable = [](const std::array<float, 3>& velocity) {
+    return HorizontalSpeed(velocity) > 1.0;
+  };
+
+  if (const auto* exact = RecordedAt(ticks, frame);
+      exact && usable(exact->pawn.velocity)) {
+    return exact->pawn.velocity;
+  }
+
+  for (std::uint64_t delta = 1; delta <= radius; ++delta) {
+    if (frame >= delta) {
+      if (const auto* before = RecordedAt(ticks, frame - delta);
+          before && usable(before->pawn.velocity)) {
+        return before->pawn.velocity;
+      }
+    }
+    if (const auto* after = RecordedAt(ticks, frame + delta);
+        after && usable(after->pawn.velocity)) {
+      return after->pawn.velocity;
+    }
+  }
+  return std::nullopt;
+}
+
 std::optional<double> PeakRecorded(
     const std::vector<split::movement::RecordedTick>& ticks,
     std::uint64_t from, std::uint64_t to,
@@ -561,8 +589,12 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
         const auto* later =
             RecordedAt(ticks, anchor.frame + kMantleStrafeTicks);
         if (start && later) {
+          const auto mantle_velocity =
+              UsableHorizontalVelocityNear(ticks, mantle->frame, 6);
           const auto turn =
-              HeadingTurnDegrees(mantle->velocity, later->pawn.velocity);
+              mantle_velocity
+                  ? HeadingTurnDegrees(*mantle_velocity, later->pawn.velocity)
+                  : std::nullopt;
           const double speed = HorizontalSpeed(start->pawn.velocity);
           const double later_speed = HorizontalSpeed(later->pawn.velocity);
           const bool ok =
@@ -575,6 +607,8 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           if (diagnostics) {
             std::ostringstream detail;
             detail << "mantleStart=yes"
+                   << " mantleVelocity="
+                   << (mantle_velocity ? "yes" : "no")
                    << " turn=";
             if (turn) detail << std::fixed << std::setprecision(1) << *turn;
             else detail << "n/a";
@@ -624,31 +658,73 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
     if (anchor.kind == "takeoff") {
       // Exact Hyperline superglide requirement + settle peak.
       const auto mantle_from = anchor.frame > 4 ? anchor.frame - 4 : 0;
-      if (const auto* mantle_end =
-              LastPrimitive(primitives, "mantleEnd", mantle_from,
-                            anchor.frame)) {
+      const auto* mantle_end =
+          LastPrimitive(primitives, "mantleEnd", mantle_from, anchor.frame);
+
+      // On this Deadlock build m_bChanneling can fail to expose mantleEnd even
+      // though m_flStartTime reliably exposes mantleStart. Keep Hyperline's
+      // exact mantleEnd<=4 path first, then use a conservative inferred-end
+      // fallback: takeoff must still belong to the same recent mantle sequence.
+      const auto mantle_start_from =
+          anchor.frame > 96 ? anchor.frame - 96 : 0;
+      const auto* recent_mantle_start =
+          LastPrimitive(primitives, "mantleStart", mantle_start_from,
+                        anchor.frame);
+
+      const bool mantle_context =
+          mantle_end != nullptr || recent_mantle_start != nullptr;
+
+      if (mantle_context) {
         const auto peak = PeakRecorded(
             ticks, anchor.frame,
             anchor.frame + kSuperglideSettleTicks,
             [](const split::movement::PawnSample& pawn) {
               return HorizontalSpeed(pawn.velocity);
             });
-        if (peak && *peak >= kSuperglideMinSpeed) {
+
+        const bool exact_timing =
+            mantle_end &&
+            anchor.frame >= mantle_end->frame &&
+            anchor.frame - mantle_end->frame <= 4;
+
+        const bool inferred_timing =
+            !mantle_end && recent_mantle_start &&
+            anchor.frame >= recent_mantle_start->frame &&
+            anchor.frame - recent_mantle_start->frame <= 32;
+
+        if ((exact_timing || inferred_timing) &&
+            peak && *peak >= kSuperglideMinSpeed) {
           add("Superglide", anchor);
+          if (diagnostics && inferred_timing) {
+            std::ostringstream detail;
+            detail << "accepted via inferred mantleEnd"
+                   << " startDelta="
+                   << (anchor.frame - recent_mantle_start->frame)
+                   << " peakSpeed=" << std::fixed << std::setprecision(1)
+                   << *peak << "/" << kSuperglideMinSpeed;
+            diag("Superglide", anchor, detail.str());
+          }
           continue;
         }
+
         if (diagnostics) {
           std::ostringstream detail;
-          detail << "mantleEnd=yes"
-                 << " delta=" << (anchor.frame - mantle_end->frame)
-                 << "/4 peakSpeed=";
+          detail << "mantleEnd=" << (mantle_end ? "yes" : "no");
+          if (mantle_end) {
+            detail << " delta=" << (anchor.frame - mantle_end->frame) << "/4";
+          } else if (recent_mantle_start) {
+            detail << " inferredStartDelta="
+                   << (anchor.frame - recent_mantle_start->frame) << "/32";
+          }
+          detail << " peakSpeed=";
           if (peak) detail << std::fixed << std::setprecision(1) << *peak;
           else detail << "n/a";
           detail << "/" << kSuperglideMinSpeed;
           diag("Superglide", anchor, detail.str());
         }
       } else if (diagnostics) {
-        diag("Superglide", anchor, "mantleEnd=no within=4");
+        diag("Superglide", anchor,
+             "mantleEnd=no mantleStart=no recentSequence");
       }
 
       // Exact Hyperline shortHop: recent slideStart that itself qualifies as
