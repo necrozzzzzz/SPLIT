@@ -848,6 +848,32 @@ void NativeVisualRenderer::Invalidate() {
   impl_->last_signature = 0;
 }
 
+bool NativeVisualRenderer::DrawVisibleMarker(
+    const std::array<float, 3>& position, std::string& error) {
+#if !defined(_WIN32)
+  (void)position;
+  error = "native particle renderer currently requires Windows";
+  return false;
+#else
+  error.clear();
+  if (!ParticleReady()) {
+    error = "native particle ABI is not ready";
+    return false;
+  }
+  for (float coordinate : position) {
+    if (!std::isfinite(coordinate)) {
+      error = "marker particle position is not finite";
+      return false;
+    }
+  }
+
+  auto marker = position;
+  marker[2] += 48.0f;
+  return impl_->SpawnParticle(
+      marker, "particles/generic/generic_ping_ground_arrow.vpcf", error);
+#endif
+}
+
 bool NativeVisualRenderer::DrawTestParticle(
     const std::array<float, 3>& position, std::string& error) {
 #if !defined(_WIN32)
