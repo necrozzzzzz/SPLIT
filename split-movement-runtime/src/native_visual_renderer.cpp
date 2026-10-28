@@ -278,6 +278,38 @@ void SetKvBool(RawKeyValues3& value, bool enabled) {
   value.data = enabled ? 1u : 0u;
 }
 
+void SetKvInt(RawKeyValues3& value, int number) {
+  constexpr std::uint64_t kTypeMask = 0xffull << 2;
+  constexpr std::uint64_t kSubtypeMask = 0xffull << 10;
+  constexpr std::uint64_t kArrayCountMask = 0x1full << 34;
+  value.metadata &= ~(kTypeMask | kSubtypeMask | kArrayCountMask | (1ull << 1));
+  value.metadata |= static_cast<std::uint64_t>(3u) << 2;
+  value.metadata |= static_cast<std::uint64_t>(20u) << 10;
+  value.data = static_cast<std::uint64_t>(static_cast<std::int64_t>(number));
+}
+
+void SetKvFloat(RawKeyValues3& value, float number) {
+  constexpr std::uint64_t kTypeMask = 0xffull << 2;
+  constexpr std::uint64_t kSubtypeMask = 0xffull << 10;
+  constexpr std::uint64_t kArrayCountMask = 0x1full << 34;
+  value.metadata &= ~(kTypeMask | kSubtypeMask | kArrayCountMask | (1ull << 1));
+  value.metadata |= static_cast<std::uint64_t>(5u) << 2;
+  value.metadata |= static_cast<std::uint64_t>(24u) << 10;
+  const double converted = number;
+  std::memcpy(&value.data, &converted, sizeof(converted));
+}
+
+void SetKvColor(RawKeyValues3& value, std::uint32_t rgba) {
+  constexpr std::uint64_t kTypeMask = 0xffull << 2;
+  constexpr std::uint64_t kSubtypeMask = 0xffull << 10;
+  constexpr std::uint64_t kArrayCountMask = 0x1full << 34;
+  value.metadata &= ~(kTypeMask | kSubtypeMask | kArrayCountMask | (1ull << 1));
+  value.metadata |= static_cast<std::uint64_t>(0x88u) << 2;
+  value.metadata |= static_cast<std::uint64_t>(28u) << 10;
+  value.metadata |= static_cast<std::uint64_t>(4u) << 34;
+  value.data = rgba;
+}
+
 void* IdentityOf(void* entity) {
   void* identity = nullptr;
   if (entity) {
@@ -516,6 +548,7 @@ struct NativeVisualRenderer::Impl {
   std::size_t transmit_offset = 0;
   std::size_t transmit_owned_offset = 0;
   std::vector<ParticleRef> particles;
+  std::vector<ParticleRef> world_texts;
 
   void Command(std::string_view command) {
     if (!engine) return;
@@ -599,6 +632,127 @@ struct NativeVisualRenderer::Impl {
           ? std::string{}
           : optional_error.substr(separator + 2);
     }
+    return true;
+  }
+
+  bool SpawnWorldText(const std::array<float, 3>& position,
+                      const char* message, std::string& error) {
+    void* entity_system = EntitySystem(error);
+    if (!entity_system) return false;
+
+    void* entity = create_entity(nullptr, "point_worldtext", -1);
+    if (!entity) {
+      error = "CreateEntityByName(point_worldtext) returned null";
+      return false;
+    }
+    void* identity = IdentityOf(entity);
+    const auto handle = ReferenceHandleOf(entity);
+    if (!identity || !handle) {
+      if (remove_entity) remove_entity(entity);
+      error = "point_worldtext has no live identity/handle";
+      return false;
+    }
+
+    void* storage = kv_allocate(kEntityKeyValuesSize);
+    if (!storage) {
+      if (remove_entity) remove_entity(entity);
+      error = "point_worldtext keyvalues allocation returned null";
+      return false;
+    }
+    void* key_values = kv_construct(storage, nullptr, 0);
+    if (!key_values) {
+      if (remove_entity) remove_entity(entity);
+      error = "point_worldtext keyvalues construction returned null";
+      return false;
+    }
+
+    auto set_member = [&](const char* key, auto setter) -> bool {
+      const MemberName name = MakeMemberName(key);
+      auto* value = static_cast<RawKeyValues3*>(kv_set(key_values, &name, 0));
+      if (!value) {
+        error = std::string("point_worldtext keyvalue failed: ") + key;
+        return false;
+      }
+      setter(*value);
+      return true;
+    };
+
+    if (!set_member("message_text", [&](RawKeyValues3& v) { SetKvString(v, message); }) ||
+        !set_member("enabled", [&](RawKeyValues3& v) { SetKvBool(v, true); }) ||
+        !set_member("fullbright", [&](RawKeyValues3& v) { SetKvInt(v, 1); }) ||
+        !set_member("font_name", [&](RawKeyValues3& v) { SetKvString(v, "Reaver"); }) ||
+        !set_member("font_size", [&](RawKeyValues3& v) { SetKvFloat(v, 90.0f); }) ||
+        !set_member("world_units_per_pixel",
+                    [&](RawKeyValues3& v) { SetKvFloat(v, (0.25f / 1050.0f) * 90.0f); }) ||
+        !set_member("color", [&](RawKeyValues3& v) { SetKvColor(v, 0xffffffffu); }) ||
+        !set_member("justify_horizontal", [&](RawKeyValues3& v) { SetKvInt(v, 0); }) ||
+        !set_member("justify_vertical", [&](RawKeyValues3& v) { SetKvInt(v, 0); }) ||
+        !set_member("reorient_mode", [&](RawKeyValues3& v) { SetKvInt(v, 1); })) {
+      if (remove_entity) remove_entity(entity);
+      return false;
+    }
+
+    constexpr std::size_t kTeleportSlot = 163;
+    auto*** object = reinterpret_cast<void***>(entity);
+    if (!object || !*object || !(*object)[kTeleportSlot]) {
+      if (remove_entity) remove_entity(entity);
+      error = "CBaseEntity::Teleport unavailable for point_worldtext";
+      return false;
+    }
+    using TeleportFn = void (*)(void*, const float*, const float*, const float*);
+    auto placed = position;
+    placed[2] += 72.0f;
+    const std::array<float, 3> angles{0.0f, 0.0f, 90.0f};
+    const std::array<float, 3> velocity{};
+    reinterpret_cast<TeleportFn>((*object)[kTeleportSlot])(
+        entity, placed.data(), angles.data(), velocity.data());
+
+    queue_spawn(entity_system, identity, key_values);
+    execute_queued(entity_system);
+
+    entity = EntityInstance(entity_system, *handle);
+    if (!entity) {
+      error = "point_worldtext did not survive queued creation";
+      return false;
+    }
+
+    // Match Modlock: write CPointWorldText::m_messageText after spawn, then Enable.
+    auto world_text_class = ClassInfoOf(schema_system, "CPointWorldText");
+    if (!world_text_class) {
+      error = world_text_class.error();
+      return false;
+    }
+    auto message_offset = FieldOffset(*world_text_class, "m_messageText", 64);
+    if (!message_offset) {
+      error = "CPointWorldText.m_messageText: " + message_offset.error();
+      return false;
+    }
+    auto* dst = static_cast<std::byte*>(entity) + *message_offset;
+    constexpr std::size_t kMessageCapacity = 512;
+    std::memset(dst, 0, kMessageCapacity);
+    std::memcpy(dst, message, (std::min)(std::strlen(message), kMessageCapacity - 1));
+
+    static constexpr char kEmpty[] = "";
+    InputVariant empty{.pointer = kEmpty};
+    if (!accept_input(entity, "Enable", nullptr, nullptr, &empty, 0, nullptr)) {
+      error = "point_worldtext rejected Enable";
+      return false;
+    }
+
+    // World text has no conventional model either; force it to every client.
+    std::string transmit_error;
+    if (EnsureTransmitLayout(transmit_error)) {
+      auto* component = static_cast<std::byte*>(entity) + transmit_offset;
+      std::uint8_t owned = 0;
+      std::memcpy(&owned, component + transmit_owned_offset, sizeof(owned));
+      if (owned == 0) {
+        owned = 1;
+        std::memcpy(component + transmit_owned_offset, &owned, sizeof(owned));
+      }
+      set_transmit_state(component, 4);
+    }
+
+    world_texts.push_back({entity_system, *handle});
     return true;
   }
 
@@ -919,8 +1073,14 @@ void NativeVisualRenderer::Clear() {
         impl_->remove_entity(entity);
       }
     }
+    for (const auto& text : impl_->world_texts) {
+      if (void* entity = text.Get()) {
+        impl_->remove_entity(entity);
+      }
+    }
   }
   impl_->particles.clear();
+  impl_->world_texts.clear();
 
   if (Ready()) {
     impl_->EnsureCheats();
