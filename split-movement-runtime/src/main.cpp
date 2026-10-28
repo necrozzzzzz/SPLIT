@@ -181,7 +181,50 @@ std::vector<std::array<float, 3>> RouteCheckpoints(
 struct MovementCue {
   std::string label;
   std::array<float, 3> position{};
+  std::uint64_t frame = 0;
 };
+
+std::vector<MovementCue> ConsolidateMovementCues(
+    const std::vector<MovementCue>& cues) {
+  std::vector<bool> hidden(cues.size(), false);
+
+  const auto absorb = [&](std::size_t compound,
+                          std::string_view primitive,
+                          std::uint64_t before,
+                          std::uint64_t after) {
+    const auto center = cues[compound].frame;
+    for (std::size_t i = 0; i < cues.size(); ++i) {
+      if (i == compound || hidden[i] || cues[i].label != primitive) continue;
+      const auto at = cues[i].frame;
+      if ((at <= center && center - at <= before) ||
+          (at > center && at - center <= after)) {
+        hidden[i] = true;
+      }
+    }
+  };
+
+  for (std::size_t i = 0; i < cues.size(); ++i) {
+    if (cues[i].label == "Slide hop") {
+      // A slide hop already communicates the slide primitive.
+      absorb(i, "Slide", 16, 4);
+    } else if (cues[i].label == "Mantle slide") {
+      // The composed technique owns both primitives around the transition.
+      absorb(i, "Mantle", 96, 4);
+      absorb(i, "Slide", 16, 4);
+    } else if (cues[i].label == "Mantle wall jump") {
+      // Prefer the strongest technique name over its component labels.
+      absorb(i, "Mantle", 96, 8);
+      absorb(i, "Wall jump", 12, 12);
+    }
+  }
+
+  std::vector<MovementCue> out;
+  out.reserve(cues.size());
+  for (std::size_t i = 0; i < cues.size(); ++i) {
+    if (!hidden[i]) out.push_back(cues[i]);
+  }
+  return out;
+}
 
 bool IsRouteCallout(split::movement::MovementExecution execution) {
   using E = split::movement::MovementExecution;
@@ -834,7 +877,7 @@ int main(int argc, char** argv) {
                     route_cues.back().label == label &&
                     RouteDistance(route_cues.back().position, sample->position) < 48.0;
                 if (!duplicate) {
-                  route_cues.push_back({label, sample->position});
+                  route_cues.push_back({label, sample->position, frame});
                 }
               }
             }
@@ -886,7 +929,7 @@ int main(int argc, char** argv) {
                     route_cues.back().label == "Mantle" &&
                     RouteDistance(route_cues.back().position, sample->position) < 48.0;
                 if (!duplicate) {
-                  route_cues.push_back({"Mantle", sample->position});
+                  route_cues.push_back({"Mantle", sample->position, frame});
                 }
               }
             }
@@ -912,18 +955,23 @@ int main(int argc, char** argv) {
               // exit neighborhood. Keep the raw Slide event as evidence, but
               // add the stronger composed label when the transition is close.
               constexpr std::uint64_t kMantleExitTicks = 16;
-              const auto near_mantle = [&](const std::optional<std::uint64_t>& at) {
-                return at && frame >= *at && frame - *at <= kMantleExitTicks;
+              constexpr std::uint64_t kMantleSequenceTicks = 96;
+              const auto near_mantle = [&](const std::optional<std::uint64_t>& at,
+                                           std::uint64_t window) {
+                return at && frame >= *at && frame - *at <= window;
               };
-              if (near_mantle(last_mantle_start_frame) ||
-                  near_mantle(last_mantle_end_frame)) {
+              // m_bChanneling can be missed on this build while m_flStartTime
+              // is reliable. A slide shortly after the validated mantle start
+              // is therefore also considered part of the same mantle sequence.
+              if (near_mantle(last_mantle_end_frame, kMantleExitTicks) ||
+                  near_mantle(last_mantle_start_frame, kMantleSequenceTicks)) {
                 std::cout << "[SPLIT][Recognizer] Mantle slide at ("
                           << sample->position[0] << ", "
                           << sample->position[1] << ", "
                           << sample->position[2] << ")\n";
                 if (recorder.Stats().recording) {
                   std::scoped_lock lock(route_cues_mutex);
-                  route_cues.push_back({"Mantle slide", sample->position});
+                  route_cues.push_back({"Mantle slide", sample->position, frame});
                 }
               }
             }
@@ -951,7 +999,7 @@ int main(int argc, char** argv) {
                           << sample->position[2] << ")\n";
                 if (recorder.Stats().recording) {
                   std::scoped_lock lock(route_cues_mutex);
-                  route_cues.push_back({"Slide hop", sample->position});
+                  route_cues.push_back({"Slide hop", sample->position, frame});
                 }
               }
             }
@@ -972,7 +1020,7 @@ int main(int argc, char** argv) {
                           << horizontal_speed << "\n";
                 if (recorder.Stats().recording) {
                   std::scoped_lock lock(route_cues_mutex);
-                  route_cues.push_back({"Mantle wall jump", sample->position});
+                  route_cues.push_back({"Mantle wall jump", sample->position, frame});
                 }
               }
             }
@@ -1126,7 +1174,7 @@ int main(int argc, char** argv) {
                   std::vector<MovementCue> callouts;
                   {
                     std::scoped_lock lock(route_cues_mutex);
-                    callouts = route_cues;
+                    callouts = ConsolidateMovementCues(route_cues);
                   }
                   std::size_t callout_count = 0;
                   for (const auto& cue : callouts) {
