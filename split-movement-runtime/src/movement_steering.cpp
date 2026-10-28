@@ -280,6 +280,31 @@ void* PawnOf(void* services, const Layout& layout) {
   return Read<void*>(pawn, layout.services) == services ? pawn : nullptr;
 }
 
+bool NotifyEntityStateChanged(void* entity) {
+  if (!entity) return false;
+
+  // Current game data: CEntityInstance::NetworkStateChanged = vtable slot 28.
+  constexpr std::size_t kNetworkStateChangedSlot = 28;
+  auto*** object = reinterpret_cast<void***>(entity);
+  if (!object || !*object || !(*object)[kNetworkStateChangedSlot]) return false;
+
+  struct alignas(8) FullChange {
+    std::uint32_t flag = 0;
+    std::uint32_t padding = 0;
+    std::byte offsets_and_names[40]{};
+    std::int32_t unknown = -1;
+    std::int32_t array_index = -1;
+    std::int32_t path_index = -1;
+    std::int16_t mode = 0;
+    std::int16_t tail = 0;
+  } changed;
+
+  static_assert(sizeof(FullChange) == 64);
+  using Notify = void (*)(void*, const FullChange&);
+  reinterpret_cast<Notify>((*object)[kNetworkStateChangedSlot])(entity, changed);
+  return true;
+}
+
 void MovementThunk(void* services, void* data) {
   if (!g_state.layout && !g_state.layout_failed) {
     auto resolved = ResolveLayout(g_state.schema_system);
@@ -321,12 +346,19 @@ void MovementThunk(void* services, void* data) {
     return;
   }
 
+  const auto ground_before = pawn
+      ? Read<std::uint32_t>(pawn, g_state.layout->ground)
+      : kInvalidEHandleIndex;
+
   if (tick->input) {
     // Match Modlock's Face(): the recorded view drives both the pawn aim and
     // the body's absolute yaw. CMoveData angles alone leave a bot's model at
     // its own brain yaw, which makes it appear to run backwards/sideways.
     if (pawn) {
       Write(pawn, g_state.layout->eye_angles, tick->input->angles);
+      // Eye angles are networked; publish the changed pawn state so remote
+      // clients actually update aim/animation state.
+      static_cast<void>(NotifyEntityStateChanged(pawn));
       if (g_set_abs_angles) {
         const std::array<float, 3> body{0.0f, tick->input->angles[1], 0.0f};
         g_set_abs_angles(pawn, body.data());
@@ -354,6 +386,9 @@ void MovementThunk(void* services, void* data) {
   Write(data, kMoveVelocity, tick->pawn.velocity);
   if (pawn) {
     Write(pawn, g_state.layout->ground, tick->pawn.ground_entity_handle);
+    if (ground_before != tick->pawn.ground_entity_handle) {
+      static_cast<void>(NotifyEntityStateChanged(pawn));
+    }
   }
 }
 
