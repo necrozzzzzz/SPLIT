@@ -4,6 +4,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $repoRoot "hyperline-scan"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $report = Join-Path $outDir "hyperline-freestyle-focused.txt"
+$techniquesReport = Join-Path $outDir "hyperline-techniques.txt"
 
 $roots = @(
   "$env:APPDATA\Hyperline\mods\freestyle\0.2.240",
@@ -82,6 +83,11 @@ $seen = @{}
 # Capture the complete movement recognizer section, not only nearby pattern
 # windows. This avoids dropping the middle of techniques.ts where the composed
 # move predicates and rule table live.
+$techniques = New-Object System.Collections.Generic.List[string]
+$techniques.Add("=== SPLIT: Hyperline Freestyle complete techniques recognizer ===")
+$techniques.Add("Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+$techniques.Add("")
+
 foreach ($file in ($targets | Sort-Object FullName -Unique)) {
   if ($file.Name -ne "mod.js") { continue }
   $all = Get-Content -LiteralPath $file.FullName
@@ -98,10 +104,20 @@ foreach ($file in ($targets | Sort-Object FullName -Unique)) {
   Add-Line "################################################################"
   Add-Line "# COMPLETE TECHNIQUES BLOCK: $($file.FullName)"
   Add-Line "################################################################"
+
+  $techniques.Add("")
+  $techniques.Add("################################################################")
+  $techniques.Add("# COMPLETE TECHNIQUES BLOCK: $($file.FullName)")
+  $techniques.Add("################################################################")
+
   for ($n = $startHit.LineNumber; $n -lt $endHit.LineNumber; $n++) {
-    Add-Line ("{0,6}: {1}" -f $n, $all[$n - 1])
+    $rendered = ("{0,6}: {1}" -f $n, $all[$n - 1])
+    Add-Line $rendered
+    $techniques.Add($rendered)
   }
 }
+
+$techniques | Set-Content -LiteralPath $techniquesReport -Encoding UTF8
 
 foreach ($file in ($targets | Sort-Object FullName -Unique)) {
   $matches = Select-String -LiteralPath $file.FullName -Pattern $patterns -CaseSensitive:$false
@@ -131,4 +147,8 @@ Write-Host "=== Focused Hyperline Freestyle extraction complete ==="
 Write-Host "Full focused report:"
 Write-Host "  $report"
 Write-Host ""
-Write-Host "Send that file to ChatGPT."
+Write-Host ""
+Write-Host "Techniques-only report:"
+Write-Host "  $techniquesReport"
+Write-Host ""
+Write-Host "For movement recognizer work, send hyperline-techniques.txt to ChatGPT."
