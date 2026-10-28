@@ -1055,6 +1055,34 @@ bool NativeVisualRenderer::DrawVisibleMarker(
 #endif
 }
 
+bool NativeVisualRenderer::DrawWorldTextMarker(
+    const std::array<float, 3>& position, const char* message,
+    std::string& error) {
+#if !defined(_WIN32)
+  (void)position;
+  (void)message;
+  error = "native world-text renderer currently requires Windows";
+  return false;
+#else
+  error.clear();
+  if (!ParticleReady()) {
+    error = "native entity ABI is not ready";
+    return false;
+  }
+  if (!message || !*message) {
+    error = "world-text message is empty";
+    return false;
+  }
+  for (float coordinate : position) {
+    if (!std::isfinite(coordinate)) {
+      error = "world-text position is not finite";
+      return false;
+    }
+  }
+  return impl_->SpawnWorldText(position, message, error);
+#endif
+}
+
 bool NativeVisualRenderer::DrawTestParticle(
     const std::array<float, 3>& position, std::string& error) {
 #if !defined(_WIN32)
@@ -1115,27 +1143,6 @@ void NativeVisualRenderer::Clear() {
   }
   impl_->last_signature = 0;
 }
-
-void NativeVisualRenderer::PulseParticles() {
-#if defined(_WIN32)
-  if (!impl_->accept_input || impl_->particles.empty()) return;
-
-  static constexpr char kEmpty[] = "";
-  InputVariant value{.pointer = kEmpty};
-
-  std::size_t restarted = 0;
-  std::erase_if(impl_->particles, [&](const ParticleRef& particle) {
-    void* entity = particle.Get();
-    if (!entity) return true;
-    if (impl_->accept_input(entity, "Start", nullptr, nullptr, &value, 0, nullptr)) {
-      ++restarted;
-    }
-    return false;
-  });
-
-#endif
-}
-
 
 void NativeVisualRenderer::Render(
     const std::vector<RecordedTick>& route,
