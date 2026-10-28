@@ -7962,3 +7962,39 @@ select:hover:not(:disabled) {
 .movement-split-list small { text-align:right; opacity:.65; }
 .movement-error { margin:0; }
 @media (max-width: 900px) { .movement-control-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .movement-stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Movement Lab session feedback: restrained color, clear timing hierarchy. */
+.movement-session-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.025);
+}
+.movement-session-indicator {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #7e9695;
+}
+.movement-session-banner > div { display: grid; gap: 5px; }
+.movement-session-banner strong { font-size: 15px; }
+.movement-session-banner > div > span { font-size: 12px; color: var(--muted, #a4b4b4); }
+.movement-session-banner.is-recording { border-color: rgba(255,110,110,.28); }
+.movement-session-banner.is-recording .movement-session-indicator { background: #f77; animation: movement-record-pulse 1.25s ease-in-out infinite; }
+.movement-session-banner.is-running { border-color: rgba(79,209,197,.35); }
+.movement-session-banner.is-running .movement-session-indicator { background: #4fd1c5; }
+.movement-session-banner.is-pb { border-color: rgba(98,255,143,.35); }
+.movement-session-banner.is-pb .movement-session-indicator { background: #62ff8f; }
+.movement-timer-value { font-variant-numeric: tabular-nums; }
+.movement-split-list > div.movement-split-faster small { color: #62df9b; opacity: 1; }
+.movement-split-list > div.movement-split-slower small { color: #ff9b91; opacity: 1; }
+.movement-split-list > div.movement-split-even small { color: #b6c9c9; }
+@keyframes movement-record-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) {
+  .movement-session-banner.is-recording .movement-session-indicator { animation: none; }
+}

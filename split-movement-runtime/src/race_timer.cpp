@@ -68,6 +68,8 @@ bool RaceTimer::Arm(std::string& error) {
   status_.current_splits.clear();
   status_.next_checkpoint = 0;
   status_.last_was_pb = false;
+  status_.last_delta_seconds.reset();
+  status_.last_split_deltas.clear();
   was_inside_start_ = false;
   left_start_after_begin_ = false;
   return true;
@@ -80,6 +82,8 @@ void RaceTimer::Cancel() {
   status_.current_splits.clear();
   status_.next_checkpoint = 0;
   status_.last_was_pb = false;
+  status_.last_delta_seconds.reset();
+  status_.last_split_deltas.clear();
   was_inside_start_ = false;
   left_start_after_begin_ = false;
 }
@@ -150,6 +154,21 @@ RaceEvent RaceTimer::Observe(const std::array<float, 3>& position) {
     event.elapsed_seconds = status_.elapsed_seconds;
     event.previous_pb_seconds = status_.personal_best_seconds;
     event.checkpoint_count = course_->checkpoints.size();
+
+    // Preserve comparison against the previous PB before overwriting it.
+    // Otherwise a new PB would appear as +0.000 on every split in the UI.
+    status_.last_delta_seconds =
+        status_.personal_best_seconds
+            ? std::optional<double>(
+                  status_.elapsed_seconds - *status_.personal_best_seconds)
+            : std::nullopt;
+    status_.last_split_deltas.clear();
+    if (status_.personal_best_splits.size() == status_.current_splits.size()) {
+      for (std::size_t i = 0; i < status_.current_splits.size(); ++i) {
+        status_.last_split_deltas.push_back(
+            status_.current_splits[i] - status_.personal_best_splits[i]);
+      }
+    }
 
     const bool pb = !status_.personal_best_seconds ||
                     status_.elapsed_seconds < *status_.personal_best_seconds;

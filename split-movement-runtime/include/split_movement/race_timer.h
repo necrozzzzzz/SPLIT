@@ -35,6 +35,8 @@ struct RaceStatus {
   std::vector<double> personal_best_splits;
   std::size_t next_checkpoint = 0;
   bool last_was_pb = false;
+  std::optional<double> last_delta_seconds;
+  std::vector<double> last_split_deltas;
   std::uint64_t course_id = 0;
 };
 

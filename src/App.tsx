@@ -592,6 +592,9 @@ type MovementLabStatus = {
   elapsedSeconds: number;
   lastSeconds: number | null;
   personalBestSeconds: number | null;
+  lastWasPb: boolean;
+  lastDeltaSeconds: number | null;
+  lastSplitDeltas: number[];
   currentSplits: number[];
   personalBestSplits: number[];
   nextCheckpoint: number;
@@ -5509,6 +5512,35 @@ function App() {
 
       {activeView === "movement" && (
         <section className="movement-lab">
+          <div
+            className={`movement-session-banner ${movementStatus?.recording ? "is-recording" : movementStatus?.racePhase === "running" ? "is-running" : movementStatus?.racePhase === "finished" && movementStatus.lastWasPb ? "is-pb" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="movement-session-indicator" aria-hidden="true" />
+            <div>
+              <strong>
+                {!movementStatus ? runtimeUiText("Movement Lab offline", language)
+                  : movementStatus.recording ? runtimeUiText("Recording route", language)
+                  : movementStatus.racePhase === "armed" ? runtimeUiText("Ready to race", language)
+                  : movementStatus.racePhase === "running" ? runtimeUiText("Race in progress", language)
+                  : movementStatus.racePhase === "finished" && movementStatus.lastWasPb ? runtimeUiText("New personal best!", language)
+                  : movementStatus.racePhase === "finished" ? runtimeUiText("Run finished", language)
+                  : movementStatus.hasRoute ? runtimeUiText("Route ready", language)
+                  : runtimeUiText("Record your first route", language)}
+              </strong>
+              <span>
+                {!movementStatus ? runtimeUiText("Start the Movement Runtime to begin.", language)
+                  : movementStatus.recording ? `${movementStatus.ticks.toLocaleString()} ${runtimeUiText("ticks captured", language)}`
+                  : movementStatus.racePhase === "armed" ? runtimeUiText("Enter the start zone to begin timing.", language)
+                  : movementStatus.racePhase === "running" ? `${movementStatus.elapsedSeconds.toFixed(3)}s · ${movementStatus.nextCheckpoint}/${movementStatus.checkpointCount} ${runtimeUiText("checkpoints", language)}`
+                  : movementStatus.racePhase === "finished" && movementStatus.lastSeconds != null
+                    ? `${movementStatus.lastSeconds.toFixed(3)}s${movementStatus.lastDeltaSeconds != null ? ` · ${movementStatus.lastDeltaSeconds > 0 ? "+" : ""}${movementStatus.lastDeltaSeconds.toFixed(3)}s ${runtimeUiText("vs previous PB", language)}` : ""}`
+                  : movementStatus.hasRoute ? runtimeUiText("Use Race or Replay, or record a new route.", language)
+                  : runtimeUiText("Use the Record shortcut while playing Deadlock.", language)}
+              </span>
+            </div>
+          </div>
           <div className="movement-runtime-card">
             <div>
               <span className="label">{runtimeUiText("MOVEMENT RUNTIME", language)}</span>
@@ -5527,8 +5559,8 @@ function App() {
 
           <div className="movement-stats-grid">
             <article><span>{runtimeUiText("Route", language)}</span><strong>{movementStatus?.hasRoute ? `${movementStatus.ticks.toLocaleString()} ticks` : "—"}</strong></article>
-            <article><span>{runtimeUiText("Race status", language)}</span><strong>{movementStatus?.racePhase ?? "—"}</strong></article>
-            <article><span>{runtimeUiText("Current", language)}</span><strong>{movementStatus && movementStatus.racePhase === "running" ? `${movementStatus.elapsedSeconds.toFixed(3)}s` : "—"}</strong></article>
+            <article><span>{runtimeUiText("Race status", language)}</span><strong>{movementStatus?.recording ? runtimeUiText("Recording", language) : movementStatus?.racePhase ? runtimeUiText(({ idle: "Idle", armed: "Armed", running: "Running", finished: "Finished" } as const)[movementStatus.racePhase], language) : "—"}</strong></article>
+            <article><span>{runtimeUiText("Current", language)}</span><strong className="movement-timer-value">{movementStatus && movementStatus.racePhase === "running" ? `${movementStatus.elapsedSeconds.toFixed(3)}s` : "—"}</strong></article>
             <article><span>{runtimeUiText("Personal best", language)}</span><strong>{movementStatus?.personalBestSeconds != null ? `${movementStatus.personalBestSeconds.toFixed(3)}s` : "—"}</strong></article>
             <article><span>{runtimeUiText("Last run", language)}</span><strong>{movementStatus?.lastSeconds != null ? `${movementStatus.lastSeconds.toFixed(3)}s` : "—"}</strong></article>
             <article><span>{runtimeUiText("Checkpoint", language)}</span><strong>{movementStatus ? `${movementStatus.nextCheckpoint}/${movementStatus.checkpointCount}` : "—"}</strong></article>
@@ -5541,7 +5573,17 @@ function App() {
                 {Array.from({ length: movementStatus.checkpointCount }, (_, index) => {
                   const current = movementStatus.currentSplits[index];
                   const pb = movementStatus.personalBestSplits[index];
-                  return <div key={index}><span>{index + 1}</span><strong>{current != null ? `${current.toFixed(3)}s` : "—"}</strong><small>{current != null && pb != null ? `${current - pb >= 0 ? "+" : ""}${(current - pb).toFixed(3)}s` : pb != null ? `PB ${pb.toFixed(3)}s` : "—"}</small></div>;
+                  const finished = movementStatus.racePhase === "finished";
+                  const delta = finished
+                    ? movementStatus.lastSplitDeltas?.[index]
+                    : current != null && pb != null ? current - pb : undefined;
+                  return (
+                    <div key={index} className={delta == null ? "" : delta < -0.0005 ? "movement-split-faster" : delta > 0.0005 ? "movement-split-slower" : "movement-split-even"}>
+                      <span>{index + 1}</span>
+                      <strong>{current != null ? `${current.toFixed(3)}s` : "—"}</strong>
+                      <small>{delta != null ? `${delta > 0 ? "+" : ""}${delta.toFixed(3)}s` : pb != null ? `PB ${pb.toFixed(3)}s` : "—"}</small>
+                    </div>
+                  );
                 })}
               </div>
             </div>

@@ -239,6 +239,9 @@ int main(int argc, char** argv) {
           << "\"elapsedSeconds\":" << race.elapsed_seconds << ","
           << "\"lastSeconds\":" << JsonNumberOrNull(race.last_seconds) << ","
           << "\"personalBestSeconds\":" << JsonNumberOrNull(race.personal_best_seconds) << ","
+          << "\"lastWasPb\":" << (race.last_was_pb ? "true" : "false") << ","
+          << "\"lastDeltaSeconds\":" << JsonNumberOrNull(race.last_delta_seconds) << ","
+          << "\"lastSplitDeltas\":" << JsonNumberArray(race.last_split_deltas) << ","
           << "\"currentSplits\":" << JsonNumberArray(race.current_splits) << ","
           << "\"personalBestSplits\":" << JsonNumberArray(race.personal_best_splits) << ","
           << "\"nextCheckpoint\":" << race.next_checkpoint << ","
@@ -538,7 +541,7 @@ int main(int argc, char** argv) {
                     std::cout << "[SPLIT][PB Ghost] visual setup failed: "
                               << visual_error << "\n";
                   } else {
-                    std::cout << "[SPLIT][PB Ghost] visual=translucent alpha=110\n";
+                    std::cout << "[SPLIT][PB Ghost] render fields applied alpha=110 (visual result not verified)\n";
                   }
 
                   if (!steering.Start(ghost_slot, std::move(ghost_ticks),
