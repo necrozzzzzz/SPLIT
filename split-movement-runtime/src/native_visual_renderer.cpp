@@ -929,6 +929,31 @@ void NativeVisualRenderer::Clear() {
   impl_->last_signature = 0;
 }
 
+void NativeVisualRenderer::PulseParticles() {
+#if defined(_WIN32)
+  if (!impl_->accept_input || impl_->particles.empty()) return;
+
+  static constexpr char kEmpty[] = "";
+  InputVariant value{.pointer = kEmpty};
+
+  std::size_t restarted = 0;
+  std::erase_if(impl_->particles, [&](const ParticleRef& particle) {
+    void* entity = particle.Get();
+    if (!entity) return true;
+    if (impl_->accept_input(entity, "Start", nullptr, nullptr, &value, 0, nullptr)) {
+      ++restarted;
+    }
+    return false;
+  });
+
+  if (restarted > 0) {
+    std::cout << "[SPLIT][Visuals] pulsed " << restarted
+              << " persistent particle markers\n";
+  }
+#endif
+}
+
+
 void NativeVisualRenderer::Render(
     const std::vector<RecordedTick>& route,
     const std::optional<RaceCourse>& course,
