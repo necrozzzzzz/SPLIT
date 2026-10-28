@@ -48,7 +48,6 @@ use windows_sys::{
 };
 
 use serde::{Deserialize, Serialize};
-use crate::storage::atomic_write;
 use tauri::AppHandle;
 
 use super::watcher;
@@ -2850,126 +2849,12 @@ physical ctrl={} alt={} shift={}",
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MovementVisualRings {
-    start: [f64; 3],
-    finish: [f64; 3],
-    radius: f64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MovementVisualState {
-    tracer: Vec<[f64; 3]>,
-    rings: Option<MovementVisualRings>,
-    checkpoints: Vec<[f64; 3]>,
-}
-
-fn movement_visual_state() -> Result<MovementVisualState, String> {
-    let socket = UdpSocket::bind("127.0.0.1:0")
-        .map_err(|error| format!("Could not open Movement Lab visual socket: {error}"))?;
-    socket
-        .set_read_timeout(Some(Duration::from_millis(250)))
-        .map_err(|error| format!("Could not configure Movement Lab visual socket: {error}"))?;
-    socket
-        .send_to(b"visualstate", "127.0.0.1:27168")
-        .map_err(|error| format!("Could not query Movement Lab visuals: {error}"))?;
-
-    let mut buffer = vec![0u8; 65_507];
-    let (received, _) = socket
-        .recv_from(&mut buffer)
-        .map_err(|error| format!("Movement Lab visual state did not answer: {error}"))?;
-    serde_json::from_slice(&buffer[..received])
-        .map_err(|error| format!("Movement Lab returned invalid visual state: {error}"))
-}
-
-fn append_draw_ring(output: &mut String, center: [f64; 3], radius: f64) {
-    const SEGMENTS: usize = 32;
-    const TAU: f64 = std::f64::consts::TAU;
-    let z = center[2] + 8.0;
-    for index in 0..SEGMENTS {
-        let a = TAU * index as f64 / SEGMENTS as f64;
-        let b = TAU * (index + 1) as f64 / SEGMENTS as f64;
-        let p1 = [center[0] + radius * a.cos(), center[1] + radius * a.sin(), z];
-        let p2 = [center[0] + radius * b.cos(), center[1] + radius * b.sin(), z];
-        output.push_str(&format!(
-            "cl_drawline {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}\n",
-            p1[0], p1[1], p1[2], p2[0], p2[1], p2[2],
-        ));
-    }
-}
-
-fn write_movement_visual_cfg(state: &MovementVisualState) -> Result<(), String> {
-    let paths = super::paths::configured_deadlock_paths()
-        .ok_or_else(|| "Deadlock path is not configured".to_string())?;
-    let path = paths.cfg_dir.join("split_movement_visual.cfg");
-
-    let mut output = String::from(
-        "// SPLIT Movement Lab - generated visual pass\ncl_cleardraw\n",
-    );
-
-    for points in state.tracer.windows(2) {
-        let a = points[0];
-        let b = points[1];
-        output.push_str(&format!(
-            "cl_drawline {:.2} {:.2} {:.2} {:.2} {:.2} {:.2}\n",
-            a[0], a[1], a[2] + 8.0, b[0], b[1], b[2] + 8.0,
-        ));
-    }
-
-    if let Some(rings) = &state.rings {
-        append_draw_ring(&mut output, rings.start, rings.radius);
-        append_draw_ring(&mut output, rings.finish, rings.radius);
-    }
-
-    for point in &state.checkpoints {
-        output.push_str(&format!(
-            "cl_drawcross {:.2} {:.2} {:.2}\n",
-            point[0], point[1], point[2] + 8.0,
-        ));
-    }
-
-    atomic_write(&path, output)
-        .map_err(|error| format!("Could not write {}: {error}", path.display()))
-}
-
-fn sync_movement_visuals() -> Result<(), String> {
-    let state = movement_visual_state()?;
-    write_movement_visual_cfg(&state)?;
-
-    // F13 is already SPLIT-owned. Its CFG bind prepares teleports and then
-    // executes split_movement_visual.cfg, so no extra user-facing binding is
-    // introduced. PostMessage targets Deadlock without stealing focus from SPLIT.
-    if let Some(hwnd) = find_deadlock_window() {
-        post_virtual_key(hwnd, VK_F13)?;
-    }
-    Ok(())
-}
-
-fn command_changes_movement_visuals(command: &str) -> bool {
-    matches!(
-        command,
-        "recordtoggle" | "record" | "stop" | "race" | "racecancel" | "clear"
-            | "visual both" | "visual ghost" | "visual tracer" | "visual off"
-            | "rings on" | "rings off" | "checkpoints on" | "checkpoints off"
-            | "hud on" | "hud off"
-    )
-}
-
 pub fn send_movement_command(command: &str) -> Result<(), String> {
     let socket = UdpSocket::bind("127.0.0.1:0")
         .map_err(|error| format!("Could not open Movement Lab control socket: {error}"))?;
     socket
         .send_to(command.as_bytes(), "127.0.0.1:27168")
         .map_err(|error| format!("Could not send Movement Lab command '{command}': {error}"))?;
-
-    if command_changes_movement_visuals(command) {
-        thread::sleep(Duration::from_millis(30));
-        if let Err(error) = sync_movement_visuals() {
-            eprintln!("[SPLIT][Movement] Visual sync skipped: {error}");
-        }
-    }
     Ok(())
 }
 

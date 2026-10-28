@@ -5,6 +5,7 @@
 #include "split_movement/native_hooks.h"
 #include "split_movement/input_capture.h"
 #include "split_movement/movement_steering.h"
+#include "split_movement/native_visual_renderer.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/pb_route_store.h"
 #include "split_movement/recorder.h"
@@ -257,6 +258,15 @@ int main(int argc, char** argv) {
   split::movement::RaceTimer race_timer(route_directory);
   split::movement::PbRouteStore pb_routes(route_directory);
 
+  split::movement::NativeVisualRenderer visual_renderer;
+  std::string visual_renderer_error;
+  if (!visual_renderer.Install(visual_renderer_error)) {
+    std::cout << "[SPLIT][Visuals] native renderer unavailable: "
+              << visual_renderer_error << "\n";
+  } else {
+    std::cout << "[SPLIT][Visuals] native Source 2 debug renderer ready\n";
+  }
+
   auto handle_command = [&](std::string_view command) -> std::string {
     if (command == "visualstate") {
       const auto course = race_timer.Course();
@@ -269,7 +279,7 @@ int main(int argc, char** argv) {
       std::ostringstream out;
       out << "{"
           << "\"schemaVersion\":1,"
-          << "\"renderedInGame\":false,"
+          << "\"renderedInGame\":" << (visual_renderer.Ready() ? "true" : "false") << ","
           << "\"visualMode\":\"" << (mode == 1 ? "ghost" : mode == 2 ? "tracer" :
                                        mode == 3 ? "off" : "both") << "\","
           << "\"tracer\":" << (trail_enabled ? JsonRoutePolyline(recorder.PlaybackTicks()) : "[]") << ","
@@ -336,7 +346,7 @@ int main(int argc, char** argv) {
           << "\"showRings\":" << (show_rings.load() ? "true" : "false") << ","
           << "\"showCheckpoints\":" << (show_checkpoints.load() ? "true" : "false") << ","
           << "\"showHud\":" << (show_hud.load() ? "true" : "false") << ","
-          << "\"inGameVisualsReady\":false"
+          << "\"inGameVisualsReady\":" << (visual_renderer.Ready() ? "true" : "false")"
           << "}";
       return out.str();
     }
@@ -490,6 +500,23 @@ int main(int argc, char** argv) {
             const auto latest_input = input_capture.Latest(slot);
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
+
+            if (frame % 60 == 0 && visual_renderer.Ready()) {
+              const int mode = visual_mode.load(std::memory_order_relaxed);
+              split::movement::NativeVisualSettings visual_settings;
+              visual_settings.tracer = mode == 0 || mode == 2;
+              visual_settings.rings =
+                  show_rings.load(std::memory_order_relaxed);
+              visual_settings.checkpoints =
+                  show_checkpoints.load(std::memory_order_relaxed);
+
+              auto visual_route = recorder.PlaybackTicks();
+              auto visual_course = visual_route.empty()
+                  ? std::optional<split::movement::RaceCourse>{}
+                  : race_timer.Course();
+              visual_renderer.Render(visual_route, visual_course,
+                                     visual_settings);
+            }
 
             if (retry_requested.exchange(false, std::memory_order_acq_rel)) {
               auto ticks = recorder.PlaybackTicks();

@@ -23,6 +23,7 @@ add_executable(split-movement-runtime
   src/engine_bridge.cpp
   src/engine_runner.cpp
   src/native_hooks.cpp
+  src/native_visual_renderer.cpp
   src/pawn_probe.cpp
   src/input_capture.cpp
   src/bot_factory.cpp
