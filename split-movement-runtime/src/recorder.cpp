@@ -1,5 +1,6 @@
 #include "split_movement/recorder.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <fstream>
