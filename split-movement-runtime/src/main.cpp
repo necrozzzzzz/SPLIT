@@ -337,12 +337,28 @@ int main(int argc, char** argv) {
       return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
     if (command == "visualdiagnostics") {
+      auto escape_json = [](std::string_view value) {
+        std::string escaped;
+        escaped.reserve(value.size() + 8);
+        for (const char c : value) {
+          switch (c) {
+            case '\\': escaped += "\\\\"; break;
+            case '"': escaped += "\\\""; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped += c; break;
+          }
+        }
+        return escaped;
+      };
       std::ostringstream out;
       out << "{"
           << "\"rendererInterfaceReady\":" << (visual_renderer.Ready() ? "true" : "false")
           << ",\"particleCoreReady\":" << (visual_renderer.ParticleReady() ? "true" : "false")
           << ",\"manifestReady\":" << (visual_renderer.ManifestReady() ? "true" : "false")
           << ",\"transmitAlwaysReady\":" << (visual_renderer.TransmitReady() ? "true" : "false")
+          << ",\"optionalError\":\"" << escape_json(visual_renderer.OptionalError()) << "\""
           << ",\"clientRenderVerified\":false"
           << ",\"hudImplemented\":false"
           << "}";
