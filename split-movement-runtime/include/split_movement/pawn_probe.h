@@ -17,6 +17,16 @@ struct PawnSample {
   std::array<float, 3> position{};
   std::array<float, 3> velocity{};
   bool grounded = false;
+
+  // Exact movement state read from the player's native movement abilities.
+  bool sliding = false;
+  bool mantling = false;
+  std::optional<float> mantle_start_time;
+  std::optional<std::int8_t> consecutive_wall_jumps;
+  std::optional<std::array<float, 3>> wall_contact_position;
+  std::optional<std::array<float, 3>> wall_jump_normal;
+  std::optional<std::uint16_t> wall_jump_facing;
+  std::optional<float> zipline_time;
 };
 
 class PawnProbe {
