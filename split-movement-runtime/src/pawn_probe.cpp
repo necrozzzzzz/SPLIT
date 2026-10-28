@@ -24,6 +24,9 @@ constexpr std::uint32_t kMaxEntitiesInList = 512;
 constexpr std::uint32_t kMaxEntityLists = 64;
 constexpr std::size_t kIdentitySize = 0x70;
 constexpr std::size_t kIdentityInstanceOffset = 0x00;
+constexpr std::size_t kIdentityClassOffset = 0x08;
+constexpr std::size_t kEntityClassInfoOffset = 0x58;
+constexpr std::size_t kClassInfoSchemaBindingOffset = 0x28;
 constexpr std::size_t kIdentityEHandleOffset = 0x10;
 constexpr std::size_t kIdentityFlagsOffset = 0x30;
 constexpr std::uint32_t kEntityIndexBits = 0x7FFF;
@@ -174,6 +177,40 @@ void* InstanceOf(unsigned char* identity) {
 
 const schema::ClassInfo* FirstBaseOf(const schema::ClassInfo* info) {
   return info && info->base_count > 0 && info->bases ? info->bases[0].info : nullptr;
+}
+
+std::expected<const schema::ClassInfo*, std::string> SchemaClassOfEntity(void* entity) {
+  if (!entity) return std::unexpected("entity is null");
+
+  void* identity = Read<void*>(entity, kIdentityOffset);
+  if (!identity || Read<void*>(identity, kIdentityInstanceOffset) != entity) {
+    return std::unexpected("the entity has no live identity");
+  }
+
+  void* entity_class = Read<void*>(identity, kIdentityClassOffset);
+  if (!entity_class) {
+    return std::unexpected("the entity has no entity class");
+  }
+
+  void* class_info = Read<void*>(entity_class, kEntityClassInfoOffset);
+  if (!class_info) {
+    return std::unexpected("the entity class has no class info");
+  }
+
+  auto* binding = Read<const schema::ClassInfo*>(
+      class_info, kClassInfoSchemaBindingOffset);
+  if (!binding || binding->self != binding) {
+    return std::unexpected("the entity's schema class is unreadable");
+  }
+  return binding;
+}
+
+bool SchemaClassDerivesFrom(const schema::ClassInfo* info,
+                            std::string_view class_name) {
+  for (; info; info = FirstBaseOf(info)) {
+    if (info->name && class_name == info->name) return true;
+  }
+  return false;
 }
 
 std::expected<std::size_t, std::string> FieldOffset(const schema::ClassInfo* info,
@@ -452,6 +489,34 @@ bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
     return false;
   }
 
+  // Mirror Modlock's WriteField preflight: identify the live entity's actual
+  // schema class and prove that it derives from CBaseModelEntity before using
+  // model-entity field offsets.
+  auto actual = SchemaClassOfEntity(pawn);
+  if (!actual) {
+    error = actual.error();
+    return false;
+  }
+  if (!SchemaClassDerivesFrom(*actual, "CBaseModelEntity")) {
+    error = std::string("pawn schema class ") +
+            ((*actual)->name ? (*actual)->name : "<unnamed>") +
+            " does not derive from CBaseModelEntity";
+    return false;
+  }
+
+  auto render_mode_offset =
+      FieldOffset(*actual, "m_nRenderMode", sizeof(std::uint8_t));
+  if (!render_mode_offset) {
+    error = "CBaseModelEntity.m_nRenderMode: " + render_mode_offset.error();
+    return false;
+  }
+  auto render_color_offset =
+      FieldOffset(*actual, "m_clrRender", sizeof(std::uint32_t));
+  if (!render_color_offset) {
+    error = "CBaseModelEntity.m_clrRender: " + render_color_offset.error();
+    return false;
+  }
+
   constexpr std::uint8_t kRenderNormal = 0;
   constexpr std::uint8_t kRenderTransColor = 1;
   constexpr std::uint8_t kGhostAlpha = 110;
@@ -459,30 +524,29 @@ bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
   const std::uint32_t alpha = ghost ? kGhostAlpha : 255u;
   const std::uint32_t color = 0x00ffffffu | (alpha << 24);
 
-  // Mirror Modlock's writeField() behavior exactly: each networked field
-  // write is published immediately, rather than batching both into one notify.
-  std::memcpy(static_cast<std::byte*>(pawn) + impl_->layout->render_mode,
+  // Match Modlock's two independent WriteField calls: write one field, publish
+  // a full network-state change, then do the same for the second field.
+  std::memcpy(static_cast<std::byte*>(pawn) + *render_mode_offset,
               &mode, sizeof(mode));
   if (!NotifyEntityStateChanged(pawn)) {
     error = "ghost render mode could not be replicated";
     return false;
   }
 
-  std::memcpy(static_cast<std::byte*>(pawn) + impl_->layout->render_color,
+  std::memcpy(static_cast<std::byte*>(pawn) + *render_color_offset,
               &color, sizeof(color));
   if (!NotifyEntityStateChanged(pawn)) {
     error = "ghost render color could not be replicated";
     return false;
   }
 
-  const auto applied_mode =
-      Read<std::uint8_t>(pawn, impl_->layout->render_mode);
-  const auto applied_color =
-      Read<std::uint32_t>(pawn, impl_->layout->render_color);
+  const auto applied_mode = Read<std::uint8_t>(pawn, *render_mode_offset);
+  const auto applied_color = Read<std::uint32_t>(pawn, *render_color_offset);
   if (applied_mode != mode || applied_color != color) {
     error = "ghost render values were overwritten immediately";
     return false;
   }
+
   return true;
 }
 

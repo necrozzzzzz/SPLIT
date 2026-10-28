@@ -180,7 +180,6 @@ int main(int argc, char** argv) {
   bool pawn_announced = false;
   bool steering_was_active = false;
   int pb_ghost_slot = -1;
-  std::string last_ghost_visual_error;
   std::atomic<bool> replay_requested{false};
   std::atomic<bool> race_requested{false};
   std::string last_pawn_error;
@@ -355,16 +354,34 @@ int main(int argc, char** argv) {
                         << race_event.checkpoint_count << "\n";
 
               const auto race_status = race_timer.Status();
+              std::vector<split::movement::RecordedTick> ghost_ticks;
+              bool ghost_is_pb = false;
+
               if (race_status.personal_best_seconds &&
                   pb_routes.Exists(race_status.course_id)) {
-                auto pb_ticks = pb_routes.Load(race_status.course_id);
-                if (!pb_ticks) {
+                auto loaded_pb = pb_routes.Load(race_status.course_id);
+                if (!loaded_pb) {
                   std::cout << "[SPLIT][PB Ghost] load failed: "
-                            << pb_ticks.error() << "\n";
-                } else if (pb_ticks->empty()) {
-                  std::cout << "[SPLIT][PB Ghost] saved PB route is empty\n";
+                            << loaded_pb.error() << "\n";
                 } else {
-                  const auto first_pb = pb_ticks->front().pawn;
+                  ghost_ticks = std::move(*loaded_pb);
+                  ghost_is_pb = !ghost_ticks.empty();
+                }
+              }
+
+              if (ghost_ticks.empty()) {
+                ghost_ticks = recorder.PlaybackTicks();
+                if (!ghost_ticks.empty()) {
+                  std::cout
+                      << "[SPLIT][PB Ghost] using recorded route as reference ghost\n";
+                }
+              }
+
+              if (ghost_ticks.empty()) {
+                std::cout
+                    << "[SPLIT][PB Ghost] no route is available for ghost playback\n";
+              } else {
+                  const auto first_pb = ghost_ticks.front().pawn;
                   std::string ghost_error;
                   steering.Stop();
 
@@ -418,7 +435,7 @@ int main(int argc, char** argv) {
                       std::cout << "[SPLIT][PB Ghost] visual=translucent alpha=110\n";
                     }
 
-                    if (!steering.Start(ghost_slot, std::move(*pb_ticks),
+                    if (!steering.Start(ghost_slot, std::move(ghost_ticks),
                                        ghost_error)) {
                       std::cout << "[SPLIT][PB Ghost] steering failed: "
                                 << ghost_error << "\n";
@@ -428,8 +445,12 @@ int main(int argc, char** argv) {
                       std::cout << "[SPLIT][PB Ghost] started slot="
                                 << ghost_slot
                                 << " steps=" << ghost_state.total
-                                << " pb=" << std::fixed << std::setprecision(3)
-                                << *race_status.personal_best_seconds << "s\n";
+                                << " source=" << (ghost_is_pb ? "pb" : "reference");
+                      if (race_status.personal_best_seconds) {
+                        std::cout << " pb=" << std::fixed << std::setprecision(3)
+                                  << *race_status.personal_best_seconds << "s";
+                      }
+                      std::cout << "\n";
                     }
                   }
 
@@ -539,23 +560,6 @@ int main(int argc, char** argv) {
             }
 
             const auto steering_status = steering.Status();
-
-            // Deadlock can refresh a bot's render state after spawn/animation
-            // updates. Keep the PB ghost look alive while its steering runs,
-            // but only republish every few frames.
-            if (steering_status.active && pb_ghost_slot >= 0 &&
-                steering_status.slot == pb_ghost_slot && frame % 15 == 0) {
-              std::string visual_error;
-              if (!pawn_probe.SetGhostVisual(pb_ghost_slot, true, visual_error)) {
-                if (visual_error != last_ghost_visual_error) {
-                  last_ghost_visual_error = visual_error;
-                  std::cout << "[SPLIT][PB Ghost] visual refresh failed: "
-                            << visual_error << "\n";
-                }
-              } else {
-                last_ghost_visual_error.clear();
-              }
-            }
 
             if (steering_status.active && frame % 120 == 0) {
               std::cout << "[SPLIT][Replay] steering "
