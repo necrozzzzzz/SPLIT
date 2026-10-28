@@ -5,10 +5,8 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-#include <sstream>
 
 namespace split::movement {
-
 namespace {
 
 double Length3(const std::array<float, 3>& v) {
@@ -35,6 +33,25 @@ std::string SafeMapName(std::string_view map) {
   return out.empty() ? "unknown" : out;
 }
 
+RecordingStats BuildStats(bool recording, const std::vector<RecordedTick>& ticks,
+                          double distance, double max_speed) {
+  RecordingStats stats;
+  stats.recording = recording;
+  stats.ticks = ticks.size();
+  stats.distance = distance;
+  stats.max_speed = max_speed;
+  stats.ticks_with_input =
+      static_cast<std::size_t>(std::count_if(ticks.begin(), ticks.end(),
+                                            [](const RecordedTick& tick) {
+                                              return tick.input.has_value();
+                                            }));
+  if (!ticks.empty()) {
+    stats.first_frame = ticks.front().frame;
+    stats.last_frame = ticks.back().frame;
+  }
+  return stats;
+}
+
 }  // namespace
 
 void MovementRecorder::Start() {
@@ -48,17 +65,7 @@ void MovementRecorder::Start() {
 RecordingStats MovementRecorder::Stop() {
   std::scoped_lock lock(mutex_);
   recording_ = false;
-
-  RecordingStats stats;
-  stats.recording = false;
-  stats.ticks = ticks_.size();
-  stats.distance = distance_;
-  stats.max_speed = max_speed_;
-  if (!ticks_.empty()) {
-    stats.first_frame = ticks_.front().frame;
-    stats.last_frame = ticks_.back().frame;
-  }
-  return stats;
+  return BuildStats(false, ticks_, distance_, max_speed_);
 }
 
 void MovementRecorder::Clear() {
@@ -69,7 +76,8 @@ void MovementRecorder::Clear() {
   max_speed_ = 0.0;
 }
 
-void MovementRecorder::Push(std::uint64_t frame, const PawnSample& sample) {
+void MovementRecorder::Push(std::uint64_t frame, const PawnSample& sample,
+                            std::optional<InputSample> input) {
   std::scoped_lock lock(mutex_);
   if (!recording_) return;
 
@@ -77,22 +85,12 @@ void MovementRecorder::Push(std::uint64_t frame, const PawnSample& sample) {
     distance_ += Distance3(ticks_.back().pawn.position, sample.position);
   }
   max_speed_ = std::max(max_speed_, Length3(sample.velocity));
-  ticks_.push_back(RecordedTick{frame, sample});
+  ticks_.push_back(RecordedTick{frame, sample, std::move(input)});
 }
 
 RecordingStats MovementRecorder::Stats() const {
   std::scoped_lock lock(mutex_);
-
-  RecordingStats stats;
-  stats.recording = recording_;
-  stats.ticks = ticks_.size();
-  stats.distance = distance_;
-  stats.max_speed = max_speed_;
-  if (!ticks_.empty()) {
-    stats.first_frame = ticks_.front().frame;
-    stats.last_frame = ticks_.back().frame;
-  }
-  return stats;
+  return BuildStats(recording_, ticks_, distance_, max_speed_);
 }
 
 std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
@@ -119,7 +117,6 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
   const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
-
   const auto path = directory /
                     ("route-" + SafeMapName(map_name) + "-" + std::to_string(stamp) + ".json");
 
@@ -128,12 +125,14 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
     return std::unexpected("could not open route file for writing");
   }
 
+  const auto stats = BuildStats(false, ticks, distance, max_speed);
   out << std::fixed << std::setprecision(4);
   out << "{\n";
   out << "  \"format\": \"split-movement-route\",\n";
-  out << "  \"version\": 1,\n";
+  out << "  \"version\": 2,\n";
   out << "  \"map\": \"" << SafeMapName(map_name) << "\",\n";
-  out << "  \"tick_count\": " << ticks.size() << ",\n";
+  out << "  \"tick_count\": " << stats.ticks << ",\n";
+  out << "  \"ticks_with_input\": " << stats.ticks_with_input << ",\n";
   out << "  \"first_frame\": " << ticks.front().frame << ",\n";
   out << "  \"last_frame\": " << ticks.back().frame << ",\n";
   out << "  \"distance\": " << distance << ",\n";
@@ -148,7 +147,21 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
         << ",\"vel\":[" << tick.pawn.velocity[0] << "," << tick.pawn.velocity[1] << ","
         << tick.pawn.velocity[2] << "]"
         << ",\"grounded\":" << (tick.pawn.grounded ? "true" : "false")
-        << ",\"pawn_handle\":" << tick.pawn.pawn_handle << "}";
+        << ",\"pawn_handle\":" << tick.pawn.pawn_handle;
+
+    if (tick.input) {
+      out << ",\"input\":{\"seq\":" << tick.input->sequence
+          << ",\"angles\":[" << tick.input->angles[0] << "," << tick.input->angles[1] << ","
+          << tick.input->angles[2] << "]"
+          << ",\"forward\":" << tick.input->forward
+          << ",\"left\":" << tick.input->left
+          << ",\"held\":" << tick.input->held
+          << ",\"pressed\":" << tick.input->pressed << "}";
+    } else {
+      out << ",\"input\":null";
+    }
+
+    out << "}";
     if (i + 1 != ticks.size()) out << ",";
     out << "\n";
   }
@@ -156,9 +169,7 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
   out << "  ]\n";
   out << "}\n";
 
-  if (!out) {
-    return std::unexpected("route file write failed");
-  }
+  if (!out) return std::unexpected("route file write failed");
   return path;
 }
 

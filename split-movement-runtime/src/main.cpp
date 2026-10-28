@@ -1,6 +1,7 @@
 #include "split_movement/engine_bridge.h"
 #include "split_movement/engine_runner.h"
 #include "split_movement/native_hooks.h"
+#include "split_movement/input_capture.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/recorder.h"
 #include "split_movement/runtime.h"
@@ -46,6 +47,7 @@ void PrintStats(const split::movement::RecordingStats& stats) {
             << "[SPLIT][Recorder] "
             << (stats.recording ? "recording" : "stopped")
             << " ticks=" << stats.ticks
+            << " input=" << stats.ticks_with_input << "/" << stats.ticks
             << " distance=" << stats.distance
             << " max_speed=" << stats.max_speed;
   if (stats.ticks > 0) {
@@ -120,6 +122,7 @@ int main(int argc, char** argv) {
   std::cout << "SPLIT Movement Runtime: engine bridge ready.\n";
 
   split::movement::PawnProbe pawn_probe(bridge.SchemaSystem());
+  split::movement::InputCapture input_capture;
   split::movement::MovementRecorder recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
@@ -158,6 +161,14 @@ int main(int argc, char** argv) {
     }
   });
 
+  std::string input_error;
+  if (!input_capture.Install(input_error)) {
+    command_thread.request_stop();
+    std::cerr << "Input capture installation failed: " << input_error << "\n";
+    return 1;
+  }
+  std::cout << "SPLIT Movement Runtime: ProcessUsercmds input capture installed.\n";
+
   split::movement::NativeHooks hooks;
   std::string hook_error;
   if (!hooks.Install(
@@ -186,7 +197,7 @@ int main(int argc, char** argv) {
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
             }
 
-            recorder.Push(frame, *sample);
+            recorder.Push(frame, *sample, input_capture.Latest(slot));
 
             if (frame % 120 == 0) {
               std::cout << std::fixed << std::setprecision(1)
