@@ -17,6 +17,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <safetyhook.hpp>
 #endif
 
 namespace split::movement {
@@ -68,6 +69,10 @@ constexpr std::string_view kAcceptInputPattern =
     "48 89 5C 24 ?? 48 89 6C 24 ?? 56 57 41 56 48 81 EC ?? ?? ?? ?? 4D 8B F0 48 8B F1";
 constexpr std::string_view kRemoveEntityPattern =
     "48 85 C9 74 ? 48 8B D1 48 8B 0D";
+constexpr std::string_view kManifestBuilderPattern =
+    "48 89 54 24 ?? 48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 4C 8B 02";
+constexpr std::string_view kAddManifestResourcePattern =
+    "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B FA 48 8B D9 48 85 C9 74 ?? ?? ?? ?? 74";
 constexpr std::string_view kKvAllocatePattern =
     "48 8B 05 ?? ?? ?? ?? 48 8B D1 48 8B 08 48 8B 01 48 FF 60 08 CC CC CC CC CC CC CC CC CC CC CC CC 48 8B 05 ?? ?? ?? ?? 4C 8B C9 4C 8B C2 49 8B D1";
 constexpr std::string_view kKvConstructPattern =
@@ -151,6 +156,25 @@ void* FindUnique(HMODULE module, std::string_view pattern, const char* name,
   return match;
 }
 
+#endif
+
+
+#if defined(_WIN32)
+using AddManifestResourceFn = void (*)(const char*, void*);
+safetyhook::InlineHook g_manifest_hook;
+AddManifestResourceFn g_add_manifest_resource = nullptr;
+
+__int64 __fastcall ManifestBuildThunk(void* self, void** original_args) {
+  const __int64 result = g_manifest_hook.call<__int64>(self, original_args);
+  void* manifest = original_args ? *original_args : nullptr;
+  if (manifest && g_add_manifest_resource) {
+    g_add_manifest_resource(
+        "particles/environment/powerup_spawner_ambient_ring.vpcf", manifest);
+    g_add_manifest_resource(
+        "particles/generic/generic_ping_ground_arrow.vpcf", manifest);
+  }
+  return result;
+}
 #endif
 
 std::uint32_t MurmurHash2(const unsigned char* data, std::size_t length,
@@ -304,6 +328,7 @@ struct NativeVisualRenderer::Impl {
   bool installed = false;
   bool cheats_requested = false;
   bool particle_ready = false;
+  bool manifest_ready = false;
 
   using ServerCommandFn = void (*)(void*, const char*);
   using CreateEntityFn = void* (*)(void*, const char*, int);
@@ -482,6 +507,30 @@ bool NativeVisualRenderer::Install(std::string& error) {
   impl_->remove_entity = reinterpret_cast<Impl::RemoveEntityFn>(
       FindUnique(server, kRemoveEntityPattern, "entity.remove", error));
   if (!impl_->remove_entity) return false;
+
+  void* manifest_builder = FindUnique(
+      server, kManifestBuilderPattern, "game-rules.manifest-builder", error);
+  if (!manifest_builder) return false;
+  g_add_manifest_resource = reinterpret_cast<AddManifestResourceFn>(
+      FindUnique(server, kAddManifestResourcePattern,
+                 "game-rules.add-resource", error));
+  if (!g_add_manifest_resource) return false;
+
+  auto manifest_hook = safetyhook::create_inline(
+      manifest_builder, reinterpret_cast<void*>(&ManifestBuildThunk),
+      safetyhook::InlineHook::StartDisabled);
+  if (!manifest_hook) {
+    error = "inline hook on game session manifest builder failed";
+    return false;
+  }
+  g_manifest_hook = std::move(manifest_hook);
+  if (auto enabled = g_manifest_hook.enable(); !enabled) {
+    g_manifest_hook.reset();
+    g_add_manifest_resource = nullptr;
+    error = "could not enable game session manifest hook";
+    return false;
+  }
+  impl_->manifest_ready = true;
   impl_->kv_allocate = reinterpret_cast<Impl::KvAllocateFn>(
       FindUnique(server, kKvAllocatePattern, "entity-keyvalues.allocate", error));
   if (!impl_->kv_allocate) return false;
@@ -503,7 +552,7 @@ bool NativeVisualRenderer::Ready() const {
 }
 
 bool NativeVisualRenderer::ParticleReady() const {
-  return impl_->installed && impl_->particle_ready;
+  return impl_->installed && impl_->particle_ready && impl_->manifest_ready;
 }
 
 void NativeVisualRenderer::Invalidate() {
