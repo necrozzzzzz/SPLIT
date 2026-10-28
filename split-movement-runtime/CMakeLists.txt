@@ -26,6 +26,7 @@ add_executable(split-movement-runtime
   src/native_visual_renderer.cpp
   src/pawn_probe.cpp
   src/input_capture.cpp
+  src/movement_events.cpp
   src/bot_factory.cpp
   src/movement_steering.cpp
   src/recorder.cpp
