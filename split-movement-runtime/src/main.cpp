@@ -6,6 +6,7 @@
 #include "split_movement/movement_steering.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/recorder.h"
+#include "split_movement/race_timer.h"
 #include "split_movement/runtime.h"
 
 #include <array>
@@ -32,8 +33,11 @@ void Help() {
       << "  stop    stop recording and print stats\n"
       << "  status  print current recording stats\n"
       << "  save    save the current route as JSON\n"
-      << "  replay  spawn SPLIT Ghost and replay current route\n"
-      << "  clear   discard the current route\n\n"
+      << "  replay      spawn SPLIT Ghost and replay current route\n"
+      << "  race        arm a timed run using route start/finish\n"
+      << "  racestatus  print timer / PB status\n"
+      << "  racecancel  cancel the current timed run\n"
+      << "  clear       discard the current route\n\n"
       << "DEADLOCK_DIR can replace --game-dir.\n";
 }
 
@@ -132,11 +136,13 @@ int main(int argc, char** argv) {
   bool pawn_announced = false;
   bool steering_was_active = false;
   std::atomic<bool> replay_requested{false};
+  std::atomic<bool> race_requested{false};
   std::string last_pawn_error;
   std::string current_map = launch.map;
 
   const auto route_directory =
       std::filesystem::current_path() / "routes";
+  split::movement::RaceTimer race_timer(route_directory);
 
   // Source2Main owns the main thread. Keep a tiny command reader beside it so
   // this prototype can exercise recording without needing Tauri IPC yet.
@@ -156,6 +162,28 @@ int main(int argc, char** argv) {
       } else if (command == "replay") {
         replay_requested.store(true, std::memory_order_release);
         std::cout << "[SPLIT][Replay] replay requested\n";
+      } else if (command == "race") {
+        race_requested.store(true, std::memory_order_release);
+        std::cout << "[SPLIT][Race] arming route timer\n";
+      } else if (command == "racecancel") {
+        race_timer.Cancel();
+        std::cout << "[SPLIT][Race] cancelled\n";
+      } else if (command == "racestatus") {
+        const auto race = race_timer.Status();
+        const char* phase = "idle";
+        if (race.phase == split::movement::RaceStatus::Phase::kArmed) phase = "armed";
+        if (race.phase == split::movement::RaceStatus::Phase::kRunning) phase = "running";
+        if (race.phase == split::movement::RaceStatus::Phase::kFinished) phase = "finished";
+        std::cout << std::fixed << std::setprecision(3)
+                  << "[SPLIT][Race] " << phase
+                  << " elapsed=" << race.elapsed_seconds << "s";
+        if (race.personal_best_seconds) {
+          std::cout << " pb=" << *race.personal_best_seconds << "s";
+        }
+        if (race.last_seconds) {
+          std::cout << " last=" << *race.last_seconds << "s";
+        }
+        std::cout << "\n";
       } else if (command == "save") {
         auto saved = recorder.SaveJson(route_directory, current_map);
         if (saved) {
@@ -165,7 +193,7 @@ int main(int argc, char** argv) {
         }
       } else if (!command.empty()) {
         std::cout << "[SPLIT][Recorder] unknown command: " << command
-                  << " (record, stop, status, save, replay, clear)\n";
+                  << " (record, stop, status, save, replay, race, racestatus, racecancel, clear)\n";
       }
     }
   });
@@ -225,6 +253,69 @@ int main(int argc, char** argv) {
             }
 
             recorder.Push(frame, *sample, input_capture.Latest(slot));
+
+            if (race_requested.exchange(false, std::memory_order_acq_rel)) {
+              const auto first = recorder.FirstPawn();
+              const auto last = recorder.LastPawn();
+              if (!first || !last) {
+                std::cout << "[SPLIT][Race] no recorded route is available\n";
+              } else {
+                split::movement::RaceCourse course;
+                course.start = first->position;
+                course.finish = last->position;
+                course.radius = 120.0f;
+                course.map = current_map;
+
+                std::string race_error;
+                if (!race_timer.Configure(course, race_error)) {
+                  std::cout << "[SPLIT][Race] configure failed: "
+                            << race_error << "\n";
+                } else if (!race_timer.Arm(race_error)) {
+                  std::cout << "[SPLIT][Race] arm failed: "
+                            << race_error << "\n";
+                } else {
+                  const auto status = race_timer.Status();
+                  std::cout << std::fixed << std::setprecision(1)
+                            << "[SPLIT][Race] armed"
+                            << " start=(" << course.start[0] << ", "
+                                         << course.start[1] << ", "
+                                         << course.start[2] << ")"
+                            << " finish=(" << course.finish[0] << ", "
+                                          << course.finish[1] << ", "
+                                          << course.finish[2] << ")"
+                            << " radius=" << course.radius;
+                  if (status.personal_best_seconds) {
+                    std::cout << std::setprecision(3)
+                              << " pb=" << *status.personal_best_seconds << "s";
+                  }
+                  std::cout << "\n";
+                }
+              }
+            }
+
+            const auto race_event = race_timer.Observe(sample->position);
+            if (race_event.type == split::movement::RaceEvent::Type::kStarted) {
+              std::cout << "[SPLIT][Race] GO\n";
+            } else if (race_event.type == split::movement::RaceEvent::Type::kFinished) {
+              std::cout << std::fixed << std::setprecision(3)
+                        << "[SPLIT][Race] FINISH "
+                        << race_event.elapsed_seconds << "s";
+              if (race_event.personal_best) {
+                if (race_event.previous_pb_seconds) {
+                  std::cout << " PB (-"
+                            << (*race_event.previous_pb_seconds -
+                                race_event.elapsed_seconds)
+                            << "s)";
+                } else {
+                  std::cout << " PB";
+                }
+              } else if (race_event.previous_pb_seconds) {
+                std::cout << " (+" << (race_event.elapsed_seconds -
+                                        *race_event.previous_pb_seconds)
+                          << "s vs PB)";
+              }
+              std::cout << "\n";
+            }
 
             if (replay_requested.exchange(false, std::memory_order_acq_rel)) {
               const auto first = recorder.FirstPawn();

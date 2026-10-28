@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(split_movement_runtime VERSION 0.10.0 LANGUAGES CXX)
+project(split_movement_runtime VERSION 0.11.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,7 @@ add_executable(split-movement-runtime
   src/bot_factory.cpp
   src/movement_steering.cpp
   src/recorder.cpp
+  src/race_timer.cpp
 )
 
 target_include_directories(split-movement-runtime PRIVATE include)

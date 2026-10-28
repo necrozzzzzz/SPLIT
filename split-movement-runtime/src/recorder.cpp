@@ -118,6 +118,12 @@ std::optional<PawnSample> MovementRecorder::FirstPawn() const {
   return ticks_.front().pawn;
 }
 
+std::optional<PawnSample> MovementRecorder::LastPawn() const {
+  std::scoped_lock lock(mutex_);
+  if (ticks_.empty()) return std::nullopt;
+  return ticks_.back().pawn;
+}
+
 std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
     const std::filesystem::path& directory, std::string_view map_name) const {
   std::vector<RecordedTick> ticks;

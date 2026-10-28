@@ -43,6 +43,7 @@ class MovementRecorder {
   std::vector<InputSample> PlaybackInputs() const;
   std::vector<RecordedTick> PlaybackTicks() const;
   std::optional<PawnSample> FirstPawn() const;
+  std::optional<PawnSample> LastPawn() const;
   std::expected<std::filesystem::path, std::string> SaveJson(
       const std::filesystem::path& directory, std::string_view map_name) const;
 
