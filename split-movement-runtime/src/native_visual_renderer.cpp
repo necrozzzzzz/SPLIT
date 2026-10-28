@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <expected>
 #include <optional>
 #include <cstdint>
 #include <iomanip>
@@ -428,6 +429,7 @@ struct NativeVisualRenderer::Impl {
   bool cheats_requested = false;
   bool particle_ready = false;
   bool manifest_ready = false;
+  bool transmit_logged = false;
 
   using ServerCommandFn = void (*)(void*, const char*);
   using CreateEntityFn = void* (*)(void*, const char*, int);
@@ -564,6 +566,10 @@ struct NativeVisualRenderer::Impl {
       }
       constexpr std::uint32_t kTransmitAlways = 4;
       set_transmit_state(component, kTransmitAlways);
+      if (!transmit_logged) {
+        std::cout << "[SPLIT][Visuals] TransmitAlways applied to native particle entities\n";
+        transmit_logged = true;
+      }
     }
 
     static constexpr char kEmpty[] = "";
