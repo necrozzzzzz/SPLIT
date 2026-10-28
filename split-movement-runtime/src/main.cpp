@@ -388,6 +388,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> retry_requested{false};
   std::atomic<bool> visual_test_requested{false};
   std::atomic<bool> native_route_line_active{false};
+  std::atomic<bool> reset_movement_recognizer{true};
   std::atomic<int> visual_mode{2}; // both, ghost, tracer, off
   std::atomic<bool> show_rings{true};
   std::atomic<bool> show_checkpoints{true};
@@ -396,6 +397,7 @@ int main(int argc, char** argv) {
   std::string current_map = launch.map;
   std::mutex route_cues_mutex;
   std::vector<MovementCue> route_cues;
+  std::optional<split::movement::PawnSample> previous_movement_sample;
 
   const auto route_directory =
       std::filesystem::current_path() / "routes";
@@ -599,6 +601,7 @@ int main(int argc, char** argv) {
         route_cues.clear();
       }
       movement_events.Clear();
+      reset_movement_recognizer.store(true, std::memory_order_release);
       recorder.Start();
       std::cout << "[SPLIT][Recorder] recording started\n";
     } else if (command == "recordtoggle") {
@@ -610,6 +613,7 @@ int main(int argc, char** argv) {
           route_cues.clear();
         }
         movement_events.Clear();
+        reset_movement_recognizer.store(true, std::memory_order_release);
         recorder.Start();
         std::cout << "[SPLIT][Recorder] recording started\n";
       }
@@ -624,6 +628,7 @@ int main(int argc, char** argv) {
         route_cues.clear();
       }
       movement_events.Clear();
+      reset_movement_recognizer.store(true, std::memory_order_release);
       native_route_line_active.store(false, std::memory_order_release);
       visual_renderer.Clear();
       std::cout << "[SPLIT][Recorder] route cleared\n";
@@ -791,6 +796,32 @@ int main(int argc, char** argv) {
                 }
               }
             }
+
+            if (reset_movement_recognizer.exchange(false, std::memory_order_acq_rel)) {
+              previous_movement_sample.reset();
+            }
+
+            // Hyperline's Primitives emits mantleStart when the native mantle
+            // ability enters its channeling state. Use the same exact state
+            // transition as our first compound recognizer input.
+            if (previous_movement_sample &&
+                !previous_movement_sample->mantling && sample->mantling) {
+              std::cout << "[SPLIT][MovementState] Mantle start at ("
+                        << sample->position[0] << ", "
+                        << sample->position[1] << ", "
+                        << sample->position[2] << ")\n";
+              if (recorder.Stats().recording) {
+                std::scoped_lock lock(route_cues_mutex);
+                const bool duplicate =
+                    !route_cues.empty() &&
+                    route_cues.back().label == "Mantle" &&
+                    RouteDistance(route_cues.back().position, sample->position) < 48.0;
+                if (!duplicate) {
+                  route_cues.push_back({"Mantle", sample->position});
+                }
+              }
+            }
+            previous_movement_sample = *sample;
 
             if (frame % 60 == 0 && !race_timer.Course() &&
                 !native_route_line_active.load(std::memory_order_acquire) &&
