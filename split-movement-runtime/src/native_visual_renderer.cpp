@@ -59,6 +59,16 @@ constexpr std::size_t kRingSegments = 24;
 
 constexpr std::size_t kIdentityOffset = 0x10;
 constexpr std::size_t kResourceServiceEntitySystemOffset = 0x58;
+constexpr std::size_t kEntityListOffset = 0x10;
+constexpr std::size_t kIdentitySize = 0x70;
+constexpr std::size_t kIdentityInstanceOffset = 0x00;
+constexpr std::size_t kIdentityEHandleOffset = 0x10;
+constexpr std::size_t kIdentityFlagsOffset = 0x30;
+constexpr std::uint32_t kEntityIndexBits = 0x7fffu;
+constexpr std::uint32_t kSerialShift = 15;
+constexpr std::uint32_t kSerialBits = 0x1ffffu;
+constexpr std::uint32_t kInvalidHandle = 0xffffffffu;
+constexpr std::uint32_t kDeleteFlags = 0x10u | 0x200u;
 constexpr std::size_t kEntityKeyValuesSize = 56;
 
 constexpr std::string_view kCreateEntityPattern =
@@ -278,6 +288,53 @@ void* IdentityOf(void* entity) {
 }
 
 
+std::optional<std::uint32_t> ReferenceHandleOf(void* entity) {
+  auto* identity = static_cast<std::byte*>(IdentityOf(entity));
+  if (!identity) return std::nullopt;
+
+  void* back = nullptr;
+  std::memcpy(&back, identity + kIdentityInstanceOffset, sizeof(back));
+  if (back != entity) return std::nullopt;
+
+  std::uint32_t stored = kInvalidHandle;
+  std::uint32_t flags = 0;
+  std::memcpy(&stored, identity + kIdentityEHandleOffset, sizeof(stored));
+  std::memcpy(&flags, identity + kIdentityFlagsOffset, sizeof(flags));
+  if (stored == kInvalidHandle || (flags & kDeleteFlags) != 0) {
+    return std::nullopt;
+  }
+  const std::uint32_t serial =
+      ((stored >> kSerialShift) - (flags & 0x1u)) & kSerialBits;
+  return (stored & kEntityIndexBits) | (serial << kSerialShift);
+}
+
+void* EntityInstance(void* entity_system, std::uint32_t handle) {
+  if (!entity_system || handle == kInvalidHandle) return nullptr;
+  const std::uint32_t index = handle & kEntityIndexBits;
+  auto* chunks = static_cast<std::byte*>(entity_system) + kEntityListOffset;
+  void* chunk_ptr = nullptr;
+  std::memcpy(&chunk_ptr,
+              chunks + (index / 512u) * sizeof(void*),
+              sizeof(chunk_ptr));
+  if (!chunk_ptr) return nullptr;
+
+  auto* identity = static_cast<std::byte*>(chunk_ptr) +
+      (index % 512u) * kIdentitySize;
+  void* instance = nullptr;
+  std::memcpy(&instance, identity + kIdentityInstanceOffset, sizeof(instance));
+  if (!instance || IdentityOf(instance) != identity) return nullptr;
+  const auto live = ReferenceHandleOf(instance);
+  return live && *live == handle ? instance : nullptr;
+}
+
+struct ParticleRef {
+  void* entity_system = nullptr;
+  std::uint32_t handle = kInvalidHandle;
+
+  void* Get() const { return EntityInstance(entity_system, handle); }
+};
+
+
 namespace schema {
 struct MetadataEntry { const char* name; const void* data; };
 struct Type { const void* vtable; const char* name; };
@@ -458,7 +515,7 @@ struct NativeVisualRenderer::Impl {
   void* schema_system = nullptr;
   std::size_t transmit_offset = 0;
   std::size_t transmit_owned_offset = 0;
-  std::vector<void*> particles;
+  std::vector<ParticleRef> particles;
 
   void Command(std::string_view command) {
     if (!engine) return;
@@ -561,6 +618,12 @@ struct NativeVisualRenderer::Impl {
       error = "info_particle_system has no entity identity";
       return false;
     }
+    const auto handle = ReferenceHandleOf(particle);
+    if (!handle) {
+      if (remove_entity) remove_entity(particle);
+      error = "info_particle_system has no live reference handle";
+      return false;
+    }
 
     void* storage = kv_allocate(kEntityKeyValuesSize);
     if (!storage) {
@@ -611,6 +674,12 @@ struct NativeVisualRenderer::Impl {
     queue_spawn(entity_system, identity, key_values);
     execute_queued(entity_system);
 
+    particle = EntityInstance(entity_system, *handle);
+    if (!particle) {
+      error = "info_particle_system did not survive queued creation";
+      return false;
+    }
+
     std::string transmit_error;
     if (EnsureTransmitLayout(transmit_error)) {
       auto* component = static_cast<std::byte*>(particle) + transmit_offset;
@@ -639,7 +708,7 @@ struct NativeVisualRenderer::Impl {
       return false;
     }
 
-    particles.push_back(particle);
+    particles.push_back({entity_system, *handle});
     return true;
   }
 };
@@ -819,8 +888,10 @@ bool NativeVisualRenderer::DrawTestParticle(
 
 void NativeVisualRenderer::Clear() {
   if (impl_->remove_entity) {
-    for (void* particle : impl_->particles) {
-      if (particle) impl_->remove_entity(particle);
+    for (const auto& particle : impl_->particles) {
+      if (void* entity = particle.Get()) {
+        impl_->remove_entity(entity);
+      }
     }
   }
   impl_->particles.clear();
