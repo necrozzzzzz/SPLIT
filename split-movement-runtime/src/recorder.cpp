@@ -107,6 +107,11 @@ std::vector<InputSample> MovementRecorder::PlaybackInputs() const {
   return inputs;
 }
 
+std::vector<RecordedTick> MovementRecorder::PlaybackTicks() const {
+  std::scoped_lock lock(mutex_);
+  return ticks_;
+}
+
 std::optional<PawnSample> MovementRecorder::FirstPawn() const {
   std::scoped_lock lock(mutex_);
   if (ticks_.empty()) return std::nullopt;
@@ -169,7 +174,8 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
         << ",\"grounded\":" << (tick.pawn.grounded ? "true" : "false")
         << ",\"pawn_handle\":" << tick.pawn.pawn_handle
         << ",\"hero_id\":" << tick.pawn.hero_id
-        << ",\"team\":" << static_cast<unsigned>(tick.pawn.team);
+        << ",\"team\":" << static_cast<unsigned>(tick.pawn.team)
+        << ",\"ground_entity\":" << tick.pawn.ground_entity_handle;
 
     if (tick.input) {
       out << ",\"input\":{\"seq\":" << tick.input->sequence

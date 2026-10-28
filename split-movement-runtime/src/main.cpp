@@ -3,6 +3,7 @@
 #include "split_movement/engine_runner.h"
 #include "split_movement/native_hooks.h"
 #include "split_movement/input_capture.h"
+#include "split_movement/movement_steering.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/recorder.h"
 #include "split_movement/runtime.h"
@@ -129,7 +130,7 @@ int main(int argc, char** argv) {
   split::movement::MovementRecorder recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
-  bool playback_was_active = false;
+  bool steering_was_active = false;
   std::atomic<bool> replay_requested{false};
   std::string last_pawn_error;
   std::string current_map = launch.map;
@@ -186,6 +187,15 @@ int main(int argc, char** argv) {
   }
   std::cout << "SPLIT Movement Runtime: bot factory/replay guard installed.\n";
 
+  split::movement::MovementSteering steering(bridge.SchemaSystem());
+  std::string steering_error;
+  if (!steering.Install(steering_error)) {
+    command_thread.request_stop();
+    std::cerr << "Movement steering installation failed: " << steering_error << "\n";
+    return 1;
+  }
+  std::cout << "SPLIT Movement Runtime: ProcessMovement steering installed.\n";
+
   split::movement::NativeHooks hooks;
   std::string hook_error;
   if (!hooks.Install(
@@ -218,8 +228,8 @@ int main(int argc, char** argv) {
 
             if (replay_requested.exchange(false, std::memory_order_acq_rel)) {
               const auto first = recorder.FirstPawn();
-              auto inputs = recorder.PlaybackInputs();
-              if (!first || inputs.empty()) {
+              auto ticks = recorder.PlaybackTicks();
+              if (!first || ticks.empty()) {
                 std::cout << "[SPLIT][Replay] no recorded route is available\n";
               } else if (first->team < 2 || first->team > 3 || first->hero_id == 0) {
                 std::cout << "[SPLIT][Replay] route has invalid team/hero metadata"
@@ -232,7 +242,7 @@ int main(int argc, char** argv) {
                 }
 
                 std::string replay_error;
-                input_capture.StopPlayback();
+                steering.Stop();
                 if (!bot_factory.Create("SPLIT Ghost", static_cast<int>(first->team),
                                         first->hero_id, first->position, replay_error)) {
                   std::cout << "[SPLIT][Replay] bot creation failed: "
@@ -250,33 +260,34 @@ int main(int argc, char** argv) {
 
                   if (bot_slot < 0) {
                     std::cout << "[SPLIT][Replay] bot was created but its slot was not observed\n";
-                  } else if (!input_capture.StartPlayback(bot_slot, std::move(inputs),
-                                                          replay_error)) {
-                    std::cout << "[SPLIT][Replay] playback start failed: "
+                  } else if (!steering.Start(bot_slot, std::move(ticks), replay_error)) {
+                    std::cout << "[SPLIT][Replay] steering start failed: "
                               << replay_error << "\n";
                   } else {
-                    const auto playback = input_capture.Playback();
-                    playback_was_active = playback.active;
+                    const auto state = steering.Status();
+                    steering_was_active = state.active;
                     std::cout << "[SPLIT][Replay] SPLIT Ghost slot=" << bot_slot
                               << " hero=" << first->hero_id
                               << " team=" << static_cast<int>(first->team)
-                              << " inputs=" << playback.total << "\n";
+                              << " steps=" << state.total
+                              << " mode=movement-steering\n";
                   }
                 }
               }
             }
 
-            const auto playback = input_capture.Playback();
-            if (playback.active && frame % 120 == 0) {
-              std::cout << "[SPLIT][Replay] replay " << playback.index
-                        << "/" << playback.total
-                        << " slot=" << playback.slot << "\n";
+            const auto steering_status = steering.Status();
+            if (steering_status.active && frame % 120 == 0) {
+              std::cout << "[SPLIT][Replay] steering "
+                        << steering_status.index << "/" << steering_status.total
+                        << " slot=" << steering_status.slot << "\n";
             }
-            if (playback_was_active && !playback.active && playback.total > 0 &&
-                playback.index >= playback.total) {
-              std::cout << "[SPLIT][Replay] replay complete "
-                        << playback.index << "/" << playback.total << "\n";
-              playback_was_active = false;
+            if (steering_was_active && !steering_status.active &&
+                steering_status.total > 0 &&
+                steering_status.index >= steering_status.total) {
+              std::cout << "[SPLIT][Replay] steering complete "
+                        << steering_status.index << "/" << steering_status.total << "\n";
+              steering_was_active = false;
             }
 
             if (frame % 120 == 0) {

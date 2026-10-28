@@ -13,6 +13,7 @@ struct PawnSample {
   std::uint32_t pawn_handle = 0;
   std::uint32_t hero_id = 0;
   std::uint8_t team = 0;
+  std::uint32_t ground_entity_handle = 0xffffffffu;
   std::array<float, 3> position{};
   std::array<float, 3> velocity{};
   bool grounded = false;

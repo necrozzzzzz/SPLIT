@@ -365,6 +365,7 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
 
   const auto ground =
       Read<std::uint32_t>(pawn, impl_->layout->ground_entity);
+  sample.ground_entity_handle = ground;
   sample.grounded = ground != kInvalidEHandleIndex;
 
   if (!Finite3(sample.position) || !Finite3(sample.velocity)) {
