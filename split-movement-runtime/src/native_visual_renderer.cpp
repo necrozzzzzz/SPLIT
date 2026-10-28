@@ -457,6 +457,33 @@ std::expected<std::size_t, std::string> FieldOffset(
   return std::unexpected(std::string("schema field not found: ") + field_name);
 }
 
+std::expected<std::pair<std::size_t, std::size_t>, std::string> FieldSpan(
+    const schema::ClassInfo* info, const char* field_name) {
+  for (; info; info = FirstBaseOf(info)) {
+    for (std::uint16_t i = 0; i < info->field_count; ++i) {
+      const auto& field = info->fields[i];
+      if (!field.name || std::strcmp(field.name, field_name) != 0) continue;
+
+      std::int32_t boundary = info->size;
+      for (std::uint16_t j = 0; j < info->field_count; ++j) {
+        const auto& next = info->fields[j];
+        if (next.offset > field.offset &&
+            (boundary <= field.offset || next.offset < boundary)) {
+          boundary = next.offset;
+        }
+      }
+      if (field.offset < 0 || boundary <= field.offset) {
+        return std::unexpected(std::string(field_name) + " storage span is invalid");
+      }
+      return std::pair<std::size_t, std::size_t>{
+          static_cast<std::size_t>(field.offset),
+          static_cast<std::size_t>(boundary - field.offset)};
+    }
+  }
+  return std::unexpected(std::string("schema field not found: ") + field_name);
+}
+
+
 std::uint64_t HashMix(std::uint64_t hash, std::uint64_t value) {
   constexpr std::uint64_t kPrime = 1099511628211ull;
   hash ^= value;
@@ -722,15 +749,15 @@ struct NativeVisualRenderer::Impl {
       error = world_text_class.error();
       return false;
     }
-    auto message_offset = FieldOffset(*world_text_class, "m_messageText", 64);
-    if (!message_offset) {
-      error = "CPointWorldText.m_messageText: " + message_offset.error();
+    auto message_span = FieldSpan(*world_text_class, "m_messageText");
+    if (!message_span || message_span->second < 64 || message_span->second > 4096) {
+      error = "CPointWorldText.m_messageText has an invalid inline storage span";
       return false;
     }
-    auto* dst = static_cast<std::byte*>(entity) + *message_offset;
-    constexpr std::size_t kMessageCapacity = 512;
-    std::memset(dst, 0, kMessageCapacity);
-    std::memcpy(dst, message, (std::min)(std::strlen(message), kMessageCapacity - 1));
+    auto* dst = static_cast<std::byte*>(entity) + message_span->first;
+    std::memset(dst, 0, message_span->second);
+    std::memcpy(dst, message,
+                (std::min)(std::strlen(message), message_span->second - 1));
 
     static constexpr char kEmpty[] = "";
     InputVariant empty{.pointer = kEmpty};
