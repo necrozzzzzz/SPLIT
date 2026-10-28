@@ -46,6 +46,7 @@ void Help() {
       << "  racestatus  print timer / PB status\n"
       << "  racecancel  cancel the current timed run\n"
       << "  visualtest  spawn a native Source 2 particle near the player\n"
+      << "  tracertest  draw one native beam segment on the recorded route\n"
       << "  visualdiagnostics  print native visual bridge status\n"
       << "  clear       discard the current route\n\n"
       << "DEADLOCK_DIR can replace --game-dir.\n";
@@ -337,6 +338,26 @@ int main(int argc, char** argv) {
       visual_test_requested.store(true, std::memory_order_release);
       return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
+    if (command == "tracertest") {
+      const auto ticks = recorder.PlaybackTicks();
+      if (ticks.size() < 2) {
+        return "{\"queued\":false,\"reason\":\"no-recorded-route\"}";
+      }
+      const std::size_t end_index = ticks.size() > 20
+          ? (std::min)(ticks.size() - 1, ticks.size() / 4)
+          : ticks.size() - 1;
+      std::string beam_error;
+      if (!visual_renderer.DrawBeamSegment(
+              ticks.front().pawn.position,
+              ticks[end_index].pawn.position,
+              beam_error)) {
+        std::ostringstream out;
+        out << "{\"queued\":false,\"reason\":\"beam-failed\",\"detail\":\""
+            << beam_error << "\"}";
+        return out.str();
+      }
+      return "{\"queued\":true,\"note\":\"native-beam-segment-created\"}";
+    }
     if (command == "visualdiagnostics") {
       auto escape_json = [](std::string_view value) {
         std::string escaped;
@@ -475,7 +496,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, visualdiagnostics, clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, clear)\n";
     }
     return {};
   };
