@@ -456,7 +456,10 @@ int main(int argc, char** argv) {
   std::jthread command_thread([&](std::stop_token stop) {
     std::string command;
     while (!stop.stop_requested() && std::getline(std::cin, command)) {
-      (void)handle_command(command);
+      const std::string response = handle_command(command);
+      if (!response.empty()) {
+        std::cout << response << "\n";
+      }
     }
   });
 
@@ -536,7 +539,8 @@ int main(int argc, char** argv) {
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
 
-            if (frame % 60 == 0 && visual_renderer.Ready()) {
+            if (frame % 60 == 0 &&
+                (visual_renderer.ParticleReady() || visual_renderer.Ready())) {
               const int mode = visual_mode.load(std::memory_order_relaxed);
               split::movement::NativeVisualSettings visual_settings;
               visual_settings.tracer = mode == 0 || mode == 2;
@@ -867,6 +871,7 @@ int main(int argc, char** argv) {
             }
           },
           [&](std::string_view map) {
+            visual_renderer.Clear();
             current_map.assign(map);
             std::cout << "[SPLIT][Movement] loading world: " << map << "\n";
           },
