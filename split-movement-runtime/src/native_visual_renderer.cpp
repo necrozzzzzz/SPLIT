@@ -313,17 +313,6 @@ void SetKvColor(RawKeyValues3& value, std::uint32_t rgba) {
   value.data = rgba;
 }
 
-void SetKvVector(RawKeyValues3& value, const std::array<float, 3>& xyz) {
-  constexpr std::uint64_t kTypeMask = 0xffull << 2;
-  constexpr std::uint64_t kSubtypeMask = 0xffull << 10;
-  constexpr std::uint64_t kArrayCountMask = 0x1full << 34;
-  value.metadata &= ~(kTypeMask | kSubtypeMask | kArrayCountMask | (1ull << 1));
-  value.metadata |= static_cast<std::uint64_t>(0x48u) << 2;
-  value.metadata |= static_cast<std::uint64_t>(24u) << 10;
-  value.metadata |= static_cast<std::uint64_t>(3u) << 34;
-  value.data = reinterpret_cast<std::uintptr_t>(xyz.data());
-}
-
 void* IdentityOf(void* entity) {
   void* identity = nullptr;
   if (entity) {
@@ -720,12 +709,7 @@ struct NativeVisualRenderer::Impl {
       return true;
     };
 
-    // Keep endpoint storage alive through queued creation.
-    std::array<float, 3> target = to;
-    target[2] += 24.0f;
-    if (!set_member("targetpoint",
-                    [&](RawKeyValues3& v) { SetKvVector(v, target); }) ||
-        !set_member("life", [&](RawKeyValues3& v) { SetKvFloat(v, 0.0f); }) ||
+    if (!set_member("life", [&](RawKeyValues3& v) { SetKvFloat(v, 0.0f); }) ||
         !set_member("BoltWidth", [&](RawKeyValues3& v) { SetKvFloat(v, 4.0f); }) ||
         !set_member("NoiseAmplitude", [&](RawKeyValues3& v) { SetKvFloat(v, 0.0f); }) ||
         !set_member("TextureScroll", [&](RawKeyValues3& v) { SetKvInt(v, 0); }) ||
@@ -739,6 +723,26 @@ struct NativeVisualRenderer::Impl {
       if (remove_entity) remove_entity(entity);
       return false;
     }
+
+    // Use the actual CEnvBeam networked endpoint field instead of the
+    // Hammer-style targetpoint key. This mirrors Modlock's schema-backed
+    // entity access and avoids targetpoint name/space semantics.
+    auto beam_class = ClassInfoOf(schema_system, "CEnvBeam");
+    if (!beam_class) {
+      if (remove_entity) remove_entity(entity);
+      error = "CEnvBeam schema unavailable: " + beam_class.error();
+      return false;
+    }
+    auto endpoint_span = FieldSpan(*beam_class, "m_vEndPointWorld");
+    if (!endpoint_span || endpoint_span->second < sizeof(std::array<float, 3>)) {
+      if (remove_entity) remove_entity(entity);
+      error = "CEnvBeam.m_vEndPointWorld unavailable";
+      return false;
+    }
+    std::array<float, 3> endpoint = to;
+    endpoint[2] += 24.0f;
+    std::memcpy(static_cast<std::byte*>(entity) + endpoint_span->first,
+                endpoint.data(), sizeof(endpoint));
 
     auto placed = from;
     placed[2] += 24.0f;
