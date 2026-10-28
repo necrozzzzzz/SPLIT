@@ -890,8 +890,8 @@ void NativeVisualRenderer::Render(
     std::string particle_error;
     auto start = course->start;
     auto finish = course->finish;
-    start[2] += 8.0f;
-    finish[2] += 8.0f;
+    start[2] += 48.0f;
+    finish[2] += 48.0f;
 
     if (ParticleReady()) {
       // Use the standalone ping effect for all race primitives until the
@@ -902,11 +902,17 @@ void NativeVisualRenderer::Render(
       if (!impl_->SpawnParticle(start, kMarkerEffect, particle_error)) {
         std::cout << "[SPLIT][Visuals] start marker failed: "
                   << particle_error << "\n";
+      } else {
+        std::cout << "[SPLIT][Visuals] start marker spawned at ("
+                  << start[0] << ", " << start[1] << ", " << start[2] << ")\n";
       }
       particle_error.clear();
       if (!impl_->SpawnParticle(finish, kMarkerEffect, particle_error)) {
         std::cout << "[SPLIT][Visuals] finish marker failed: "
                   << particle_error << "\n";
+      } else {
+        std::cout << "[SPLIT][Visuals] finish marker spawned at ("
+                  << finish[0] << ", " << finish[1] << ", " << finish[2] << ")\n";
       }
     } else if (Ready()) {
       draw_ring(course->start, course->radius);
@@ -919,7 +925,7 @@ void NativeVisualRenderer::Render(
   if (course && settings.checkpoints) {
     for (const auto& checkpoint : course->checkpoints) {
       auto marker = checkpoint;
-      marker[2] += 8.0f;
+      marker[2] += 48.0f;
       if (ParticleReady()) {
         std::string particle_error;
         if (!impl_->SpawnParticle(
@@ -927,6 +933,9 @@ void NativeVisualRenderer::Render(
                 particle_error)) {
           std::cout << "[SPLIT][Visuals] checkpoint marker failed: "
                     << particle_error << "\n";
+        } else {
+          std::cout << "[SPLIT][Visuals] checkpoint marker spawned at ("
+                    << marker[0] << ", " << marker[1] << ", " << marker[2] << ")\n";
         }
       } else if (Ready()) {
         draw_ring(checkpoint, course->radius * 0.72f);
