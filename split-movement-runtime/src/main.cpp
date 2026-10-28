@@ -639,6 +639,36 @@ int main(int argc, char** argv) {
                       show_rings.load(std::memory_order_relaxed);
                   visual_settings.checkpoints =
                       show_checkpoints.load(std::memory_order_relaxed);
+                  // First prove the course coordinates by using the exact
+                  // standalone marker primitive that visualtest already proved
+                  // visible on the live client. This deliberately bypasses
+                  // Render()/Clear()/signature so any remaining failure is
+                  // positional rather than renderer state.
+                  std::string direct_marker_error;
+                  if (visual_renderer.DrawVisibleMarker(course.start,
+                                                        direct_marker_error)) {
+                    std::cout << "[SPLIT][Visuals] direct start marker queued\n";
+                  } else {
+                    std::cout << "[SPLIT][Visuals] direct start marker failed: "
+                              << direct_marker_error << "\n";
+                  }
+                  direct_marker_error.clear();
+                  if (visual_renderer.DrawVisibleMarker(course.finish,
+                                                        direct_marker_error)) {
+                    std::cout << "[SPLIT][Visuals] direct finish marker queued\n";
+                  } else {
+                    std::cout << "[SPLIT][Visuals] direct finish marker failed: "
+                              << direct_marker_error << "\n";
+                  }
+                  for (const auto& checkpoint : course.checkpoints) {
+                    direct_marker_error.clear();
+                    if (!visual_renderer.DrawVisibleMarker(checkpoint,
+                                                           direct_marker_error)) {
+                      std::cout << "[SPLIT][Visuals] direct checkpoint marker failed: "
+                                << direct_marker_error << "\n";
+                    }
+                  }
+
                   visual_renderer.Invalidate();
                   visual_renderer.Render(route_ticks, race_timer.Course(),
                                          visual_settings);
