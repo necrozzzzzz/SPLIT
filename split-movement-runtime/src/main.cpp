@@ -657,7 +657,22 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
 std::vector<MovementCue> MergeRecognizedTechniques(
     const std::vector<MovementCue>& raw,
     const std::vector<MovementCue>& recognized) {
-  std::vector<MovementCue> merged = raw;
+  std::vector<MovementCue> merged;
+  merged.reserve(raw.size() + recognized.size());
+
+  for (const auto& cue : raw) {
+    const bool superseded = std::any_of(
+        recognized.begin(), recognized.end(),
+        [&](const MovementCue& exact) {
+          if (exact.label != cue.label) return false;
+          const auto delta = exact.frame > cue.frame
+              ? exact.frame - cue.frame
+              : cue.frame - exact.frame;
+          return delta <= 128;
+        });
+    if (!superseded) merged.push_back(cue);
+  }
+
   merged.insert(merged.end(), recognized.begin(), recognized.end());
   std::sort(merged.begin(), merged.end(),
             [](const MovementCue& a, const MovementCue& b) {
