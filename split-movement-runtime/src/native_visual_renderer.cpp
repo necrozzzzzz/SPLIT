@@ -492,6 +492,57 @@ struct NativeVisualRenderer::Impl {
     return entity_system;
   }
 
+  bool EnsureTransmitLayout(std::string& error) {
+    if (transmit_ready) return true;
+    if (!set_transmit_state) {
+      error = "network-transmit.set-state is unavailable";
+      return false;
+    }
+    if (!schema_system) {
+      error = "SchemaSystem_001 is unavailable";
+      return false;
+    }
+
+    auto base_entity = ClassInfoOf(schema_system, "CBaseEntity");
+    if (!base_entity) {
+      error = base_entity.error();
+      return false;
+    }
+    auto transmit_component =
+        ClassInfoOf(schema_system, "CNetworkTransmitComponent");
+    if (!transmit_component) {
+      error = transmit_component.error();
+      return false;
+    }
+
+    auto transmit = FieldOffset(
+        *base_entity, "m_NetworkTransmitComponent", sizeof(std::uint8_t));
+    if (!transmit) {
+      error = "CBaseEntity.m_NetworkTransmitComponent: " + transmit.error();
+      return false;
+    }
+    auto owned = FieldOffset(
+        *transmit_component, "m_nTransmitStateOwnedCounter", sizeof(std::uint8_t));
+    if (!owned) {
+      error = "CNetworkTransmitComponent.m_nTransmitStateOwnedCounter: " +
+              owned.error();
+      return false;
+    }
+
+    transmit_offset = *transmit;
+    transmit_owned_offset = *owned;
+    transmit_ready = true;
+
+    // Clear the old startup warning now that the world schema is available.
+    if (optional_error.rfind("transmit:", 0) == 0) {
+      const auto separator = optional_error.find("; ");
+      optional_error = separator == std::string::npos
+          ? std::string{}
+          : optional_error.substr(separator + 2);
+    }
+    return true;
+  }
+
   bool SpawnParticle(const std::array<float, 3>& position,
                      const char* effect, std::string& error) {
     void* entity_system = EntitySystem(error);
@@ -558,7 +609,8 @@ struct NativeVisualRenderer::Impl {
     queue_spawn(entity_system, identity, key_values);
     execute_queued(entity_system);
 
-    if (set_transmit_state && schema_system) {
+    std::string transmit_error;
+    if (EnsureTransmitLayout(transmit_error)) {
       auto* component = static_cast<std::byte*>(particle) + transmit_offset;
       std::uint8_t owned = 0;
       std::memcpy(&owned, component + transmit_owned_offset, sizeof(owned));
@@ -572,6 +624,9 @@ struct NativeVisualRenderer::Impl {
         std::cout << "[SPLIT][Visuals] TransmitAlways applied to native particle entities\n";
         transmit_logged = true;
       }
+    } else if (!transmit_error.empty()) {
+      std::cout << "[SPLIT][Visuals] TransmitAlways waiting: "
+                << transmit_error << "\n";
     }
 
     static constexpr char kEmpty[] = "";
@@ -642,10 +697,13 @@ bool NativeVisualRenderer::Install(std::string& error) {
 
   impl_->particle_ready = true;
 
-  // Optional extension 1: force transmission to clients.
+  // Optional extension 1: resolve the native call now, but defer Schema
+  // field lookup until a world is live. The server schema classes are not
+  // guaranteed to be exposed this early in startup.
   std::string optional;
   impl_->set_transmit_state = reinterpret_cast<Impl::SetTransmitStateFn>(
-      FindUnique(server, kSetTransmitStatePattern, "network-transmit.set-state", optional));
+      FindUnique(server, kSetTransmitStatePattern,
+                 "network-transmit.set-state", optional));
   if (impl_->set_transmit_state) {
     std::string schema_error;
     impl_->schema_system =
@@ -653,35 +711,6 @@ bool NativeVisualRenderer::Install(std::string& error) {
     if (!impl_->schema_system) {
       optional = "SchemaSystem_001: " + schema_error;
       impl_->set_transmit_state = nullptr;
-    } else {
-      auto base_entity = ClassInfoOf(impl_->schema_system, "CBaseEntity");
-      auto transmit_component = ClassInfoOf(
-          impl_->schema_system, "CNetworkTransmitComponent");
-      if (!base_entity) {
-        optional = base_entity.error();
-        impl_->set_transmit_state = nullptr;
-      } else if (!transmit_component) {
-        optional = transmit_component.error();
-        impl_->set_transmit_state = nullptr;
-      } else {
-        auto transmit_offset =
-            FieldOffset(*base_entity, "m_NetworkTransmitComponent", sizeof(std::uint8_t));
-        auto transmit_owned_offset = FieldOffset(
-            *transmit_component, "m_nTransmitStateOwnedCounter", sizeof(std::uint8_t));
-        if (!transmit_offset) {
-          optional = "CBaseEntity.m_NetworkTransmitComponent: " +
-                     transmit_offset.error();
-          impl_->set_transmit_state = nullptr;
-        } else if (!transmit_owned_offset) {
-          optional = "CNetworkTransmitComponent.m_nTransmitStateOwnedCounter: " +
-                     transmit_owned_offset.error();
-          impl_->set_transmit_state = nullptr;
-        } else {
-          impl_->transmit_offset = *transmit_offset;
-          impl_->transmit_owned_offset = *transmit_owned_offset;
-          impl_->transmit_ready = true;
-        }
-      }
     }
   }
   if (!optional.empty()) {
