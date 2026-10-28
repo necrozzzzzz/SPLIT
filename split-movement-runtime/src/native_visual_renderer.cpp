@@ -664,7 +664,9 @@ struct NativeVisualRenderer::Impl {
   }
 
   bool SpawnWorldText(const std::array<float, 3>& position,
-                      const char* message, std::string& error) {
+                      const char* message, float scale,
+                      std::uint32_t color_rgba,
+                      std::string& error) {
     void* entity_system = EntitySystem(error);
     if (!entity_system) return false;
 
@@ -709,10 +711,12 @@ struct NativeVisualRenderer::Impl {
         !set_member("enabled", [&](RawKeyValues3& v) { SetKvBool(v, true); }) ||
         !set_member("fullbright", [&](RawKeyValues3& v) { SetKvInt(v, 1); }) ||
         !set_member("font_name", [&](RawKeyValues3& v) { SetKvString(v, "Reaver"); }) ||
-        !set_member("font_size", [&](RawKeyValues3& v) { SetKvFloat(v, 90.0f); }) ||
+        !set_member("font_size", [&](RawKeyValues3& v) { SetKvFloat(v, 96.0f); }) ||
         !set_member("world_units_per_pixel",
-                    [&](RawKeyValues3& v) { SetKvFloat(v, (0.25f / 1050.0f) * 90.0f); }) ||
-        !set_member("color", [&](RawKeyValues3& v) { SetKvColor(v, 0xffffffffu); }) ||
+                    [&](RawKeyValues3& v) {
+                      SetKvFloat(v, (0.25f / 1050.0f) * 96.0f * scale);
+                    }) ||
+        !set_member("color", [&](RawKeyValues3& v) { SetKvColor(v, color_rgba); }) ||
         !set_member("justify_horizontal", [&](RawKeyValues3& v) { SetKvInt(v, 0); }) ||
         !set_member("justify_vertical", [&](RawKeyValues3& v) { SetKvInt(v, 0); }) ||
         !set_member("reorient_mode", [&](RawKeyValues3& v) { SetKvInt(v, 1); })) {
@@ -1058,6 +1062,7 @@ bool NativeVisualRenderer::DrawVisibleMarker(
 
 bool NativeVisualRenderer::DrawWorldTextMarker(
     const std::array<float, 3>& position, const char* message,
+    float scale, std::uint32_t color_rgba,
     std::string& error) {
 #if !defined(_WIN32)
   (void)position;
@@ -1074,13 +1079,17 @@ bool NativeVisualRenderer::DrawWorldTextMarker(
     error = "world-text message is empty";
     return false;
   }
+  if (!std::isfinite(scale) || scale <= 0.0f) {
+    error = "world-text scale must be finite and positive";
+    return false;
+  }
   for (float coordinate : position) {
     if (!std::isfinite(coordinate)) {
       error = "world-text position is not finite";
       return false;
     }
   }
-  return impl_->SpawnWorldText(position, message, error);
+  return impl_->SpawnWorldText(position, message, scale, color_rgba, error);
 #endif
 }
 
