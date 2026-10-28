@@ -104,6 +104,7 @@ std::vector<PatternByte> ParsePattern(std::string_view pattern) {
   return bytes;
 }
 
+#if defined(_WIN32)
 std::optional<std::size_t> ImageSize(HMODULE module) {
   if (!module) return std::nullopt;
   auto* base = reinterpret_cast<const std::byte*>(module);
@@ -147,6 +148,8 @@ void* FindUnique(HMODULE module, std::string_view pattern, const char* name,
   }
   return match;
 }
+
+#endif
 
 std::uint32_t MurmurHash2(const unsigned char* data, std::size_t length,
                           std::uint32_t seed) {
