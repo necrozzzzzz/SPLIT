@@ -63,10 +63,45 @@ $patterns = @(
   "ghost",
   "gates",
   "samples",
-  "recording"
+  "recording",
+  "techniques\.ts",
+  "var labels\s*=\s*\{",
+  "var rules\s*=\s*\[",
+  "cornerBoost",
+  "mantleSlide",
+  "slideHop",
+  "dashCancel",
+  "superglide",
+  "mantleWallJump",
+  "mantleStrafe",
+  "edgeBoost"
 )
 
 $seen = @{}
+
+# Capture the complete movement recognizer section, not only nearby pattern
+# windows. This avoids dropping the middle of techniques.ts where the composed
+# move predicates and rule table live.
+foreach ($file in ($targets | Sort-Object FullName -Unique)) {
+  if ($file.Name -ne "mod.js") { continue }
+  $all = Get-Content -LiteralPath $file.FullName
+  $startHit = Select-String -LiteralPath $file.FullName -Pattern "// techniques\.ts" |
+    Select-Object -First 1
+  if (-not $startHit) { continue }
+
+  $endHit = Select-String -LiteralPath $file.FullName -Pattern "// boxes\.ts" |
+    Where-Object { $_.LineNumber -gt $startHit.LineNumber } |
+    Select-Object -First 1
+  if (-not $endHit) { continue }
+
+  Add-Line ""
+  Add-Line "################################################################"
+  Add-Line "# COMPLETE TECHNIQUES BLOCK: $($file.FullName)"
+  Add-Line "################################################################"
+  for ($n = $startHit.LineNumber; $n -lt $endHit.LineNumber; $n++) {
+    Add-Line ("{0,6}: {1}" -f $n, $all[$n - 1])
+  }
+}
 
 foreach ($file in ($targets | Sort-Object FullName -Unique)) {
   $matches = Select-String -LiteralPath $file.FullName -Pattern $patterns -CaseSensitive:$false
