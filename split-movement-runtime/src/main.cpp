@@ -400,6 +400,10 @@ int main(int argc, char** argv) {
   std::mutex movement_sample_mutex;
   std::optional<split::movement::PawnSample> latest_movement_sample;
   std::optional<split::movement::PawnSample> previous_movement_sample;
+  std::optional<std::uint64_t> last_mantle_start_frame;
+  std::optional<std::uint64_t> last_mantle_end_frame;
+  std::optional<std::uint64_t> last_slide_start_frame;
+  std::optional<std::uint64_t> last_slide_end_frame;
 
   const auto route_directory =
       std::filesystem::current_path() / "routes";
@@ -806,6 +810,8 @@ int main(int argc, char** argv) {
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
 
+            bool native_slide_started = false;
+            bool native_wall_jump = false;
             for (const auto& movement : movement_events.Drain(sample->pawn_handle)) {
               const char* label =
                   split::movement::MovementExecutionName(movement.execution);
@@ -813,6 +819,13 @@ int main(int argc, char** argv) {
                         << " at (" << sample->position[0] << ", "
                         << sample->position[1] << ", "
                         << sample->position[2] << ")\n";
+
+              if (movement.execution == split::movement::MovementExecution::kSlide) {
+                native_slide_started = true;
+              }
+              if (movement.execution == split::movement::MovementExecution::kWallJump) {
+                native_wall_jump = true;
+              }
 
               if (recorder.Stats().recording && IsRouteCallout(movement.execution)) {
                 std::scoped_lock lock(route_cues_mutex);
@@ -828,6 +841,10 @@ int main(int argc, char** argv) {
 
             if (reset_movement_recognizer.exchange(false, std::memory_order_acq_rel)) {
               previous_movement_sample.reset();
+              last_mantle_start_frame.reset();
+              last_mantle_end_frame.reset();
+              last_slide_start_frame.reset();
+              last_slide_end_frame.reset();
             }
 
             {
@@ -873,6 +890,93 @@ int main(int argc, char** argv) {
                 }
               }
             }
+            if (mantle_started) {
+              last_mantle_start_frame = frame;
+            }
+
+            const bool mantle_ended =
+                previous_movement_sample &&
+                previous_movement_sample->mantling && !sample->mantling;
+            if (mantle_ended) {
+              last_mantle_end_frame = frame;
+            }
+
+            const bool slide_started =
+                native_slide_started ||
+                (previous_movement_sample &&
+                 !previous_movement_sample->sliding && sample->sliding);
+            if (slide_started) {
+              last_slide_start_frame = frame;
+
+              // Hyperline's composed mantle/slide techniques use the mantle
+              // exit neighborhood. Keep the raw Slide event as evidence, but
+              // add the stronger composed label when the transition is close.
+              constexpr std::uint64_t kMantleExitTicks = 16;
+              const auto near_mantle = [&](const std::optional<std::uint64_t>& at) {
+                return at && frame >= *at && frame - *at <= kMantleExitTicks;
+              };
+              if (near_mantle(last_mantle_start_frame) ||
+                  near_mantle(last_mantle_end_frame)) {
+                std::cout << "[SPLIT][Recognizer] Mantle slide at ("
+                          << sample->position[0] << ", "
+                          << sample->position[1] << ", "
+                          << sample->position[2] << ")\n";
+                if (recorder.Stats().recording) {
+                  std::scoped_lock lock(route_cues_mutex);
+                  route_cues.push_back({"Mantle slide", sample->position});
+                }
+              }
+            }
+
+            const bool slide_ended =
+                previous_movement_sample &&
+                previous_movement_sample->sliding && !sample->sliding;
+            if (slide_ended) {
+              last_slide_end_frame = frame;
+            }
+
+            const bool takeoff =
+                previous_movement_sample &&
+                previous_movement_sample->grounded && !sample->grounded;
+            if (takeoff) {
+              constexpr std::uint64_t kCoalesceTicks = 2;
+              const bool from_slide =
+                  previous_movement_sample->sliding ||
+                  (last_slide_end_frame && frame >= *last_slide_end_frame &&
+                   frame - *last_slide_end_frame <= kCoalesceTicks);
+              if (from_slide) {
+                std::cout << "[SPLIT][Recognizer] Slide hop at ("
+                          << sample->position[0] << ", "
+                          << sample->position[1] << ", "
+                          << sample->position[2] << ")\n";
+                if (recorder.Stats().recording) {
+                  std::scoped_lock lock(route_cues_mutex);
+                  route_cues.push_back({"Slide hop", sample->position});
+                }
+              }
+            }
+
+            if (native_wall_jump && last_mantle_start_frame) {
+              constexpr std::uint64_t kMantleWallJumpTicks = 96;
+              constexpr double kMantleWallJumpMinSpeed = 500.0;
+              const double horizontal_speed =
+                  std::hypot(static_cast<double>(sample->velocity[0]),
+                             static_cast<double>(sample->velocity[1]));
+              if (frame >= *last_mantle_start_frame &&
+                  frame - *last_mantle_start_frame <= kMantleWallJumpTicks &&
+                  horizontal_speed >= kMantleWallJumpMinSpeed) {
+                std::cout << "[SPLIT][Recognizer] Mantle wall jump at ("
+                          << sample->position[0] << ", "
+                          << sample->position[1] << ", "
+                          << sample->position[2] << ") speed="
+                          << horizontal_speed << "\n";
+                if (recorder.Stats().recording) {
+                  std::scoped_lock lock(route_cues_mutex);
+                  route_cues.push_back({"Mantle wall jump", sample->position});
+                }
+              }
+            }
+
             previous_movement_sample = *sample;
 
             if (frame % 60 == 0 && !race_timer.Course() &&
