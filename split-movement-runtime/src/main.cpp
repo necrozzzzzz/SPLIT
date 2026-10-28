@@ -177,67 +177,112 @@ std::vector<std::array<float, 3>> RouteCheckpoints(
 
 std::vector<std::array<float, 3>> RoutePolyline(
     const std::vector<split::movement::RecordedTick>& ticks,
-    std::size_t max_points = 48) {
-  std::vector<std::array<float, 3>> points;
-  if (ticks.empty() || max_points == 0) return points;
-  if (ticks.size() == 1 || max_points == 1) {
-    points.push_back(ticks.front().pawn.position);
-    return points;
+    std::size_t max_points = 128) {
+  constexpr double kThinUnits = 16.0;
+  constexpr double kSmoothingUnits = 128.0;
+  constexpr double kInitialTolerance = 2.0;
+  constexpr double kMaxTolerance = 1024.0;
+
+  std::vector<std::array<float, 3>> path;
+  if (ticks.empty() || max_points < 2) return path;
+
+  // Hyperline polyline.ts thin(path, 16).
+  path.reserve(ticks.size());
+  path.push_back(ticks.front().pawn.position);
+  for (std::size_t i = 1; i + 1 < ticks.size(); ++i) {
+    if (RouteDistance(ticks[i].pawn.position, path.back()) >= kThinUnits) {
+      path.push_back(ticks[i].pawn.position);
+    }
+  }
+  if (ticks.size() > 1 &&
+      (RouteDistance(ticks.back().pawn.position, path.back()) > 0.0 ||
+       path.size() == 1)) {
+    path.push_back(ticks.back().pawn.position);
+  }
+  if (path.size() < 2) return path;
+
+  // Hyperline smoothing(path, [0,last], 128): Gaussian over traveled distance.
+  std::vector<double> traveled(path.size(), 0.0);
+  for (std::size_t i = 1; i < path.size(); ++i) {
+    traveled[i] = traveled[i - 1] + RouteDistance(path[i - 1], path[i]);
+  }
+  const double reach = 3.0 * kSmoothingUnits;
+  std::vector<std::array<float, 3>> smoothed = path;
+  for (std::size_t i = 1; i + 1 < path.size(); ++i) {
+    std::size_t from = i;
+    while (from > 0 && traveled[i] - traveled[from - 1] <= reach) --from;
+    std::size_t to = i;
+    while (to + 1 < path.size() && traveled[to + 1] - traveled[i] <= reach) ++to;
+
+    double weights = 0.0;
+    std::array<double, 3> sum{};
+    for (std::size_t j = from; j <= to; ++j) {
+      const double offset = (traveled[j] - traveled[i]) / kSmoothingUnits;
+      const double weight = std::exp(-(offset * offset) / 2.0);
+      weights += weight;
+      for (std::size_t axis = 0; axis < 3; ++axis) {
+        sum[axis] += weight * path[j][axis];
+      }
+    }
+    if (weights > 0.0) {
+      for (std::size_t axis = 0; axis < 3; ++axis) {
+        smoothed[i][axis] = static_cast<float>(sum[axis] / weights);
+      }
+    }
   }
 
-  std::vector<double> cumulative(ticks.size(), 0.0);
-  for (std::size_t i = 1; i < ticks.size(); ++i) {
-    cumulative[i] = cumulative[i - 1] +
-                    RouteDistance(ticks[i - 1].pawn.position,
-                                  ticks[i].pawn.position);
+  auto chord_distance = [](const std::array<float, 3>& p,
+                           const std::array<float, 3>& a,
+                           const std::array<float, 3>& b) {
+    const double ux = p[0] - a[0], uy = p[1] - a[1], uz = p[2] - a[2];
+    const double vx = b[0] - a[0], vy = b[1] - a[1], vz = b[2] - a[2];
+    const double length = std::sqrt(vx * vx + vy * vy + vz * vz);
+    if (length == 0.0) return std::sqrt(ux * ux + uy * uy + uz * uz);
+    const double cx = uy * vz - uz * vy;
+    const double cy = uz * vx - ux * vz;
+    const double cz = ux * vy - uy * vx;
+    return std::sqrt(cx * cx + cy * cy + cz * cz) / length;
+  };
+
+  // Hyperline ranking() then progressively raises tolerance until beam budget fits.
+  std::vector<double> ranks(smoothed.size(), 0.0);
+  ranks.front() = ranks.back() = std::numeric_limits<double>::infinity();
+  struct Span { std::size_t from, to; double cap; };
+  std::vector<Span> spans{{0, smoothed.size() - 1,
+                           std::numeric_limits<double>::infinity()}};
+  while (!spans.empty()) {
+    const Span span = spans.back();
+    spans.pop_back();
+    double farthest = 0.0;
+    std::size_t index = span.from;
+    for (std::size_t middle = span.from + 1; middle < span.to; ++middle) {
+      const double away = chord_distance(
+          smoothed[middle], smoothed[span.from], smoothed[span.to]);
+      if (away > farthest) {
+        farthest = away;
+        index = middle;
+      }
+    }
+    if (farthest > kInitialTolerance && index > span.from && index < span.to) {
+      const double rank = (std::min)(farthest, span.cap);
+      ranks[index] = rank;
+      spans.push_back({span.from, index, rank});
+      spans.push_back({index, span.to, rank});
+    }
   }
 
-  const double total = cumulative.back();
-  if (!(total > 0.0)) {
-    points.push_back(ticks.front().pawn.position);
-    return points;
+  for (double tolerance = kInitialTolerance;
+       tolerance <= kMaxTolerance; tolerance *= 2.0) {
+    std::vector<std::array<float, 3>> line;
+    for (std::size_t i = 0; i < path.size(); ++i) {
+      if (ranks[i] > tolerance) line.push_back(smoothed[i]);
+    }
+    if (line.size() >= 2 && line.size() - 1 <= max_points - 1) {
+      return line;
+    }
   }
 
-  const std::size_t count = (std::min)(max_points, ticks.size());
-  points.reserve(count);
-  std::size_t cursor = 1;
-
-  for (std::size_t sample = 0; sample < count; ++sample) {
-    const double target =
-        total * static_cast<double>(sample) /
-        static_cast<double>(count - 1);
-
-    while (cursor + 1 < cumulative.size() &&
-           cumulative[cursor] < target) {
-      ++cursor;
-    }
-
-    if (target <= 0.0) {
-      points.push_back(ticks.front().pawn.position);
-      continue;
-    }
-    if (target >= total) {
-      points.push_back(ticks.back().pawn.position);
-      continue;
-    }
-
-    const std::size_t right = cursor;
-    const std::size_t left = right > 0 ? right - 1 : 0;
-    const double segment = cumulative[right] - cumulative[left];
-    const double t = segment > 0.0
-        ? (target - cumulative[left]) / segment
-        : 0.0;
-
-    std::array<float, 3> point{};
-    for (std::size_t axis = 0; axis < 3; ++axis) {
-      const double a = ticks[left].pawn.position[axis];
-      const double b = ticks[right].pawn.position[axis];
-      point[axis] = static_cast<float>(a + (b - a) * t);
-    }
-    points.push_back(point);
-  }
-
-  return points;
+  return {smoothed.front(), smoothed.back()};
 }
 
 }  // namespace
@@ -405,8 +450,36 @@ int main(int argc, char** argv) {
       return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
     if (command == "tracertest") {
-      return "{\"queued\":false,\"reason\":\"disabled-bad-env-beam-prototype\","
-             "\"note\":\"waiting-for-hyperline-tracer-resource\"}";
+      const auto ticks = recorder.PlaybackTicks();
+      if (ticks.size() < 2) {
+        return "{\"queued\":false,\"reason\":\"no-recorded-route\"}";
+      }
+
+      const auto line = RoutePolyline(ticks, 128);
+      if (line.size() < 2) {
+        return "{\"queued\":false,\"reason\":\"route-has-no-line\"}";
+      }
+
+      visual_renderer.Clear();
+      std::size_t created = 0;
+      std::string beam_error;
+      for (std::size_t i = 1; i < line.size(); ++i) {
+        if (!visual_renderer.DrawBeamSegment(line[i - 1], line[i], beam_error)) {
+          std::ostringstream out;
+          out << "{\"queued\":false,\"reason\":\"hyperline-beam-failed\","
+              << "\"segment\":" << (i - 1)
+              << ",\"created\":" << created
+              << ",\"detail\":\"" << beam_error << "\"}";
+          return out.str();
+        }
+        ++created;
+      }
+
+      std::ostringstream out;
+      out << "{\"queued\":true,\"note\":\"hyperline-route-line-created\","
+          << "\"points\":" << line.size()
+          << ",\"segments\":" << created << "}";
+      return out.str();
     }
     if (command == "visualdiagnostics") {
       auto escape_json = [](std::string_view value) {
