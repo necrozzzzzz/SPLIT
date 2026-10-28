@@ -67,6 +67,7 @@ enum UserHotkeyAction {
     MovementRecordToggle,
     MovementRace,
     MovementReplay,
+    MovementRetry,
 }
 
 #[derive(Debug, Clone)]
@@ -243,6 +244,7 @@ pub struct HotkeySettings {
     pub movement_record: Hotkey,
     pub movement_race: Hotkey,
     pub movement_replay: Hotkey,
+    pub movement_retry: Hotkey,
     pub quick_access: Hotkey,
 }
 
@@ -262,6 +264,7 @@ impl Default for HotkeySettings {
             movement_record: Hotkey::new("R", true, false, true),
             movement_race: Hotkey::new("T", true, false, true),
             movement_replay: Hotkey::new("P", true, false, true),
+            movement_retry: Hotkey::new("Y", true, false, true),
             quick_access: Hotkey::new("CapsLock", false, false, false),
         }
     }
@@ -308,6 +311,7 @@ impl HotkeySettings {
             &self.movement_record,
             &self.movement_race,
             &self.movement_replay,
+            &self.movement_retry,
             &self.quick_access,
         ] {
             validate_hotkey(hotkey, false)?;
@@ -326,7 +330,7 @@ impl HotkeySettings {
     }
 
     fn all(&self) -> Vec<(&'static str, &Hotkey)> {
-        let mut bindings = Vec::with_capacity(23);
+        let mut bindings = Vec::with_capacity(24);
         for (index, hotkey) in self.load_slots.iter().enumerate() {
             bindings.push((LOAD_LABELS[index], hotkey));
         }
@@ -341,13 +345,14 @@ impl HotkeySettings {
             ("Movement Record", &self.movement_record),
             ("Movement Race", &self.movement_race),
             ("Movement Replay", &self.movement_replay),
+            ("Movement Retry", &self.movement_retry),
             ("Quick Access", &self.quick_access),
         ]);
         bindings
     }
 
     fn all_mut(&mut self) -> Vec<&mut Hotkey> {
-        let mut bindings = Vec::with_capacity(23);
+        let mut bindings = Vec::with_capacity(24);
         bindings.extend(self.load_slots.iter_mut());
         bindings.extend(self.save_slots.iter_mut());
         bindings.extend([
@@ -358,6 +363,7 @@ impl HotkeySettings {
             &mut self.movement_record,
             &mut self.movement_race,
             &mut self.movement_replay,
+            &mut self.movement_retry,
             &mut self.quick_access,
         ]);
         bindings
@@ -405,6 +411,9 @@ impl HotkeySettings {
             })
             .or_else(|| {
                 (self.movement_replay == *hotkey).then_some(UserHotkeyAction::MovementReplay)
+            })
+            .or_else(|| {
+                (self.movement_retry == *hotkey).then_some(UserHotkeyAction::MovementRetry)
             })
     }
 }
@@ -3140,6 +3149,16 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                         }
                     }
 
+                    HotkeyAction::User {
+                        action: UserHotkeyAction::MovementRetry,
+                        hotkey,
+                    } => {
+                        println!("[SPLIT][Movement] Retry hotkey: {}", hotkey.display());
+                        if let Err(error) = send_movement_command("retry") {
+                            eprintln!("[SPLIT][Movement] {error}");
+                        }
+                    }
+
                     HotkeyAction::Shutdown => {
                         break;
                     }
@@ -3189,6 +3208,7 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
             println!("[SPLIT]   Movement Record/Stop = Ctrl+Shift+R");
             println!("[SPLIT]   Movement Race = Ctrl+Shift+T");
             println!("[SPLIT]   Movement Replay = Ctrl+Shift+P");
+            println!("[SPLIT]   Movement Retry = Ctrl+Shift+Y");
 
             let mut message = MSG::default();
 

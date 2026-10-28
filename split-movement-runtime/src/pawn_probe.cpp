@@ -550,4 +550,70 @@ bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
   return true;
 }
 
+
+bool PawnProbe::Teleport(int slot, const std::array<float, 3>& position,
+                         const std::array<float, 3>& angles, std::string& error) {
+  error.clear();
+  if (slot < 0 || slot >= 64) {
+    error = "player slot is outside the Deadlock slot range";
+    return false;
+  }
+
+  if (!impl_->layout) {
+    auto resolved = ResolveLayout(impl_->schema_system);
+    if (!resolved) {
+      error = resolved.error();
+      return false;
+    }
+    impl_->layout = *resolved;
+  }
+
+  if (!impl_->resource_service) {
+    impl_->resource_service =
+        ResolveInterface(L"engine2.dll", "GameResourceServiceServerV001", error);
+    if (!impl_->resource_service) return false;
+  }
+
+  void* entity_system =
+      Read<void*>(impl_->resource_service, kResourceServiceEntitySystemOffset);
+  if (!entity_system) {
+    error = "CGameResourceService has no live entity system";
+    return false;
+  }
+
+  auto* entity_list =
+      static_cast<unsigned char*>(entity_system) + kEntityListOffset;
+  auto* controller_identity =
+      IdentityOfIndex(entity_list, static_cast<std::uint32_t>(slot + 1));
+  void* controller = InstanceOf(controller_identity);
+  if (!controller) {
+    error = "controller is not live";
+    return false;
+  }
+
+  const auto pawn_handle =
+      Read<std::uint32_t>(controller, impl_->layout->pawn_handle);
+  auto* pawn_identity = IdentityOfHandle(entity_list, pawn_handle);
+  void* pawn = InstanceOf(pawn_identity);
+  if (!pawn) {
+    error = "pawn is not live";
+    return false;
+  }
+
+  // Current Modlock game data: CBaseEntity::Teleport = vtable slot 163.
+  constexpr std::size_t kTeleportSlot = 163;
+  auto*** object = reinterpret_cast<void***>(pawn);
+  if (!object || !*object || !(*object)[kTeleportSlot]) {
+    error = "CBaseEntity::Teleport is unavailable";
+    return false;
+  }
+
+  using TeleportFn =
+      void (*)(void*, const float*, const float*, const float*);
+  const std::array<float, 3> velocity{};
+  reinterpret_cast<TeleportFn>((*object)[kTeleportSlot])(
+      pawn, position.data(), angles.data(), velocity.data());
+  return true;
+}
+
 }  // namespace split::movement

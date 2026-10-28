@@ -183,6 +183,7 @@ int main(int argc, char** argv) {
   int pb_ghost_slot = -1;
   std::atomic<bool> replay_requested{false};
   std::atomic<bool> race_requested{false};
+  std::atomic<bool> retry_requested{false};
   std::string last_pawn_error;
   std::string current_map = launch.map;
 
@@ -215,6 +216,9 @@ int main(int argc, char** argv) {
     } else if (command == "race") {
       race_requested.store(true, std::memory_order_release);
       std::cout << "[SPLIT][Race] arming route timer\n";
+    } else if (command == "retry") {
+      retry_requested.store(true, std::memory_order_release);
+      std::cout << "[SPLIT][Race] retry requested\n";
     } else if (command == "racecancel") {
       race_timer.Cancel();
       race_run_recorder.Clear();
@@ -247,7 +251,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, save, replay, race, racestatus, racecancel, clear)\n";
+                << " (record, recordtoggle, stop, status, save, replay, race, retry, racestatus, racecancel, clear)\n";
     }
   };
 
@@ -326,6 +330,32 @@ int main(int argc, char** argv) {
             const auto latest_input = input_capture.Latest(slot);
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
+
+            if (retry_requested.exchange(false, std::memory_order_acq_rel)) {
+              auto ticks = recorder.PlaybackTicks();
+              if (ticks.empty()) {
+                std::cout << "[SPLIT][Race] retry failed: no recorded route is available\n";
+              } else {
+                steering.Stop();
+                race_timer.Cancel();
+                race_run_recorder.Clear();
+
+                std::array<float, 3> angles{};
+                if (ticks.front().input) {
+                  angles = ticks.front().input->angles;
+                }
+
+                std::string teleport_error;
+                if (!pawn_probe.Teleport(slot, ticks.front().pawn.position,
+                                         angles, teleport_error)) {
+                  std::cout << "[SPLIT][Race] retry teleport failed: "
+                            << teleport_error << "\n";
+                } else {
+                  std::cout << "[SPLIT][Race] RETRY teleported to route start\n";
+                  race_requested.store(true, std::memory_order_release);
+                }
+              }
+            }
 
             if (race_requested.exchange(false, std::memory_order_acq_rel)) {
               const auto first = recorder.FirstPawn();

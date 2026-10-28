@@ -29,6 +29,8 @@ class PawnProbe {
 
   std::optional<PawnSample> Observe(int slot, std::string& error);
   bool SetGhostVisual(int slot, bool ghost, std::string& error);
+  bool Teleport(int slot, const std::array<float, 3>& position,
+                const std::array<float, 3>& angles, std::string& error);
 
  private:
   struct Impl;
