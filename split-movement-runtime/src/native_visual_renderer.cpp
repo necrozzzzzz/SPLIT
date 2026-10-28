@@ -894,11 +894,20 @@ void NativeVisualRenderer::Render(
     finish[2] += 8.0f;
 
     if (ParticleReady()) {
-      static constexpr char kStartFinishEffect[] =
-          "particles/environment/powerup_spawner_ambient.vpcf";
-      (void)impl_->SpawnParticle(start, kStartFinishEffect, particle_error);
+      // Use the standalone ping effect for all race primitives until the
+      // course renderer is validated end-to-end. This is the effect already
+      // proven visible by visualtest on the live Deadlock client.
+      static constexpr char kMarkerEffect[] =
+          "particles/generic/generic_ping_ground_arrow.vpcf";
+      if (!impl_->SpawnParticle(start, kMarkerEffect, particle_error)) {
+        std::cout << "[SPLIT][Visuals] start marker failed: "
+                  << particle_error << "\n";
+      }
       particle_error.clear();
-      (void)impl_->SpawnParticle(finish, kStartFinishEffect, particle_error);
+      if (!impl_->SpawnParticle(finish, kMarkerEffect, particle_error)) {
+        std::cout << "[SPLIT][Visuals] finish marker failed: "
+                  << particle_error << "\n";
+      }
     } else if (Ready()) {
       draw_ring(course->start, course->radius);
       draw_ring(course->finish, course->radius);
@@ -913,9 +922,12 @@ void NativeVisualRenderer::Render(
       marker[2] += 8.0f;
       if (ParticleReady()) {
         std::string particle_error;
-        (void)impl_->SpawnParticle(
-            marker, "particles/generic/generic_ping_ground_arrow.vpcf",
-            particle_error);
+        if (!impl_->SpawnParticle(
+                marker, "particles/generic/generic_ping_ground_arrow.vpcf",
+                particle_error)) {
+          std::cout << "[SPLIT][Visuals] checkpoint marker failed: "
+                    << particle_error << "\n";
+        }
       } else if (Ready()) {
         draw_ring(checkpoint, course->radius * 0.72f);
         impl_->Command(AxisCommand(marker, 90, 170, 255));
