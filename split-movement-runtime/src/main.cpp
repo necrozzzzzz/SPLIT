@@ -690,11 +690,8 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
         const bool inferred_timing =
             !mantle_end && recent_mantle_start &&
             anchor.frame >= recent_mantle_start->frame &&
-            anchor.frame - recent_mantle_start->frame <= 64 &&
-            !AnyPrimitive(primitives, "touchdown",
-                          recent_mantle_start->frame + 1,
-                          anchor.frame > 0 ? anchor.frame - 1
-                                           : anchor.frame);
+            anchor.frame - recent_mantle_start->frame >= 24 &&
+            anchor.frame - recent_mantle_start->frame <= 64;
 
         if ((exact_timing || inferred_timing) &&
             peak && *peak >= kSuperglideMinSpeed) {
@@ -718,13 +715,8 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
             detail << " delta=" << (anchor.frame - mantle_end->frame) << "/4";
           } else if (recent_mantle_start) {
             detail << " inferredStartDelta="
-                   << (anchor.frame - recent_mantle_start->frame) << "/64"
-                   << " touchdownBetween="
-                   << (AnyPrimitive(primitives, "touchdown",
-                                    recent_mantle_start->frame + 1,
-                                    anchor.frame > 0 ? anchor.frame - 1
-                                                     : anchor.frame)
-                           ? "yes" : "no");
+                   << (anchor.frame - recent_mantle_start->frame)
+                   << " window=24..64";
           }
           detail << " peakSpeed=";
           if (peak) detail << std::fixed << std::setprecision(1) << *peak;
