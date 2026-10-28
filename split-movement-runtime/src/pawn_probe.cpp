@@ -240,6 +240,9 @@ std::expected<std::size_t, std::string> FieldOffset(const schema::ClassInfo* inf
   return std::unexpected(std::string("schema field not found: ") + field_name);
 }
 
+std::expected<const schema::ClassInfo*, std::string> ClassInfoOf(
+    void* schema_system, const char* class_name);
+
 std::optional<std::size_t> OptionalFieldOffset(
     void* schema_system, const char* class_name, const char* field_name,
     std::size_t minimum_size) {
