@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(split_movement_runtime VERSION 0.12.0 LANGUAGES CXX)
+project(split_movement_runtime VERSION 0.13.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,6 +28,7 @@ add_executable(split-movement-runtime
   src/movement_steering.cpp
   src/recorder.cpp
   src/race_timer.cpp
+  src/pb_route_store.cpp
 )
 
 target_include_directories(split-movement-runtime PRIVATE include)

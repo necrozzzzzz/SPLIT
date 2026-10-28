@@ -5,6 +5,7 @@
 #include "split_movement/input_capture.h"
 #include "split_movement/movement_steering.h"
 #include "split_movement/pawn_probe.h"
+#include "split_movement/pb_route_store.h"
 #include "split_movement/recorder.h"
 #include "split_movement/race_timer.h"
 #include "split_movement/runtime.h"
@@ -174,6 +175,7 @@ int main(int argc, char** argv) {
   split::movement::PawnProbe pawn_probe(bridge.SchemaSystem());
   split::movement::InputCapture input_capture;
   split::movement::MovementRecorder recorder;
+  split::movement::MovementRecorder race_run_recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
   bool steering_was_active = false;
@@ -185,6 +187,7 @@ int main(int argc, char** argv) {
   const auto route_directory =
       std::filesystem::current_path() / "routes";
   split::movement::RaceTimer race_timer(route_directory);
+  split::movement::PbRouteStore pb_routes(route_directory);
 
   // Source2Main owns the main thread. Keep a tiny command reader beside it so
   // this prototype can exercise recording without needing Tauri IPC yet.
@@ -209,6 +212,7 @@ int main(int argc, char** argv) {
         std::cout << "[SPLIT][Race] arming route timer\n";
       } else if (command == "racecancel") {
         race_timer.Cancel();
+        race_run_recorder.Clear();
         std::cout << "[SPLIT][Race] cancelled\n";
       } else if (command == "racestatus") {
         const auto race = race_timer.Status();
@@ -296,7 +300,9 @@ int main(int argc, char** argv) {
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
             }
 
-            recorder.Push(frame, *sample, input_capture.Latest(slot));
+            const auto latest_input = input_capture.Latest(slot);
+            recorder.Push(frame, *sample, latest_input);
+            race_run_recorder.Push(frame, *sample, latest_input);
 
             if (race_requested.exchange(false, std::memory_order_acq_rel)) {
               const auto first = recorder.FirstPawn();
@@ -342,8 +348,64 @@ int main(int argc, char** argv) {
 
             const auto race_event = race_timer.Observe(sample->position);
             if (race_event.type == split::movement::RaceEvent::Type::kStarted) {
+              race_run_recorder.Start();
               std::cout << "[SPLIT][Race] GO checkpoints="
                         << race_event.checkpoint_count << "\n";
+
+              const auto race_status = race_timer.Status();
+              if (race_status.personal_best_seconds &&
+                  pb_routes.Exists(race_status.course_id)) {
+                auto pb_ticks = pb_routes.Load(race_status.course_id);
+                if (!pb_ticks) {
+                  std::cout << "[SPLIT][PB Ghost] load failed: "
+                            << pb_ticks.error() << "\n";
+                } else if (pb_ticks->empty()) {
+                  std::cout << "[SPLIT][PB Ghost] saved PB route is empty\n";
+                } else {
+                  const auto first_pb = pb_ticks->front().pawn;
+                  std::array<bool, 64> occupied_before{};
+                  for (int i = 0; i < 64; ++i) {
+                    occupied_before[i] = hooks.ClientAt(i).has_value();
+                  }
+
+                  std::string ghost_error;
+                  steering.Stop();
+                  if (!bot_factory.Create("SPLIT PB Ghost",
+                                          static_cast<int>(first_pb.team),
+                                          first_pb.hero_id,
+                                          first_pb.position,
+                                          ghost_error)) {
+                    std::cout << "[SPLIT][PB Ghost] creation failed: "
+                              << ghost_error << "\n";
+                  } else {
+                    int ghost_slot = -1;
+                    for (int i = 0; i < 64; ++i) {
+                      const auto client = hooks.ClientAt(i);
+                      if (!occupied_before[i] && client && client->is_bot &&
+                          client->name == "SPLIT PB Ghost") {
+                        ghost_slot = i;
+                        break;
+                      }
+                    }
+
+                    if (ghost_slot < 0) {
+                      std::cout << "[SPLIT][PB Ghost] bot slot was not observed\n";
+                    } else if (!steering.Start(ghost_slot, std::move(*pb_ticks),
+                                               ghost_error)) {
+                      std::cout << "[SPLIT][PB Ghost] steering failed: "
+                                << ghost_error << "\n";
+                    } else {
+                      const auto ghost_state = steering.Status();
+                      steering_was_active = ghost_state.active;
+                      std::cout << "[SPLIT][PB Ghost] started slot="
+                                << ghost_slot
+                                << " steps=" << ghost_state.total
+                                << " pb=" << std::fixed << std::setprecision(3)
+                                << *race_status.personal_best_seconds << "s\n";
+                    }
+                  }
+                }
+              }
             } else if (race_event.type == split::movement::RaceEvent::Type::kSplit) {
               std::cout << std::fixed << std::setprecision(3)
                         << "[SPLIT][Race] SPLIT "
@@ -362,6 +424,21 @@ int main(int argc, char** argv) {
               }
               std::cout << "\n";
             } else if (race_event.type == split::movement::RaceEvent::Type::kFinished) {
+              race_run_recorder.Stop();
+              const auto finished_status = race_timer.Status();
+              if (race_event.personal_best) {
+                const auto pb_ticks = race_run_recorder.PlaybackTicks();
+                auto saved_pb = pb_routes.Save(finished_status.course_id, pb_ticks);
+                if (saved_pb) {
+                  std::cout << "[SPLIT][PB Ghost] saved "
+                            << pb_ticks.size() << " steps for course "
+                            << finished_status.course_id << "\n";
+                } else {
+                  std::cout << "[SPLIT][PB Ghost] save failed: "
+                            << saved_pb.error() << "\n";
+                }
+              }
+
               std::cout << std::fixed << std::setprecision(3)
                         << "[SPLIT][Race] FINISH "
                         << race_event.elapsed_seconds << "s";
