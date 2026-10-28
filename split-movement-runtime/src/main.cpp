@@ -1,10 +1,13 @@
 #include "split_movement/engine_bridge.h"
 #include "split_movement/engine_runner.h"
 #include "split_movement/native_hooks.h"
+#include "split_movement/pawn_probe.h"
 #include "split_movement/runtime.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -95,12 +98,50 @@ int main(int argc, char** argv) {
 
   std::cout << "SPLIT Movement Runtime: engine bridge ready.\n";
 
+  split::movement::PawnProbe pawn_probe(bridge.SchemaSystem());
+  std::atomic<int> human_slot{-1};
+  bool pawn_announced = false;
+  std::string last_pawn_error;
+
   split::movement::NativeHooks hooks;
   std::string hook_error;
   if (!hooks.Install(
-          [](std::uint64_t frame) {
+          [&](std::uint64_t frame) {
             if (frame == 1 || frame % 300 == 0) {
               std::cout << "[SPLIT][Movement] server frame " << frame << "\n";
+            }
+
+            const int slot = human_slot.load(std::memory_order_relaxed);
+            if (slot < 0) return;
+
+            std::string error;
+            auto sample = pawn_probe.Observe(slot, error);
+            if (!sample) {
+              if (!error.empty() && error != last_pawn_error) {
+                last_pawn_error = error;
+                std::cout << "[SPLIT][Movement] pawn probe waiting: " << error << "\n";
+              }
+              return;
+            }
+
+            last_pawn_error.clear();
+            if (!pawn_announced) {
+              pawn_announced = true;
+              std::cout << "[SPLIT][Movement] pawn attached slot=" << sample->slot
+                        << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
+            }
+
+            if (frame % 120 == 0) {
+              std::cout << std::fixed << std::setprecision(1)
+                        << "[SPLIT][Movement] pose"
+                        << " pos=(" << sample->position[0] << ", "
+                                    << sample->position[1] << ", "
+                                    << sample->position[2] << ")"
+                        << " vel=(" << sample->velocity[0] << ", "
+                                    << sample->velocity[1] << ", "
+                                    << sample->velocity[2] << ")"
+                        << " grounded=" << (sample->grounded ? "yes" : "no")
+                        << "\n";
             }
           },
           [](std::string_view map) {
@@ -112,17 +153,22 @@ int main(int argc, char** argv) {
           [](const split::movement::ClientConnection& client) {
             PrintClient("client entered", client);
           },
-          [](const split::movement::ClientConnection& client) {
+          [&](const split::movement::ClientConnection& client) {
             PrintClient("client fully connected", client);
             if (!client.is_bot) {
+              human_slot.store(client.slot, std::memory_order_relaxed);
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
-                        << "; pawn observation can now attach to this slot.\n";
+                        << "; attaching pawn probe.\n";
             }
           },
-          [](int slot, std::uint64_t xuid) {
+          [&](int slot, std::uint64_t xuid) {
             std::cout << "[SPLIT][Movement] client disconnecting slot="
                       << slot << " xuid=" << xuid << "\n";
+            if (human_slot.load(std::memory_order_relaxed) == slot) {
+              human_slot.store(-1, std::memory_order_relaxed);
+              pawn_announced = false;
+            }
           },
           hook_error)) {
     std::cerr << "Native hook installation failed: " << hook_error << "\n";
