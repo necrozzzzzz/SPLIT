@@ -267,11 +267,15 @@ int main(int argc, char** argv) {
     std::cout << "[SPLIT][Visuals] native renderer unavailable: "
               << visual_renderer_error << "\n";
   } else {
-    std::cout << "[SPLIT][Visuals] native Source 2 particle renderer ready";
-    if (visual_renderer.Ready()) {
-      std::cout << " + debug draw bridge";
-    }
+    std::cout << "[SPLIT][Visuals] native Source 2 particle core ready";
+    if (visual_renderer.ManifestReady()) std::cout << " + manifest";
+    if (visual_renderer.TransmitReady()) std::cout << " + TransmitAlways";
+    if (visual_renderer.Ready()) std::cout << " + debug draw bridge";
     std::cout << "\n";
+    if (!visual_renderer.OptionalError().empty()) {
+      std::cout << "[SPLIT][Visuals] optional setup warning: "
+                << visual_renderer.OptionalError() << "\n";
+    }
   }
 
   auto handle_command = [&](std::string_view command) -> std::string {
@@ -333,11 +337,16 @@ int main(int argc, char** argv) {
       return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
     if (command == "visualdiagnostics") {
-      return std::string("{\"rendererInterfaceReady\":") +
-             (visual_renderer.Ready() ? "true" : "false") +
-             ",\"particleRendererReady\":" +
-             (visual_renderer.ParticleReady() ? "true" : "false") +
-             ",\"clientRenderVerified\":false,\"hudImplemented\":false}";
+      std::ostringstream out;
+      out << "{"
+          << "\"rendererInterfaceReady\":" << (visual_renderer.Ready() ? "true" : "false")
+          << ",\"particleCoreReady\":" << (visual_renderer.ParticleReady() ? "true" : "false")
+          << ",\"manifestReady\":" << (visual_renderer.ManifestReady() ? "true" : "false")
+          << ",\"transmitAlwaysReady\":" << (visual_renderer.TransmitReady() ? "true" : "false")
+          << ",\"clientRenderVerified\":false"
+          << ",\"hudImplemented\":false"
+          << "}";
+      return out.str();
     }
     if (command == "state") {
       const auto stats = recorder.Stats();
