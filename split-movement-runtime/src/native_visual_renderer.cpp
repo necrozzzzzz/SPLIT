@@ -190,8 +190,10 @@ __int64 __fastcall ManifestBuildThunk(void* self, void** original_args) {
         "particles/environment/powerup_spawner_ambient_ring.vpcf", manifest);
     g_add_manifest_resource(
         "particles/generic/generic_ping_ground_arrow.vpcf", manifest);
+    g_add_manifest_resource(
+        "particles/abilities/assassinate_laser_targetting.vpcf", manifest);
     if (!g_manifest_logged) {
-      std::cout << "[SPLIT][Visuals] registered 3 particle resources in game session manifest\n";
+      std::cout << "[SPLIT][Visuals] registered 4 particle resources in game session manifest\n";
       g_manifest_logged = true;
     }
   }
@@ -789,7 +791,9 @@ struct NativeVisualRenderer::Impl {
   }
 
   bool SpawnParticle(const std::array<float, 3>& position,
-                     const char* effect, std::string& error) {
+                     const char* effect, std::string& error,
+                     const std::optional<std::array<float, 3>>& data_value = std::nullopt,
+                     int data_control_point = 1) {
     void* entity_system = EntitySystem(error);
     if (!entity_system) return false;
 
@@ -843,6 +847,28 @@ struct NativeVisualRenderer::Impl {
       return false;
     }
     SetKvBool(*active_value, true);
+
+    if (data_value) {
+      auto particle_class = ClassInfoOf(schema_system, "CParticleSystem");
+      if (!particle_class) {
+        if (remove_entity) remove_entity(particle);
+        error = "CParticleSystem schema unavailable: " + particle_class.error();
+        return false;
+      }
+      auto cp_field = FieldSpan(*particle_class, "m_nDataCP");
+      auto data_field = FieldSpan(*particle_class, "m_vecDataCPValue");
+      if (!cp_field || cp_field->second < sizeof(std::int32_t) ||
+          !data_field || data_field->second < sizeof(std::array<float, 3>)) {
+        if (remove_entity) remove_entity(particle);
+        error = "CParticleSystem data-control-point fields unavailable";
+        return false;
+      }
+      const std::int32_t cp = data_control_point;
+      std::memcpy(static_cast<std::byte*>(particle) + cp_field->first,
+                  &cp, sizeof(cp));
+      std::memcpy(static_cast<std::byte*>(particle) + data_field->first,
+                  data_value->data(), sizeof(std::array<float, 3>));
+    }
 
     constexpr std::size_t kTeleportSlot = 163;
     auto*** object = reinterpret_cast<void***>(particle);
@@ -1090,6 +1116,42 @@ bool NativeVisualRenderer::DrawWorldTextMarker(
     }
   }
   return impl_->SpawnWorldText(position, message, scale, color_rgba, error);
+#endif
+}
+
+bool NativeVisualRenderer::DrawBeamSegment(
+    const std::array<float, 3>& from, const std::array<float, 3>& to,
+    std::string& error) {
+#if !defined(_WIN32)
+  (void)from;
+  (void)to;
+  error = "native beam renderer currently requires Windows";
+  return false;
+#else
+  error.clear();
+  if (!ParticleReady()) {
+    error = "native particle ABI is not ready";
+    return false;
+  }
+  for (float coordinate : from) {
+    if (!std::isfinite(coordinate)) {
+      error = "beam start is not finite";
+      return false;
+    }
+  }
+  for (float coordinate : to) {
+    if (!std::isfinite(coordinate)) {
+      error = "beam end is not finite";
+      return false;
+    }
+  }
+  auto start = from;
+  auto end = to;
+  start[2] += 24.0f;
+  end[2] += 24.0f;
+  return impl_->SpawnParticle(
+      start, "particles/abilities/assassinate_laser_targetting.vpcf",
+      error, end, 1);
 #endif
 }
 
