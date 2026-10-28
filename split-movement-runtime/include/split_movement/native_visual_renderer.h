@@ -38,6 +38,9 @@ class NativeVisualRenderer {
                            const char* message, float scale,
                            std::uint32_t color_rgba,
                            std::string& error);
+  bool DrawBeamSegment(const std::array<float, 3>& from,
+                       const std::array<float, 3>& to,
+                       std::string& error);
   void Clear();
   void Render(const std::vector<RecordedTick>& route,
               const std::optional<RaceCourse>& course,
