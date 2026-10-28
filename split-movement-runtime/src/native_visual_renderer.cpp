@@ -369,6 +369,31 @@ struct ParticleRef {
   void* Get() const { return EntityInstance(entity_system, handle); }
 };
 
+bool NotifyEntityStateChanged(void* entity) {
+  if (!entity) return false;
+  auto*** object = reinterpret_cast<void***>(entity);
+  if (!object || !*object) return false;
+  constexpr std::size_t kNetworkStateChangedSlot = 28;
+  void* notification = (*object)[kNetworkStateChangedSlot];
+  if (!notification) return false;
+
+  struct alignas(8) FullChange {
+    std::uint32_t flag = 0;
+    std::uint32_t padding = 0;
+    std::byte offsets_and_names[40]{};
+    std::int32_t unknown = -1;
+    std::int32_t array_index = -1;
+    std::int32_t path_index = -1;
+    std::int16_t mode = 0;
+    std::int16_t tail = 0;
+  } changed;
+  static_assert(sizeof(FullChange) == 64);
+
+  using NotifyFn = void (*)(void*, const FullChange&);
+  reinterpret_cast<NotifyFn>(notification)(entity, changed);
+  return true;
+}
+
 
 namespace schema {
 struct MetadataEntry { const char* name; const void* data; };
@@ -917,7 +942,9 @@ struct NativeVisualRenderer::Impl {
   bool SpawnParticle(const std::array<float, 3>& position,
                      const char* effect, std::string& error,
                      const std::optional<std::array<float, 3>>& data_value = std::nullopt,
-                     int data_control_point = 1) {
+                     int data_control_point = 1,
+                     const std::optional<std::uint32_t>& tint_rgba = std::nullopt,
+                     int tint_control_point = 2) {
     void* entity_system = EntitySystem(error);
     if (!entity_system) return false;
 
@@ -972,26 +999,65 @@ struct NativeVisualRenderer::Impl {
     }
     SetKvBool(*active_value, true);
 
-    if (data_value) {
+    if (data_value || tint_rgba) {
       auto particle_class = ClassInfoOf(schema_system, "CParticleSystem");
       if (!particle_class) {
         if (remove_entity) remove_entity(particle);
         error = "CParticleSystem schema unavailable: " + particle_class.error();
         return false;
       }
-      auto cp_field = FieldSpan(*particle_class, "m_nDataCP");
-      auto data_field = FieldSpan(*particle_class, "m_vecDataCPValue");
-      if (!cp_field || cp_field->second < sizeof(std::int32_t) ||
-          !data_field || data_field->second < sizeof(std::array<float, 3>)) {
-        if (remove_entity) remove_entity(particle);
-        error = "CParticleSystem data-control-point fields unavailable";
-        return false;
+
+      if (data_value) {
+        auto cp_field = FieldSpan(*particle_class, "m_nDataCP");
+        auto data_field = FieldSpan(*particle_class, "m_vecDataCPValue");
+        if (!cp_field || cp_field->second < sizeof(std::int32_t) ||
+            !data_field || data_field->second < sizeof(std::array<float, 3>)) {
+          if (remove_entity) remove_entity(particle);
+          error = "CParticleSystem data-control-point fields unavailable";
+          return false;
+        }
+        const std::int32_t cp = data_control_point;
+        std::memcpy(static_cast<std::byte*>(particle) + cp_field->first,
+                    &cp, sizeof(cp));
+        if (!NotifyEntityStateChanged(particle)) {
+          if (remove_entity) remove_entity(particle);
+          error = "CParticleSystem m_nDataCP network notification unavailable";
+          return false;
+        }
+        std::memcpy(static_cast<std::byte*>(particle) + data_field->first,
+                    data_value->data(), sizeof(std::array<float, 3>));
+        if (!NotifyEntityStateChanged(particle)) {
+          if (remove_entity) remove_entity(particle);
+          error = "CParticleSystem m_vecDataCPValue network notification unavailable";
+          return false;
+        }
       }
-      const std::int32_t cp = data_control_point;
-      std::memcpy(static_cast<std::byte*>(particle) + cp_field->first,
-                  &cp, sizeof(cp));
-      std::memcpy(static_cast<std::byte*>(particle) + data_field->first,
-                  data_value->data(), sizeof(std::array<float, 3>));
+
+      if (tint_rgba) {
+        auto tint_field = FieldSpan(*particle_class, "m_clrTint");
+        auto tint_cp_field = FieldSpan(*particle_class, "m_nTintCP");
+        if (!tint_field || tint_field->second < sizeof(std::uint32_t) ||
+            !tint_cp_field || tint_cp_field->second < sizeof(std::int32_t)) {
+          if (remove_entity) remove_entity(particle);
+          error = "CParticleSystem tint fields unavailable";
+          return false;
+        }
+        std::memcpy(static_cast<std::byte*>(particle) + tint_field->first,
+                    &*tint_rgba, sizeof(*tint_rgba));
+        if (!NotifyEntityStateChanged(particle)) {
+          if (remove_entity) remove_entity(particle);
+          error = "CParticleSystem m_clrTint network notification unavailable";
+          return false;
+        }
+        const std::int32_t cp = tint_control_point;
+        std::memcpy(static_cast<std::byte*>(particle) + tint_cp_field->first,
+                    &cp, sizeof(cp));
+        if (!NotifyEntityStateChanged(particle)) {
+          if (remove_entity) remove_entity(particle);
+          error = "CParticleSystem m_nTintCP network notification unavailable";
+          return false;
+        }
+      }
     }
 
     constexpr std::size_t kTeleportSlot = 163;
@@ -1269,7 +1335,18 @@ bool NativeVisualRenderer::DrawBeamSegment(
       return false;
     }
   }
-  return impl_->SpawnBeam(from, to, error);
+  auto start = from;
+  auto end = to;
+  start[2] += 16.0f;
+  end[2] += 16.0f;
+  return impl_->SpawnParticle(
+      start,
+      "particles/abilities/assassinate_laser_targetting.vpcf",
+      error,
+      end,
+      1,
+      0xffff4dd2u,
+      2);
 #endif
 }
 
