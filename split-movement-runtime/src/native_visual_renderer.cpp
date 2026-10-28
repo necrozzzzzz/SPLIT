@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
