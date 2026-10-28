@@ -5,6 +5,7 @@
 #include "split_movement/native_hooks.h"
 #include "split_movement/input_capture.h"
 #include "split_movement/movement_steering.h"
+#include "split_movement/movement_events.h"
 #include "split_movement/native_visual_renderer.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/pb_route_store.h"
@@ -175,6 +176,27 @@ std::vector<std::array<float, 3>> RouteCheckpoints(
   return checkpoints;
 }
 
+
+struct MovementCue {
+  std::string label;
+  std::array<float, 3> position{};
+};
+
+bool IsRouteCallout(split::movement::MovementExecution execution) {
+  using E = split::movement::MovementExecution;
+  switch (execution) {
+    case E::kGroundDash:
+    case E::kSlide:
+    case E::kBouncePad:
+    case E::kDashJump:
+    case E::kAirJump:
+    case E::kWallJump:
+    case E::kAirDash:
+      return true;
+    default:
+      return false;
+  }
+}
 
 std::vector<std::array<float, 3>> RoutePolyline(
     const std::vector<split::movement::RecordedTick>& ticks,
@@ -353,6 +375,7 @@ int main(int argc, char** argv) {
 
   split::movement::PawnProbe pawn_probe(bridge.SchemaSystem());
   split::movement::InputCapture input_capture;
+  split::movement::MovementEvents movement_events;
   split::movement::MovementRecorder recorder;
   split::movement::MovementRecorder race_run_recorder;
   std::atomic<int> human_slot{-1};
@@ -370,6 +393,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> show_hud{true};
   std::string last_pawn_error;
   std::string current_map = launch.map;
+  std::vector<MovementCue> route_cues;
 
   const auto route_directory =
       std::filesystem::current_path() / "routes";
@@ -568,12 +592,16 @@ int main(int argc, char** argv) {
     } else if (command == "hud on" || command == "hud off") {
       show_hud.store(command == "hud on");
     } else if (command == "record") {
+      route_cues.clear();
+      movement_events.Clear();
       recorder.Start();
       std::cout << "[SPLIT][Recorder] recording started\n";
     } else if (command == "recordtoggle") {
       if (recorder.Stats().recording) {
         PrintStats(recorder.Stop());
       } else {
+        route_cues.clear();
+        movement_events.Clear();
         recorder.Start();
         std::cout << "[SPLIT][Recorder] recording started\n";
       }
@@ -583,6 +611,8 @@ int main(int argc, char** argv) {
       PrintStats(recorder.Stats());
     } else if (command == "clear") {
       recorder.Clear();
+      route_cues.clear();
+      movement_events.Clear();
       native_route_line_active.store(false, std::memory_order_release);
       visual_renderer.Clear();
       std::cout << "[SPLIT][Recorder] route cleared\n";
@@ -662,6 +692,14 @@ int main(int argc, char** argv) {
     std::cerr << "Input capture installation failed: " << input_error << "\n";
     return 1;
   }
+  std::string movement_event_error;
+  if (!movement_events.Install(movement_event_error)) {
+    std::cout << "[SPLIT][MovementEvents] unavailable: "
+              << movement_event_error << "\n";
+  } else {
+    std::cout << "[SPLIT][MovementEvents] native modifier events ready\n";
+  }
+
   std::cout << "SPLIT Movement Runtime: ProcessUsercmds input capture installed.\n";
 
   split::movement::BotFactory bot_factory;
@@ -722,6 +760,25 @@ int main(int argc, char** argv) {
             const auto latest_input = input_capture.Latest(slot);
             recorder.Push(frame, *sample, latest_input);
             race_run_recorder.Push(frame, *sample, latest_input);
+
+            for (const auto& movement : movement_events.Drain(sample->pawn_handle)) {
+              const char* label =
+                  split::movement::MovementExecutionName(movement.execution);
+              std::cout << "[SPLIT][MovementEvents] " << label
+                        << " at (" << sample->position[0] << ", "
+                        << sample->position[1] << ", "
+                        << sample->position[2] << ")\n";
+
+              if (recorder.Stats().recording && IsRouteCallout(movement.execution)) {
+                const bool duplicate =
+                    !route_cues.empty() &&
+                    route_cues.back().label == label &&
+                    RouteDistance(route_cues.back().position, sample->position) < 48.0;
+                if (!duplicate) {
+                  route_cues.push_back({label, sample->position});
+                }
+              }
+            }
 
             if (frame % 60 == 0 && !race_timer.Course() &&
                 !native_route_line_active.load(std::memory_order_acquire) &&
@@ -864,12 +921,29 @@ int main(int argc, char** argv) {
                     }
                   }
 
+                  // Direct native movement facts become the first reliable
+                  // Hyperline-style route callouts. Compound techniques are
+                  // added later by the recognizer, not guessed here.
+                  std::size_t callout_count = 0;
+                  for (const auto& cue : route_cues) {
+                    marker_error.clear();
+                    if (visual_renderer.DrawWorldTextMarker(
+                            cue.position, cue.label.c_str(),
+                            3.0f, 0xffff4dd2u, marker_error)) {
+                      ++callout_count;
+                    } else {
+                      std::cout << "[SPLIT][Callouts] " << cue.label
+                                << " failed: " << marker_error << "\n";
+                    }
+                  }
+
                   // Checkpoints remain internal timing/split anchors. Hyperline
                   // does not expose generic CP1/CP2 labels on the route line.
                   std::cout << "[SPLIT][WorldEffects] persistent race objects created"
                             << " startFinish="
                             << (show_rings.load(std::memory_order_relaxed) ? "on" : "off")
                             << " tracerSegments=" << tracer_segments
+                            << " callouts=" << callout_count
                             << " internalSplits=" << course.checkpoints.size()
                             << "\n";
 
