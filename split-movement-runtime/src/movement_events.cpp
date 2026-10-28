@@ -196,6 +196,10 @@ __int64 __fastcall FireModifierEventThunk(
     if (id != kUnobserved && event == id) {
       if (const auto handle = ReferenceHandle(caster)) {
         std::scoped_lock lock(g_mutex);
+        constexpr std::size_t kMaxQueuedEvents = 2048;
+        if (g_events.size() >= kMaxQueuedEvents) {
+          g_events.erase(g_events.begin(), g_events.begin() + 512);
+        }
         g_events.push_back({execution, *handle});
       }
       break;
