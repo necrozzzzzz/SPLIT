@@ -459,13 +459,28 @@ bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
   const std::uint32_t alpha = ghost ? kGhostAlpha : 255u;
   const std::uint32_t color = 0x00ffffffu | (alpha << 24);
 
+  // Mirror Modlock's writeField() behavior exactly: each networked field
+  // write is published immediately, rather than batching both into one notify.
   std::memcpy(static_cast<std::byte*>(pawn) + impl_->layout->render_mode,
               &mode, sizeof(mode));
+  if (!NotifyEntityStateChanged(pawn)) {
+    error = "ghost render mode could not be replicated";
+    return false;
+  }
+
   std::memcpy(static_cast<std::byte*>(pawn) + impl_->layout->render_color,
               &color, sizeof(color));
-
   if (!NotifyEntityStateChanged(pawn)) {
-    error = "ghost render state could not be replicated";
+    error = "ghost render color could not be replicated";
+    return false;
+  }
+
+  const auto applied_mode =
+      Read<std::uint8_t>(pawn, impl_->layout->render_mode);
+  const auto applied_color =
+      Read<std::uint32_t>(pawn, impl_->layout->render_color);
+  if (applied_mode != mode || applied_color != color) {
+    error = "ghost render values were overwritten immediately";
     return false;
   }
   return true;

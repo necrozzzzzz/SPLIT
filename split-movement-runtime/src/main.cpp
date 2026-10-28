@@ -180,6 +180,7 @@ int main(int argc, char** argv) {
   bool pawn_announced = false;
   bool steering_was_active = false;
   int pb_ghost_slot = -1;
+  std::string last_ghost_visual_error;
   std::atomic<bool> replay_requested{false};
   std::atomic<bool> race_requested{false};
   std::string last_pawn_error;
@@ -538,6 +539,24 @@ int main(int argc, char** argv) {
             }
 
             const auto steering_status = steering.Status();
+
+            // Deadlock can refresh a bot's render state after spawn/animation
+            // updates. Keep the PB ghost look alive while its steering runs,
+            // but only republish every few frames.
+            if (steering_status.active && pb_ghost_slot >= 0 &&
+                steering_status.slot == pb_ghost_slot && frame % 15 == 0) {
+              std::string visual_error;
+              if (!pawn_probe.SetGhostVisual(pb_ghost_slot, true, visual_error)) {
+                if (visual_error != last_ghost_visual_error) {
+                  last_ghost_visual_error = visual_error;
+                  std::cout << "[SPLIT][PB Ghost] visual refresh failed: "
+                            << visual_error << "\n";
+                }
+              } else {
+                last_ghost_visual_error.clear();
+              }
+            }
+
             if (steering_status.active && frame % 120 == 0) {
               std::cout << "[SPLIT][Replay] steering "
                         << steering_status.index << "/" << steering_status.total
