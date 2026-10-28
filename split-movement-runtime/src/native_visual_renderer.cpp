@@ -313,6 +313,17 @@ void SetKvColor(RawKeyValues3& value, std::uint32_t rgba) {
   value.data = rgba;
 }
 
+void SetKvVector(RawKeyValues3& value, const std::array<float, 3>& xyz) {
+  constexpr std::uint64_t kTypeMask = 0xffull << 2;
+  constexpr std::uint64_t kSubtypeMask = 0xffull << 10;
+  constexpr std::uint64_t kArrayCountMask = 0x1full << 34;
+  value.metadata &= ~(kTypeMask | kSubtypeMask | kArrayCountMask | (1ull << 1));
+  value.metadata |= static_cast<std::uint64_t>(0x48u) << 2;
+  value.metadata |= static_cast<std::uint64_t>(24u) << 10;
+  value.metadata |= static_cast<std::uint64_t>(3u) << 34;
+  value.data = reinterpret_cast<std::uintptr_t>(xyz.data());
+}
+
 void* IdentityOf(void* entity) {
   void* identity = nullptr;
   if (entity) {
@@ -579,6 +590,7 @@ struct NativeVisualRenderer::Impl {
   std::size_t transmit_owned_offset = 0;
   std::vector<ParticleRef> particles;
   std::vector<ParticleRef> world_texts;
+  std::vector<ParticleRef> beams;
 
   void Command(std::string_view command) {
     if (!engine) return;
@@ -662,6 +674,114 @@ struct NativeVisualRenderer::Impl {
           ? std::string{}
           : optional_error.substr(separator + 2);
     }
+    return true;
+  }
+
+  bool SpawnBeam(const std::array<float, 3>& from,
+                 const std::array<float, 3>& to,
+                 std::string& error) {
+    void* entity_system = EntitySystem(error);
+    if (!entity_system) return false;
+
+    void* entity = create_entity(nullptr, "env_beam", -1);
+    if (!entity) {
+      error = "CreateEntityByName(env_beam) returned null";
+      return false;
+    }
+    void* identity = IdentityOf(entity);
+    const auto handle = ReferenceHandleOf(entity);
+    if (!identity || !handle) {
+      if (remove_entity) remove_entity(entity);
+      error = "env_beam has no live identity/handle";
+      return false;
+    }
+
+    void* storage = kv_allocate(kEntityKeyValuesSize);
+    if (!storage) {
+      if (remove_entity) remove_entity(entity);
+      error = "env_beam keyvalues allocation returned null";
+      return false;
+    }
+    void* key_values = kv_construct(storage, nullptr, 0);
+    if (!key_values) {
+      if (remove_entity) remove_entity(entity);
+      error = "env_beam keyvalues construction returned null";
+      return false;
+    }
+
+    auto set_member = [&](const char* key, auto setter) -> bool {
+      const MemberName name = MakeMemberName(key);
+      auto* value = static_cast<RawKeyValues3*>(kv_set(key_values, &name, 0));
+      if (!value) {
+        error = std::string("env_beam keyvalue failed: ") + key;
+        return false;
+      }
+      setter(*value);
+      return true;
+    };
+
+    // Keep endpoint storage alive through queued creation.
+    std::array<float, 3> target = to;
+    target[2] += 24.0f;
+    if (!set_member("targetpoint",
+                    [&](RawKeyValues3& v) { SetKvVector(v, target); }) ||
+        !set_member("life", [&](RawKeyValues3& v) { SetKvFloat(v, 0.0f); }) ||
+        !set_member("BoltWidth", [&](RawKeyValues3& v) { SetKvFloat(v, 4.0f); }) ||
+        !set_member("NoiseAmplitude", [&](RawKeyValues3& v) { SetKvFloat(v, 0.0f); }) ||
+        !set_member("TextureScroll", [&](RawKeyValues3& v) { SetKvInt(v, 0); }) ||
+        !set_member("StrikeTime", [&](RawKeyValues3& v) { SetKvFloat(v, 0.0f); }) ||
+        !set_member("texture",
+                    [&](RawKeyValues3& v) {
+                      SetKvString(v, "materials/sprites/laserbeam.vtex");
+                    }) ||
+        !set_member("rendercolor",
+                    [&](RawKeyValues3& v) { SetKvColor(v, 0xffff4dd2u); })) {
+      if (remove_entity) remove_entity(entity);
+      return false;
+    }
+
+    auto placed = from;
+    placed[2] += 24.0f;
+    constexpr std::size_t kTeleportSlot = 163;
+    auto*** object = reinterpret_cast<void***>(entity);
+    if (!object || !*object || !(*object)[kTeleportSlot]) {
+      if (remove_entity) remove_entity(entity);
+      error = "CBaseEntity::Teleport unavailable for env_beam";
+      return false;
+    }
+    using TeleportFn = void (*)(void*, const float*, const float*, const float*);
+    const std::array<float, 3> angles{};
+    const std::array<float, 3> velocity{};
+    reinterpret_cast<TeleportFn>((*object)[kTeleportSlot])(
+        entity, placed.data(), angles.data(), velocity.data());
+
+    queue_spawn(entity_system, identity, key_values);
+    execute_queued(entity_system);
+
+    entity = EntityInstance(entity_system, *handle);
+    if (!entity) {
+      error = "env_beam did not survive queued creation";
+      return false;
+    }
+
+    std::string transmit_error;
+    if (EnsureTransmitLayout(transmit_error)) {
+      auto* component = static_cast<std::byte*>(entity) + transmit_offset;
+      std::uint8_t owned = 0;
+      std::memcpy(&owned, component + transmit_owned_offset, sizeof(owned));
+      if (owned == 0) {
+        owned = 1;
+        std::memcpy(component + transmit_owned_offset, &owned, sizeof(owned));
+      }
+      set_transmit_state(component, 4);
+    }
+
+    // env_beam can spawn disabled depending on flags; explicitly enable it.
+    static constexpr char kEmpty[] = "";
+    InputVariant empty{.pointer = kEmpty};
+    (void)accept_input(entity, "TurnOn", nullptr, nullptr, &empty, 0, nullptr);
+
+    beams.push_back({entity_system, *handle});
     return true;
   }
 
@@ -1145,13 +1265,7 @@ bool NativeVisualRenderer::DrawBeamSegment(
       return false;
     }
   }
-  auto start = from;
-  auto end = to;
-  start[2] += 24.0f;
-  end[2] += 24.0f;
-  return impl_->SpawnParticle(
-      start, "particles/abilities/assassinate_laser_targetting.vpcf",
-      error, end, 1);
+  return impl_->SpawnBeam(from, to, error);
 #endif
 }
 
@@ -1205,9 +1319,15 @@ void NativeVisualRenderer::Clear() {
         impl_->remove_entity(entity);
       }
     }
+    for (const auto& beam : impl_->beams) {
+      if (void* entity = beam.Get()) {
+        impl_->remove_entity(entity);
+      }
+    }
   }
   impl_->particles.clear();
   impl_->world_texts.clear();
+  impl_->beams.clear();
 
   if (Ready()) {
     impl_->EnsureCheats();
