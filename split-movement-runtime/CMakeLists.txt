@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(split_movement_runtime VERSION 0.5.0 LANGUAGES CXX)
+project(split_movement_runtime VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +12,7 @@ add_executable(split-movement-runtime
   src/engine_runner.cpp
   src/native_hooks.cpp
   src/pawn_probe.cpp
+  src/recorder.cpp
 )
 
 target_include_directories(split-movement-runtime PRIVATE include)

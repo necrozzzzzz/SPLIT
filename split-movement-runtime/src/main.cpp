@@ -2,6 +2,7 @@
 #include "split_movement/engine_runner.h"
 #include "split_movement/native_hooks.h"
 #include "split_movement/pawn_probe.h"
+#include "split_movement/recorder.h"
 #include "split_movement/runtime.h"
 
 #include <atomic>
@@ -11,6 +12,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -21,6 +23,12 @@ void Help() {
       << "  split-movement-runtime --game-dir PATH\n\n"
       << "Run dedicated Movement Lab server:\n"
       << "  split-movement-runtime --game-dir PATH --server [--map dl_midtown] [--port 27067]\n\n"
+      << "Runtime commands while the server is running:\n"
+      << "  record  start a fresh route recording\n"
+      << "  stop    stop recording and print stats\n"
+      << "  status  print current recording stats\n"
+      << "  save    save the current route as JSON\n"
+      << "  clear   discard the current route\n\n"
       << "DEADLOCK_DIR can replace --game-dir.\n";
 }
 
@@ -31,6 +39,19 @@ void PrintClient(const char* stage, const split::movement::ClientConnection& cli
             << " bot=" << (client.is_bot ? "yes" : "no")
             << " ready=" << (client.fully_connected ? "yes" : "no")
             << " name=\"" << client.name << "\"\n";
+}
+
+void PrintStats(const split::movement::RecordingStats& stats) {
+  std::cout << std::fixed << std::setprecision(1)
+            << "[SPLIT][Recorder] "
+            << (stats.recording ? "recording" : "stopped")
+            << " ticks=" << stats.ticks
+            << " distance=" << stats.distance
+            << " max_speed=" << stats.max_speed;
+  if (stats.ticks > 0) {
+    std::cout << " frames=" << stats.first_frame << ".." << stats.last_frame;
+  }
+  std::cout << "\n";
 }
 
 }  // namespace
@@ -99,9 +120,43 @@ int main(int argc, char** argv) {
   std::cout << "SPLIT Movement Runtime: engine bridge ready.\n";
 
   split::movement::PawnProbe pawn_probe(bridge.SchemaSystem());
+  split::movement::MovementRecorder recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
   std::string last_pawn_error;
+  std::string current_map = launch.map;
+
+  const auto route_directory =
+      std::filesystem::current_path() / "routes";
+
+  // Source2Main owns the main thread. Keep a tiny command reader beside it so
+  // this prototype can exercise recording without needing Tauri IPC yet.
+  std::jthread command_thread([&](std::stop_token stop) {
+    std::string command;
+    while (!stop.stop_requested() && std::getline(std::cin, command)) {
+      if (command == "record") {
+        recorder.Start();
+        std::cout << "[SPLIT][Recorder] recording started\n";
+      } else if (command == "stop") {
+        PrintStats(recorder.Stop());
+      } else if (command == "status") {
+        PrintStats(recorder.Stats());
+      } else if (command == "clear") {
+        recorder.Clear();
+        std::cout << "[SPLIT][Recorder] route cleared\n";
+      } else if (command == "save") {
+        auto saved = recorder.SaveJson(route_directory, current_map);
+        if (saved) {
+          std::cout << "[SPLIT][Recorder] saved " << saved->string() << "\n";
+        } else {
+          std::cout << "[SPLIT][Recorder] save failed: " << saved.error() << "\n";
+        }
+      } else if (!command.empty()) {
+        std::cout << "[SPLIT][Recorder] unknown command: " << command
+                  << " (record, stop, status, save, clear)\n";
+      }
+    }
+  });
 
   split::movement::NativeHooks hooks;
   std::string hook_error;
@@ -131,6 +186,8 @@ int main(int argc, char** argv) {
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
             }
 
+            recorder.Push(frame, *sample);
+
             if (frame % 120 == 0) {
               std::cout << std::fixed << std::setprecision(1)
                         << "[SPLIT][Movement] pose"
@@ -144,7 +201,8 @@ int main(int argc, char** argv) {
                         << "\n";
             }
           },
-          [](std::string_view map) {
+          [&](std::string_view map) {
+            current_map.assign(map);
             std::cout << "[SPLIT][Movement] loading world: " << map << "\n";
           },
           [](std::string_view map) {
@@ -160,6 +218,7 @@ int main(int argc, char** argv) {
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
                         << "; attaching pawn probe.\n";
+              std::cout << "[SPLIT][Recorder] type 'record' here to start a route.\n";
             }
           },
           [&](int slot, std::uint64_t xuid) {
@@ -171,6 +230,7 @@ int main(int argc, char** argv) {
             }
           },
           hook_error)) {
+    command_thread.request_stop();
     std::cerr << "Native hook installation failed: " << hook_error << "\n";
     return 1;
   }
@@ -181,6 +241,9 @@ int main(int argc, char** argv) {
 
   std::string run_error;
   const int code = split::movement::RunDedicatedServer(game_dir, launch, run_error);
+
+  command_thread.request_stop();
+
   if (!run_error.empty()) {
     std::cerr << "Engine handoff failed: " << run_error << "\n";
     return 1;

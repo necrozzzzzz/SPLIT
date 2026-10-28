@@ -2,51 +2,46 @@
 
 Native engine-side foundation for SPLIT's Movement Lab.
 
-SPLIT does **not** depend on `modlock.exe`.
+## Live validation
 
-## Validated live
+The SPLIT-owned runtime now has live validation for Source 2 startup, world lifecycle, server frames, client lifecycle and pawn pose/movement observation.
 
-The SPLIT-owned runtime has been validated live through:
+## Current milestone: tick recorder
 
-- Source 2 module loading and `SchemaSystem_001`
-- `Source2Main` dedicated server startup
-- world lifecycle on `dl_midtown`
-- real server `GameFrame` callbacks
-- client lifecycle: enter, fully connected and disconnect
-
-## Current milestone: pawn movement probe
-
-After a human reaches `ClientFullyConnect`, SPLIT now attaches a minimal pawn probe to that authoritative slot.
-
-The probe resolves its field offsets from the live server schema:
-
-- `CBasePlayerController::m_hPawn`
-- `CBaseEntity::m_CBodyComponent`
-- `CBodyComponent::m_pSceneNode`
-- `CGameSceneNode::m_vecAbsOrigin`
-- `CBaseEntity::m_vecAbsVelocity`
-- `CBaseEntity::m_hGroundEntity`
-
-It then walks:
+The runtime now contains a first SPLIT-owned route recorder. While the local Movement Lab server is running, type commands directly in its PowerShell:
 
 ```text
-slot + 1
-→ player controller
-→ pawn handle
-→ serial-validated pawn entity
-→ scene node
-→ position / velocity / grounded
+record
+status
+stop
+save
+clear
 ```
 
-No pawn field offset is hardcoded. The prototype still pins a few stable Source 2 ABI/vtable facts from the vendored 2026-10-28 upstream snapshot; production will verify these from SPLIT-owned game data.
+`record` starts a fresh buffer. Every observed server frame then stores:
 
-Expected live output after joining and moving:
+- server frame number
+- pawn handle
+- position
+- velocity
+- grounded state
+
+`stop` freezes the current recording and prints tick count, accumulated 3D distance and maximum observed speed.
+
+`save` writes the current recording under:
 
 ```text
-[SPLIT][Movement] pawn attached slot=0 handle=0x...
-[SPLIT][Movement] pose pos=(..., ..., ...) vel=(..., ..., ...) grounded=yes
+split-movement-runtime/routes/
 ```
+
+using the first local route schema:
+
+```text
+split-movement-route v1
+```
+
+This is intentionally local and simple. Tauri/IPC, named routes, PBs, segments and community publishing come after the movement command stream is captured.
 
 ## Next
 
-Once this live pawn probe is validated, replace periodic logging with a per-tick movement recorder and add command/button capture for route recording.
+Capture the player's actual movement command/buttons each tick and pair them with these pose samples. That gives SPLIT enough information for deterministic-ish bot steering / ghost replay instead of merely interpolating XYZ positions.
