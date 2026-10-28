@@ -405,36 +405,8 @@ int main(int argc, char** argv) {
       return "{\"queued\":true,\"note\":\"spawn-Modlock-style-native-particle-near-player\"}";
     }
     if (command == "tracertest") {
-      const auto ticks = recorder.PlaybackTicks();
-      if (ticks.size() < 2) {
-        return "{\"queued\":false,\"reason\":\"no-recorded-route\"}";
-      }
-
-      const auto path = RoutePolyline(ticks, 48);
-      if (path.size() < 2) {
-        return "{\"queued\":false,\"reason\":\"route-has-no-distance\"}";
-      }
-
-      std::size_t created = 0;
-      std::string beam_error;
-      for (std::size_t i = 1; i < path.size(); ++i) {
-        beam_error.clear();
-        if (!visual_renderer.DrawBeamSegment(path[i - 1], path[i], beam_error)) {
-          std::ostringstream out;
-          out << "{\"queued\":false,\"reason\":\"beam-failed\","
-              << "\"segment\":" << (i - 1)
-              << ",\"created\":" << created
-              << ",\"detail\":\"" << beam_error << "\"}";
-          return out.str();
-        }
-        ++created;
-      }
-
-      std::ostringstream out;
-      out << "{\"queued\":true,\"note\":\"native-route-polyline-created\","
-          << "\"points\":" << path.size()
-          << ",\"segments\":" << created << "}";
-      return out.str();
+      return "{\"queued\":false,\"reason\":\"disabled-bad-env-beam-prototype\","
+             "\"note\":\"waiting-for-hyperline-tracer-resource\"}";
     }
     if (command == "visualdiagnostics") {
       auto escape_json = [](std::string_view value) {
