@@ -641,7 +641,8 @@ int main(int argc, char** argv) {
                   std::string marker_error;
                   if (show_rings.load(std::memory_order_relaxed)) {
                     if (visual_renderer.DrawWorldTextMarker(
-                            course.start, "START", marker_error)) {
+                            course.start, "START", 4.5f, 0xff78dc40u,
+                            marker_error)) {
                       std::cout << "[SPLIT][WorldEffects] START world text created\n";
                     } else {
                       std::cout << "[SPLIT][WorldEffects] START failed: "
@@ -650,7 +651,8 @@ int main(int argc, char** argv) {
 
                     marker_error.clear();
                     if (visual_renderer.DrawWorldTextMarker(
-                            course.finish, "FINISH", marker_error)) {
+                            course.finish, "FINISH", 4.5f, 0xff5078ffu,
+                            marker_error)) {
                       std::cout << "[SPLIT][WorldEffects] FINISH world text created\n";
                     } else {
                       std::cout << "[SPLIT][WorldEffects] FINISH failed: "
@@ -667,7 +669,8 @@ int main(int argc, char** argv) {
                       marker_error.clear();
                       if (!visual_renderer.DrawWorldTextMarker(
                               course.checkpoints[checkpoint_index],
-                              label.c_str(), marker_error)) {
+                              label.c_str(), 3.0f, 0xffffaa5au,
+                              marker_error)) {
                         std::cout << "[SPLIT][WorldEffects] " << label
                                   << " failed: " << marker_error << "\n";
                       }
