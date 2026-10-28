@@ -2,27 +2,27 @@
 
 Native engine-side foundation for SPLIT's Movement Lab.
 
-## Architecture
+SPLIT does **not** depend on `modlock.exe`. The runtime loads Source 2 itself and owns the movement-specific integration.
 
-SPLIT does **not** depend on `modlock.exe`.
+## Validated milestone
 
-The runtime is a SPLIT-owned Windows process. It loads the Deadlock Source 2 modules itself, resolves the engine interfaces it needs, then will install the movement-specific hooks used for recording and ghost playback.
+The standalone runtime already resolves:
 
-Selected MIT-licensed Modlock engine-interoperability sources are preserved under `vendor/modlock/` as upstream reference / integration material. See `THIRD_PARTY_NOTICES.md`.
+- `engine2.dll`
+- `server.dll`
+- `schemasystem.dll`
+- `SchemaSystem_001`
 
-## Current milestone: live engine bridge
+## Current milestone: Source 2 frame/world lifecycle
 
-The runtime can now:
+The runtime now also contains SPLIT-owned Windows vtable hooks for:
 
-1. validate a Deadlock installation;
-2. register the game's DLL directories;
-3. load and pin `engine2.dll`;
-4. load and pin `server.dll`;
-5. resolve/load `schemasystem.dll`;
-6. call its `CreateInterface` export;
-7. resolve `SchemaSystem_001`.
+- `ISource2Server::GameFrame` (current slot 19)
+- `INetworkServerService::StartupServer` (current slot 26)
 
-This is deliberately a **probe** for now. It does not start a map or install movement hooks yet.
+and a Source 2 `Source2Main` dedicated-server handoff.
+
+The slot values are pinned to the vendored 2026-10-28 Modlock game data for this prototype. The production runtime will verify/resolve them from SPLIT's own signature database rather than blindly trusting constants.
 
 ## Build
 
@@ -31,38 +31,36 @@ cmake -S . -B build
 cmake --build build --config Release
 ```
 
-## Probe your Deadlock install
-
-From `split-movement-runtime`:
+## Probe only
 
 ```powershell
 .\build\Release\split-movement-runtime.exe --game-dir "C:\Program Files (x86)\Steam\steamapps\common\Deadlock"
 ```
 
-or:
+## Start the local Movement Lab server
 
 ```powershell
-$env:DEADLOCK_DIR="C:\Program Files (x86)\Steam\steamapps\common\Deadlock"
-.\build\Release\split-movement-runtime.exe
+.\build\Release\split-movement-runtime.exe --game-dir "C:\Program Files (x86)\Steam\steamapps\common\Deadlock" --server
 ```
 
-Expected milestone output:
+Expected SPLIT-specific lines include:
 
 ```text
-SPLIT Movement Runtime 0.2.0
-  game layout: ready
-  engine2.dll: ready
-  server.dll: ready
-  schemasystem.dll: ready
-  SchemaSystem_001: ready
-  movement hook: not ready
-  command hook: not ready
-  pawn observer: not ready
-  bot control: not ready
+SPLIT Movement Runtime: engine bridge ready.
+SPLIT Movement Runtime: frame/world hooks installed.
+[SPLIT][Movement] loading world: dl_midtown
+[SPLIT][Movement] world ready: dl_midtown
+[SPLIT][Movement] server frame 1
 ```
 
-If `SchemaSystem_001` is ready, our standalone SPLIT-owned process has successfully entered the same Source 2 engine/interface layer needed by the later hooks.
+The server is intentionally local/insecure. This is the isolated Movement Lab environment, not VAC-secured matchmaking.
 
-## Next
+## Next milestone
 
-The next milestone is the real engine handoff + frame/world lifecycle. Once a world is live, we install pawn observation and then movement/command hooks.
+Once frame/world callbacks are validated live, wire:
+
+1. connection tracking;
+2. pawn observer;
+3. movement command capture;
+4. bot creation/control;
+5. tick-perfect recorder and ghost replay.
