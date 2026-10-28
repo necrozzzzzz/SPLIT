@@ -247,7 +247,7 @@ bool InputCapture::Install(std::string& error) {
     return false;
   }
 
-  impl_->hook = std::move(*hook);
+  impl_->hook = std::move(hook);
   g_hook = &impl_->hook;
 
   if (auto enabled = impl_->hook.enable(); !enabled) {
