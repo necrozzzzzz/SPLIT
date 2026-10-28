@@ -791,8 +791,27 @@ int main(int argc, char** argv) {
                   // entities once when the course is armed. They live until
                   // racecancel/clear/world reset; the legacy Render() loop is
                   // deliberately not involved.
-                  native_route_line_active.store(false, std::memory_order_release);
                   visual_renderer.Clear();
+                  native_route_line_active.store(true, std::memory_order_release);
+
+                  // Hyperline-style RouteLine: fit the recorded trajectory once
+                  // and own its native particle segments for the whole race scene.
+                  const auto route_line = RoutePolyline(route_ticks, 128);
+                  std::size_t tracer_segments = 0;
+                  std::string tracer_error;
+                  if (route_line.size() >= 2) {
+                    for (std::size_t i = 1; i < route_line.size(); ++i) {
+                      tracer_error.clear();
+                      if (!visual_renderer.DrawBeamSegment(
+                              route_line[i - 1], route_line[i], tracer_error)) {
+                        std::cout << "[SPLIT][RouteLine] segment "
+                                  << (i - 1) << " failed: "
+                                  << tracer_error << "\n";
+                        break;
+                      }
+                      ++tracer_segments;
+                    }
+                  }
 
                   std::string marker_error;
                   if (show_rings.load(std::memory_order_relaxed)) {
@@ -839,28 +858,13 @@ int main(int argc, char** argv) {
                     }
                   }
 
-                  if (show_checkpoints.load(std::memory_order_relaxed)) {
-                    for (std::size_t checkpoint_index = 0;
-                         checkpoint_index < course.checkpoints.size();
-                         ++checkpoint_index) {
-                      const std::string label =
-                          "CP " + std::to_string(checkpoint_index + 1);
-                      marker_error.clear();
-                      if (!visual_renderer.DrawWorldTextMarker(
-                              course.checkpoints[checkpoint_index],
-                              label.c_str(), 3.0f, 0xffffaa5au,
-                              marker_error)) {
-                        std::cout << "[SPLIT][WorldEffects] " << label
-                                  << " failed: " << marker_error << "\n";
-                      }
-                    }
-                  }
-
+                  // Checkpoints remain internal timing/split anchors. Hyperline
+                  // does not expose generic CP1/CP2 labels on the route line.
                   std::cout << "[SPLIT][WorldEffects] persistent race objects created"
                             << " startFinish="
                             << (show_rings.load(std::memory_order_relaxed) ? "on" : "off")
-                            << " checkpoints="
-                            << (show_checkpoints.load(std::memory_order_relaxed) ? "on" : "off")
+                            << " tracerSegments=" << tracer_segments
+                            << " internalSplits=" << course.checkpoints.size()
                             << "\n";
 
                   const auto status = race_timer.Status();
