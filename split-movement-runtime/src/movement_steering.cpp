@@ -32,6 +32,8 @@ constexpr std::uint32_t kEntityIndexBits = 0x7fff;
 
 constexpr std::string_view kMovementPattern =
     "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 70 48 8D 05 ?? ?? ?? ?? 48 C7 44 24 28 ?? ?? 00 00 48 89 44 24 20 4C 8D 44 24 40 0F 10 44 24 20 48 8D 05 ?? ?? ?? ?? 48 8B F2";
+constexpr std::string_view kSetAbsAnglesPattern =
+    "E8 ?? ?? ?? ?? 48 8B 03 48 8B CB FF 90 ?? ?? ?? ?? 0F 28 74 24 ?? 84 C0 75 ?? 48 8D 15 ?? ?? ?? ?? 48 8B CB E8";
 
 namespace schema {
 struct MetadataEntry { const char* name; const void* data; };
@@ -140,6 +142,7 @@ struct Layout {
   std::size_t services = 0;
   std::size_t controller = 0;
   std::size_t ground = 0;
+  std::size_t eye_angles = 0;
 };
 
 std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
@@ -156,6 +159,7 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
       {"CBasePlayerPawn", "m_pMovementServices", sizeof(void*), &layout.services},
       {"CBasePlayerPawn", "m_hController", sizeof(std::uint32_t), &layout.controller},
       {"CBaseEntity", "m_hGroundEntity", sizeof(std::uint32_t), &layout.ground},
+      {"CCitadelPlayerPawn", "m_angEyeAngles", sizeof(float) * 3, &layout.eye_angles},
   };
 
   for (const auto& item : wanted) {
@@ -256,8 +260,19 @@ struct State {
   std::uint64_t last_held = 0;
 };
 
+using SetAbsAnglesFn = void (*)(void*, const float*);
+
 State g_state;
 safetyhook::InlineHook* g_hook = nullptr;
+SetAbsAnglesFn g_set_abs_angles = nullptr;
+
+void* ResolveRelativeCall(void* instruction) {
+  auto* bytes = static_cast<std::uint8_t*>(instruction);
+  if (bytes[0] != 0xE8) return nullptr;
+  std::int32_t displacement = 0;
+  std::memcpy(&displacement, bytes + 1, sizeof(displacement));
+  return bytes + 5 + displacement;
+}
 
 void* PawnOf(void* services, const Layout& layout) {
   void* pawn = Read<void*>(services, layout.chain);
@@ -307,6 +322,17 @@ void MovementThunk(void* services, void* data) {
   }
 
   if (tick->input) {
+    // Match Modlock's Face(): the recorded view drives both the pawn aim and
+    // the body's absolute yaw. CMoveData angles alone leave a bot's model at
+    // its own brain yaw, which makes it appear to run backwards/sideways.
+    if (pawn) {
+      Write(pawn, g_state.layout->eye_angles, tick->input->angles);
+      if (g_set_abs_angles) {
+        const std::array<float, 3> body{0.0f, tick->input->angles[1], 0.0f};
+        g_set_abs_angles(pawn, body.data());
+      }
+    }
+
     auto buttons =
         Read<std::array<std::uint64_t, 3>>(services, g_state.layout->buttons + kButtonStates);
     const std::uint64_t held = tick->input->held | tick->input->pressed;
@@ -350,6 +376,7 @@ struct MovementSteering::Impl {
       g_state.layout.reset();
       g_state.layout_failed = false;
       g_state.schema_system = nullptr;
+      g_set_abs_angles = nullptr;
     }
   }
 };
@@ -371,6 +398,16 @@ bool MovementSteering::Install(std::string& error) {
   }
   void* target = FindUnique(server, kMovementPattern, error);
   if (!target) return false;
+
+  void* angle_site = FindUnique(server, kSetAbsAnglesPattern, error);
+  if (!angle_site) return false;
+  // Upstream game data pins the SetAbsAngles relative CALL at pattern + 0x24.
+  g_set_abs_angles = reinterpret_cast<SetAbsAnglesFn>(
+      ResolveRelativeCall(static_cast<std::uint8_t*>(angle_site) + 0x24));
+  if (!g_set_abs_angles) {
+    error = "entity.set-abs-angles call target could not be resolved";
+    return false;
+  }
 
   auto hook = safetyhook::create_inline(
       target, reinterpret_cast<void*>(&MovementThunk),
