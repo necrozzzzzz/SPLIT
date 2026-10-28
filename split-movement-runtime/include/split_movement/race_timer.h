@@ -17,6 +17,9 @@ struct RaceCourse {
   std::vector<std::array<float, 3>> checkpoints;
   float radius = 120.0f;
   std::string map;
+  std::string name = "Recorded Route";
+  std::string difficulty = "Unrated";
+  std::uint32_t hero_id = 0;
 };
 
 struct RaceStatus {
