@@ -267,7 +267,11 @@ int main(int argc, char** argv) {
     std::cout << "[SPLIT][Visuals] native renderer unavailable: "
               << visual_renderer_error << "\n";
   } else {
-    std::cout << "[SPLIT][Visuals] native Source 2 debug renderer ready\n";
+    std::cout << "[SPLIT][Visuals] native Source 2 particle renderer ready";
+    if (visual_renderer.Ready()) {
+      std::cout << " + debug draw bridge";
+    }
+    std::cout << "\n";
   }
 
   auto handle_command = [&](std::string_view command) -> std::string {
