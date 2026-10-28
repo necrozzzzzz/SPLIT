@@ -11,6 +11,7 @@
 #include "split_movement/race_timer.h"
 #include "split_movement/runtime.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -90,6 +91,38 @@ std::string JsonNumberArray(const std::vector<double>& values) {
   for (std::size_t i = 0; i < values.size(); ++i) {
     if (i > 0) out << ",";
     out << std::fixed << std::setprecision(6) << values[i];
+  }
+  out << "]";
+  return out.str();
+}
+
+
+std::string JsonVec3(const std::array<float, 3>& point) {
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(2) << "[";
+  for (std::size_t i = 0; i < 3; ++i) {
+    if (i) out << ",";
+    if (std::isfinite(point[i])) out << point[i];
+    else out << "null";
+  }
+  out << "]";
+  return out.str();
+}
+
+// A bounded, spatially uniform path for a future Source 2 client renderer.
+// Keep UDP packets comfortably below the 64 KiB datagram ceiling.
+std::string JsonRoutePolyline(const std::vector<split::movement::RecordedTick>& ticks) {
+  constexpr std::size_t kMaxPoints = 128;
+  std::ostringstream out;
+  out << "[";
+  if (!ticks.empty()) {
+    const std::size_t count = std::min(ticks.size(), kMaxPoints);
+    for (std::size_t i = 0; i < count; ++i) {
+      if (i) out << ",";
+      const std::size_t index = count == 1 ? 0 :
+          i * (ticks.size() - 1) / (count - 1);
+      out << JsonVec3(ticks[index].pawn.position);
+    }
   }
   out << "]";
   return out.str();
@@ -225,6 +258,51 @@ int main(int argc, char** argv) {
   split::movement::PbRouteStore pb_routes(route_directory);
 
   auto handle_command = [&](std::string_view command) -> std::string {
+    if (command == "visualstate") {
+      const auto course = race_timer.Course();
+      const auto race = race_timer.Status();
+      const auto mode = visual_mode.load(std::memory_order_relaxed);
+      const bool trail_enabled = mode == 0 || mode == 2;
+      const bool rings_enabled = show_rings.load(std::memory_order_relaxed);
+      const bool checkpoints_enabled = show_checkpoints.load(std::memory_order_relaxed);
+      const bool hud_enabled = show_hud.load(std::memory_order_relaxed);
+      std::ostringstream out;
+      out << "{"
+          << "\"schemaVersion\":1,"
+          << "\"renderedInGame\":false,"
+          << "\"visualMode\":\"" << (mode == 1 ? "ghost" : mode == 2 ? "tracer" :
+                                       mode == 3 ? "off" : "both") << "\","
+          << "\"tracer\":" << (trail_enabled ? JsonRoutePolyline(recorder.PlaybackTicks()) : "[]") << ","
+          << "\"rings\":";
+      if (course && rings_enabled) {
+        out << "{\"start\":" << JsonVec3(course->start)
+            << ",\"finish\":" << JsonVec3(course->finish)
+            << ",\"radius\":" << course->radius << "}";
+      } else {
+        out << "null";
+      }
+      out << ",\"checkpoints\":[";
+      if (course && checkpoints_enabled) {
+        for (std::size_t i = 0; i < course->checkpoints.size(); ++i) {
+          if (i) out << ",";
+          out << JsonVec3(course->checkpoints[i]);
+        }
+      }
+      out << "],\"hud\":";
+      if (hud_enabled) {
+        out << "{\"phase\":\"" << RacePhaseName(race.phase)
+            << "\",\"elapsedSeconds\":" << race.elapsed_seconds
+            << ",\"personalBestSeconds\":" << JsonNumberOrNull(race.personal_best_seconds)
+            << ",\"nextCheckpoint\":" << race.next_checkpoint
+            << ",\"currentSplits\":" << JsonNumberArray(race.current_splits)
+            << ",\"personalBestSplits\":" << JsonNumberArray(race.personal_best_splits)
+            << "}";
+      } else {
+        out << "null";
+      }
+      out << "}";
+      return out.str();
+    }
     if (command == "state") {
       const auto stats = recorder.Stats();
       const auto race = race_timer.Status();
@@ -257,7 +335,8 @@ int main(int argc, char** argv) {
           << "\"visualMode\":\"" << display_mode_name << "\","
           << "\"showRings\":" << (show_rings.load() ? "true" : "false") << ","
           << "\"showCheckpoints\":" << (show_checkpoints.load() ? "true" : "false") << ","
-          << "\"showHud\":" << (show_hud.load() ? "true" : "false")
+          << "\"showHud\":" << (show_hud.load() ? "true" : "false") << ","
+          << "\"inGameVisualsReady\":false
           << "}";
       return out.str();
     }
