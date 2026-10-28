@@ -19,10 +19,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <numbers>
 #include <sstream>
 #include <string>
 #include <string_view>
