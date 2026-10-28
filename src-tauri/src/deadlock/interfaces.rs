@@ -146,28 +146,50 @@ pub(crate) fn initialize_schema_runtime(pid: u32) {
 }
 
 fn initialize_schema_runtime_now(pid: u32) {
-    let outcome = retry_initialization(
-        SCHEMA_INITIALIZATION_ATTEMPTS,
-        || super::process::deadlock_pid() == Some(pid),
-        || initialize_schema_runtime_once(pid),
-        || thread::sleep(SCHEMA_INITIALIZATION_RETRY_DELAY),
-    );
+    let mut total_attempts = 0usize;
 
-    match outcome {
-        InitializationRetryOutcome::Initialized { attempts } => {
-            println!(
-                "[SPLIT][Schema] district runtime initialized after {attempts} attempt(s)"
-            );
+    loop {
+        let outcome = retry_initialization(
+            SCHEMA_INITIALIZATION_ATTEMPTS,
+            || super::process::deadlock_pid() == Some(pid),
+            || initialize_schema_runtime_once(pid),
+            || thread::sleep(SCHEMA_INITIALIZATION_RETRY_DELAY),
+        );
+
+        match outcome {
+            InitializationRetryOutcome::Initialized { attempts } => {
+                total_attempts += attempts;
+                println!(
+                    "[SPLIT][Schema] district runtime initialized after {total_attempts} total attempt(s)"
+                );
+                return;
+            }
+            InitializationRetryOutcome::Exhausted {
+                attempts,
+                last_error,
+            } => {
+                total_attempts += attempts;
+                eprintln!(
+                    "[SPLIT][Schema] district initialization still unavailable after {total_attempts} total attempts: {last_error}; retrying while Deadlock is running"
+                );
+
+                if super::process::deadlock_pid() != Some(pid) {
+                    println!(
+                        "[SPLIT][Schema] district initialization stopped after {total_attempts} total attempt(s): Deadlock session ended"
+                    );
+                    return;
+                }
+
+                thread::sleep(Duration::from_secs(1));
+            }
+            InitializationRetryOutcome::SessionEnded { attempts } => {
+                total_attempts += attempts;
+                println!(
+                    "[SPLIT][Schema] district initialization stopped after {total_attempts} total attempt(s): Deadlock session ended"
+                );
+                return;
+            }
         }
-        InitializationRetryOutcome::Exhausted {
-            attempts,
-            last_error,
-        } => eprintln!(
-            "[SPLIT][Schema] district initialization exhausted after {attempts} attempts: {last_error}"
-        ),
-        InitializationRetryOutcome::SessionEnded { attempts } => println!(
-            "[SPLIT][Schema] district initialization stopped after {attempts} attempt(s): Deadlock session ended"
-        ),
     }
 }
 
