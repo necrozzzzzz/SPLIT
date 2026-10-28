@@ -9,6 +9,7 @@
 #include <optional>
 #include <cstdint>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -163,6 +164,7 @@ void* FindUnique(HMODULE module, std::string_view pattern, const char* name,
 using AddManifestResourceFn = void (*)(const char*, void*);
 safetyhook::InlineHook g_manifest_hook;
 AddManifestResourceFn g_add_manifest_resource = nullptr;
+bool g_manifest_logged = false;
 
 __int64 __fastcall ManifestBuildThunk(void* self, void** original_args) {
   const __int64 result = g_manifest_hook.call<__int64>(self, original_args);
@@ -172,6 +174,10 @@ __int64 __fastcall ManifestBuildThunk(void* self, void** original_args) {
         "particles/environment/powerup_spawner_ambient_ring.vpcf", manifest);
     g_add_manifest_resource(
         "particles/generic/generic_ping_ground_arrow.vpcf", manifest);
+    if (!g_manifest_logged) {
+      std::cout << "[SPLIT][Visuals] registered 2 particle resources in game session manifest\n";
+      g_manifest_logged = true;
+    }
   }
   return result;
 }
