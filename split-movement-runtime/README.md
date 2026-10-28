@@ -49,3 +49,29 @@ The runtime uses SafetyHook v0.7.0 at build time for the inline `ProcessUsercmds
 ## Next
 
 Once live input capture is validated, build the first playback path: create/control a bot and feed the recorded command stream back into Source 2, then compare the replayed pose to the recorded pose for drift correction.
+
+## Display preferences (runtime 0.4.0)
+
+SPLIT's Movement Lab screen saves a display profile locally and synchronizes
+it with the running dedicated Movement Runtime through the loopback control
+socket (127.0.0.1:27168). Defaults are `visual both`, `rings on`,
+`checkpoints on`, and `hud on`.
+
+Supported control commands:
+- `visual both|ghost|tracer|off`
+- `rings on|off`
+- `checkpoints on|off`
+- `hud on|off`
+
+The `state` response includes `visualMode`, `showRings`,
+`showCheckpoints`, and `showHud`. Ghost-capable modes currently
+spawn the existing PB/reference ghost on race start; tracer-only/off
+modes skip starting another 3D ghost playback.
+
+**Rendering status:** this is the settings/protocol phase, not an
+in-game-rendering release. The native Source 2 trail, world-space
+start/finish rings, checkpoint markers, and Panorama HUD are not
+implemented yet. Toggling those settings does not make them appear
+in Deadlock. Existing replay bots may remain in the world until
+the session ends. Do not advertise these features as functional
+until their rendering and cleanup backends are tested in game.

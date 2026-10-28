@@ -580,6 +580,35 @@ type StatusTone =
 
 type AppView = "slots" | "movement" | "settings";
 
+type MovementVisualMode = "both" | "ghost" | "tracer" | "off";
+type MovementDisplaySettings = {
+  visual: MovementVisualMode;
+  rings: boolean;
+  checkpoints: boolean;
+  hud: boolean;
+};
+const MOVEMENT_DISPLAY_KEY = "split.movement.display.v1";
+const DEFAULT_MOVEMENT_DISPLAY: MovementDisplaySettings = {
+  visual: "both",
+  rings: true,
+  checkpoints: true,
+  hud: true,
+};
+function readMovementDisplay(): MovementDisplaySettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MOVEMENT_DISPLAY_KEY) ?? "null");
+    if (!saved || typeof saved !== "object") return { ...DEFAULT_MOVEMENT_DISPLAY };
+    return {
+      visual: ["both", "ghost", "tracer", "off"].includes(saved.visual) ? saved.visual : "both",
+      rings: typeof saved.rings === "boolean" ? saved.rings : true,
+      checkpoints: typeof saved.checkpoints === "boolean" ? saved.checkpoints : true,
+      hud: typeof saved.hud === "boolean" ? saved.hud : true,
+    };
+  } catch {
+    return { ...DEFAULT_MOVEMENT_DISPLAY };
+  }
+}
+
 type MovementLabStatus = {
   version: string;
   playerConnected: boolean;
@@ -599,6 +628,10 @@ type MovementLabStatus = {
   personalBestSplits: number[];
   nextCheckpoint: number;
   checkpointCount: number;
+  visualMode?: MovementVisualMode;
+  showRings?: boolean;
+  showCheckpoints?: boolean;
+  showHud?: boolean;
 };
 
 type SlotColorDisplayMode =
@@ -693,6 +726,15 @@ function App() {
   const [movementStatus, setMovementStatus] = useState<MovementLabStatus | null>(null);
   const [movementBusy, setMovementBusy] = useState<string | null>(null);
   const [movementError, setMovementError] = useState<string | null>(null);
+  const [movementDisplay, setMovementDisplay] = useState<MovementDisplaySettings>(readMovementDisplay);
+  const [movementDisplaySaving, setMovementDisplaySaving] = useState(false);
+  const updateMovementDisplay = useCallback((patch: Partial<MovementDisplaySettings>) => {
+    setMovementDisplay((previous) => {
+      const next = { ...previous, ...patch };
+      localStorage.setItem(MOVEMENT_DISPLAY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const refreshMovementStatus = useCallback(async () => {
     try {
@@ -704,6 +746,42 @@ function App() {
       setMovementError(String(reason));
     }
   }, []);
+
+  // Synchronize on connect and on preference changes; status polling alone
+  // must not flood the localhost control socket.
+  useEffect(() => {
+    if (!movementStatus) return;
+    const actual = [
+      movementStatus.visualMode ?? "both",
+      movementStatus.showRings ?? true,
+      movementStatus.showCheckpoints ?? true,
+      movementStatus.showHud ?? true,
+    ];
+    const wanted = [movementDisplay.visual, movementDisplay.rings, movementDisplay.checkpoints, movementDisplay.hud];
+    if (actual.every((value, index) => value === wanted[index])) return;
+    let cancelled = false;
+    setMovementDisplaySaving(true);
+    const commands = [
+      `visual ${movementDisplay.visual}`,
+      `rings ${movementDisplay.rings ? "on" : "off"}`,
+      `checkpoints ${movementDisplay.checkpoints ? "on" : "off"}`,
+      `hud ${movementDisplay.hud ? "on" : "off"}`,
+    ];
+    void (async () => {
+      try {
+        for (const command of commands) {
+          if (cancelled) break;
+          await invoke("movement_lab_command", { command });
+        }
+        if (!cancelled) await refreshMovementStatus();
+      } catch (reason) {
+        if (!cancelled) setMovementError(String(reason));
+      } finally {
+        if (!cancelled) setMovementDisplaySaving(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [movementStatus?.version, movementDisplay.visual, movementDisplay.rings, movementDisplay.checkpoints, movementDisplay.hud, refreshMovementStatus]);
 
   const runMovementCommand = useCallback(async (command: string) => {
     setMovementBusy(command);
@@ -5555,6 +5633,40 @@ function App() {
             <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("race")}><strong>{runtimeUiText("Race", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRace)}</kbd></button>
             <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("replay")}><strong>{runtimeUiText("Replay", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementReplay)}</kbd></button>
             <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("retry")}><strong>{runtimeUiText("Retry", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRetry)}</kbd></button>
+          </div>
+
+          <div className="movement-display-card">
+            <div className="movement-display-heading">
+              <div><p className="label">{runtimeUiText("DISPLAY PREFERENCES", language)}</p><h2>{runtimeUiText("Movement Lab visuals", language)}</h2></div>
+              <span>{movementDisplaySaving ? runtimeUiText("Syncing…", language) : movementStatus ? runtimeUiText("Runtime connected", language) : runtimeUiText("Saved locally", language)}</span>
+            </div>
+            <fieldset className="movement-visual-modes">
+              <legend>{runtimeUiText("Route visualization", language)}</legend>
+              {([
+                ["both", "Ghost + tracer"],
+                ["ghost", "3D ghost"],
+                ["tracer", "Light trail"],
+                ["off", "Off"],
+              ] as const).map(([mode, label]) => (
+                <label key={mode} className={movementDisplay.visual === mode ? "selected" : ""}>
+                  <input type="radio" name="movement-visual-mode" checked={movementDisplay.visual === mode} onChange={() => updateMovementDisplay({ visual: mode })} />
+                  <span>{runtimeUiText(label, language)}</span>
+                </label>
+              ))}
+            </fieldset>
+            <div className="movement-display-toggles">
+              {([
+                ["rings", "Start and finish rings"],
+                ["checkpoints", "Checkpoint markers"],
+                ["hud", "In-game timing HUD"],
+              ] as const).map(([key, label]) => (
+                <label key={key}>
+                  <input type="checkbox" checked={movementDisplay[key]} onChange={(event) => updateMovementDisplay({ [key]: event.target.checked })} />
+                  <span>{runtimeUiText(label, language)}</span>
+                </label>
+              ))}
+            </div>
+            <p className="movement-display-note">{runtimeUiText("Preferences are saved and sent to the runtime. Native in-game trail, rings and HUD rendering are not yet available; these controls prepare their configuration.", language)}</p>
           </div>
 
           <div className="movement-stats-grid">

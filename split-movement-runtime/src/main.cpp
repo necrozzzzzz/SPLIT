@@ -462,6 +462,8 @@ int main(int argc, char** argv) {
               std::cout << "[SPLIT][Race] GO checkpoints="
                         << race_event.checkpoint_count << "\n";
 
+              if (visual_mode.load(std::memory_order_relaxed) == 0 ||
+                  visual_mode.load(std::memory_order_relaxed) == 1) {
               const auto race_status = race_timer.Status();
               std::vector<split::movement::RecordedTick> ghost_ticks;
               bool ghost_is_pb = false;
@@ -562,6 +564,11 @@ int main(int argc, char** argv) {
                     std::cout << "\n";
                   }
                 }
+              }
+              } else {
+                // Tracer/off modes do not start another 3D replay bot.
+                // Existing bot cleanup and native tracer drawing are separate work.
+                steering.Stop();
               }
             } else if (race_event.type == split::movement::RaceEvent::Type::kSplit) {
               std::cout << std::fixed << std::setprecision(3)

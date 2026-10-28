@@ -7998,3 +7998,21 @@ select:hover:not(:disabled) {
 @media (prefers-reduced-motion: reduce) {
   .movement-session-banner.is-recording .movement-session-indicator { animation: none; }
 }
+
+/* Movement Lab display preferences */
+.movement-display-card { padding:20px; background:var(--panel,#17191d); border:1px solid rgba(255,255,255,.08); border-radius:14px; }
+.movement-display-heading { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.movement-display-heading h2 { margin:6px 0 14px; font-size:17px; }
+.movement-display-heading > span { font-size:11px; opacity:.65; }
+.movement-visual-modes { border:0; padding:0; margin:0; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; min-width:0; }
+.movement-visual-modes legend { font-size:12px; opacity:.7; margin-bottom:9px; }
+.movement-visual-modes label { display:flex; gap:8px; align-items:center; min-height:42px; padding:9px 12px; border-radius:9px; background:#19272a; border:1px solid rgba(255,255,255,.12); font-size:12px; cursor:pointer; }
+.movement-visual-modes label.selected { border-color:#4fd1c5; background:#1a3334; }
+.movement-visual-modes input, .movement-display-toggles input { accent-color:#4fd1c5; }
+.movement-display-toggles { display:flex; flex-wrap:wrap; gap:12px 22px; margin-top:17px; }
+.movement-display-toggles label { display:flex; gap:9px; align-items:center; font-size:12px; cursor:pointer; }
+.movement-display-note { margin:15px 0 0; font-size:11px; line-height:1.5; opacity:.65; }
+.movement-action { color:#e8f2f0; background:#182729; border:1px solid rgba(255,255,255,.15); }
+.movement-action:hover:not(:disabled) { background:#203638; border-color:#4fd1c5; }
+.movement-action:disabled { opacity:.45; cursor:not-allowed; }
+@media (max-width:750px) { .movement-visual-modes { grid-template-columns:repeat(2,minmax(0,1fr)); } }

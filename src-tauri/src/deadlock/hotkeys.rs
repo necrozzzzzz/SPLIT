@@ -2876,6 +2876,20 @@ pub struct MovementLabStatus {
     pub personal_best_splits: Vec<f64>,
     pub next_checkpoint: usize,
     pub checkpoint_count: usize,
+    #[serde(default)]
+    pub last_was_pb: bool,
+    #[serde(default)]
+    pub last_delta_seconds: Option<f64>,
+    #[serde(default)]
+    pub last_split_deltas: Vec<f64>,
+    #[serde(default)]
+    pub visual_mode: Option<String>,
+    #[serde(default)]
+    pub show_rings: Option<bool>,
+    #[serde(default)]
+    pub show_checkpoints: Option<bool>,
+    #[serde(default)]
+    pub show_hud: Option<bool>,
 }
 
 pub fn movement_status() -> Result<MovementLabStatus, String> {

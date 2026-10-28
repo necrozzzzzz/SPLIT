@@ -355,7 +355,10 @@ pub fn movement_lab_status() -> Result<MovementLabStatus, String> {
 
 pub fn movement_lab_command(command: String) -> Result<(), String> {
     match command.as_str() {
-        "recordtoggle" | "record" | "stop" | "race" | "replay" | "retry" | "racecancel" | "clear" => {
+        "recordtoggle" | "record" | "stop" | "race" | "replay" | "retry" | "racecancel" | "clear"
+        | "visual both" | "visual ghost" | "visual tracer" | "visual off"
+        | "rings on" | "rings off" | "checkpoints on" | "checkpoints off"
+        | "hud on" | "hud off" => {
             hotkeys::send_movement_command(&command)
         }
         _ => Err("Unsupported Movement Lab command".to_string()),
