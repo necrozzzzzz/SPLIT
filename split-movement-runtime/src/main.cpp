@@ -466,6 +466,20 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
   constexpr double kMantleStrafeMinRetention = 0.8;
 
   const auto primitives = BuildTechniquePrimitives(ticks, raw_cues);
+  if (diagnostics) {
+    for (const auto& primitive : primitives) {
+      if (primitive.kind == "groundDash" ||
+          primitive.kind == "slideStart" ||
+          primitive.kind == "takeoff" ||
+          primitive.kind == "touchdown") {
+        std::cout << "[SPLIT][TechDiag][Primitive] frame="
+                  << primitive.frame
+                  << " kind=" << primitive.kind
+                  << " speed=" << std::fixed << std::setprecision(1)
+                  << HorizontalSpeed(primitive.velocity) << "\n";
+      }
+    }
+  }
   std::vector<MovementCue> recognized;
 
   const auto add = [&](std::string label, const TechniquePrimitive& anchor) {
@@ -485,6 +499,8 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
         slide.frame > kDashCancelTicks ? slide.frame - kDashCancelTicks : 0;
     const auto* dash =
         LastPrimitive(primitives, "groundDash", from, slide.frame);
+    const auto* nearest_dash =
+        LastPrimitive(primitives, "groundDash", 0, slide.frame);
     const bool airborne =
         dash && AnyPrimitive(primitives, "takeoff", dash->frame, slide.frame);
     const double slide_speed = HorizontalSpeed(slide.velocity);
@@ -509,6 +525,10 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
       std::ostringstream detail;
       detail << "accepted=" << (ok ? "yes" : "no")
              << " groundDash=" << (dash ? "yes" : "no");
+      if (!dash && nearest_dash) {
+        detail << " nearestGroundDashDelta="
+               << (slide.frame - nearest_dash->frame);
+      }
       if (dash_delta) detail << " dashToSlide=" << *dash_delta << "/24";
       detail << " takeoffBetween=" << (airborne ? "yes" : "no")
              << " dashSpeed=";
@@ -790,10 +810,27 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           diag("Short hop", anchor, detail.str());
         }
       } else if (diagnostics) {
+        const auto* nearest_slide =
+            LastPrimitive(primitives, "slideStart", 0, anchor.frame);
         std::ostringstream detail;
         detail << "accepted=no"
-               << " slideStart=no within=8"
-               << " takeoffSpeed=" << std::fixed << std::setprecision(1)
+               << " slideStart=no within=8";
+        if (nearest_slide) {
+          detail << " nearestSlideDelta="
+                 << (anchor.frame - nearest_slide->frame);
+          const auto* nearest_dash =
+              LastPrimitive(primitives, "groundDash", 0,
+                            nearest_slide->frame);
+          if (nearest_dash) {
+            detail << " nearestDashToSlide="
+                   << (nearest_slide->frame - nearest_dash->frame);
+          } else {
+            detail << " nearestDashToSlide=n/a";
+          }
+        } else {
+          detail << " nearestSlideDelta=n/a";
+        }
+        detail << " takeoffSpeed=" << std::fixed << std::setprecision(1)
                << HorizontalSpeed(anchor.velocity);
         diag("Short hop", anchor, detail.str());
       }
