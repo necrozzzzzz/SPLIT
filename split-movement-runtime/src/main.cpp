@@ -2612,6 +2612,27 @@ int main(int argc, char** argv) {
               next_pre_spawn_cleanup_frame = 0;
             }
           },
+          [&](int slot, std::string_view command) {
+            if (slot != human_slot.load(std::memory_order_relaxed)) return false;
+            auto dispatch = [&](std::string_view runtime_command) {
+              const auto response = handle_command(runtime_command);
+              if (!response.empty()) {
+                std::cout << "[SPLIT][Panorama] " << response << "\n";
+              }
+              return true;
+            };
+            if (command == "split_record") return dispatch("recordtoggle");
+            if (command == "split_retry") return dispatch("retry");
+            if (command == "split_replay") return dispatch("replay");
+            if (command == "split_race") return dispatch("race");
+            if (command == "split_practice_stamina 1") return dispatch("practice stamina on");
+            if (command == "split_practice_stamina 0") return dispatch("practice stamina off");
+            if (command == "split_practice_cooldowns 1") return dispatch("practice cooldowns on");
+            if (command == "split_practice_cooldowns 0") return dispatch("practice cooldowns off");
+            if (command == "split_practice_ammo 1") return dispatch("practice ammo on");
+            if (command == "split_practice_ammo 0") return dispatch("practice ammo off");
+            return false;
+          },
           hook_error)) {
     command_thread.request_stop();
     std::cerr << "Native hook installation failed: " << hook_error << "\n";
