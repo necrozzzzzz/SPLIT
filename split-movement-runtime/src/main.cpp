@@ -6,6 +6,7 @@
 #include "split_movement/input_capture.h"
 #include "split_movement/movement_steering.h"
 #include "split_movement/movement_events.h"
+#include "split_movement/movement_hotkeys.h"
 #include "split_movement/native_visual_renderer.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/panorama_mount.h"
@@ -1505,6 +1506,8 @@ int main(int argc, char** argv) {
   split::movement::RaceTimer race_timer(route_directory);
   split::movement::PbRouteStore pb_routes(route_directory);
 
+  split::movement::MovementHotkeys movement_hotkeys;
+
   split::movement::NativeVisualRenderer visual_renderer;
   std::string visual_renderer_error;
   if (!visual_renderer.Install(visual_renderer_error)) {
@@ -1523,6 +1526,29 @@ int main(int argc, char** argv) {
   }
 
   auto handle_command = [&](std::string_view command) -> std::string {
+    if (command == "hotkeys") {
+      return movement_hotkeys.BindingsJson();
+    }
+    if (command.starts_with("hotkey ")) {
+      const std::string rest(command.substr(7));
+      const auto separator = rest.find(' ');
+      if (separator == std::string::npos) {
+        return "{\"ok\":false,\"error\":\"usage: hotkey ACTION KEY\"}";
+      }
+      const std::string action = rest.substr(0, separator);
+      const std::string binding = rest.substr(separator + 1);
+      std::string hotkey_error;
+      if (!movement_hotkeys.SetBinding(action, binding, hotkey_error)) {
+        std::ostringstream response;
+        response << "{\"ok\":false,\"error\":\"" << hotkey_error << "\"}";
+        return response.str();
+      }
+      std::ostringstream response;
+      response << "{\"ok\":true,\"action\":\"" << action
+               << "\",\"binding\":\"" << movement_hotkeys.Binding(action)
+               << "\"}";
+      return response.str();
+    }
     if (command == "techdiag on") {
       technique_diagnostics.store(true, std::memory_order_release);
       return "{\"techniqueDiagnostics\":true}";
@@ -1932,6 +1958,34 @@ int main(int argc, char** argv) {
   panorama_bridge.SetState(R"({"active":false})");
   std::cout << "[SPLIT][Panorama] state bridge listening on 127.0.0.1:27169\n";
 
+  std::string hotkey_error;
+  const auto hotkey_config =
+      std::filesystem::current_path() / "movement-lab-hotkeys.cfg";
+  if (!movement_hotkeys.Start(
+          hotkey_config,
+          [&](std::string_view action) {
+            if (action == "retry") {
+              handle_command("retry");
+            } else if (action == "watch") {
+              handle_command("watch");
+            } else if (action == "stop") {
+              handle_command("racecancel");
+            } else if (action == "menu") {
+              std::cout << "[SPLIT][Hotkeys] Menu hotkey pressed "
+                           "(browser UI not wired yet)\n";
+            } else if (action == "playlists") {
+              std::cout << "[SPLIT][Hotkeys] Playlists hotkey pressed "
+                           "(browser UI not wired yet)\n";
+            }
+          },
+          hotkey_error)) {
+    command_thread.request_stop();
+    std::cerr << "Movement Lab hotkeys failed: " << hotkey_error << "\n";
+    return 1;
+  }
+  std::cout << "[SPLIT][Hotkeys] Movement Lab hotkeys ready: "
+            << movement_hotkeys.BindingsJson() << "\n";
+
   std::string input_error;
   if (!input_capture.Install(input_error)) {
     command_thread.request_stop();
@@ -2049,6 +2103,7 @@ int main(int argc, char** argv) {
                   << "\"stamina\":" << (practice_infinite_stamina.load(std::memory_order_acquire) ? "true" : "false") << ","
                   << "\"cooldowns\":" << (practice_no_cooldowns.load(std::memory_order_acquire) ? "true" : "false") << ","
                   << "\"ammo\":" << (practice_infinite_ammo.load(std::memory_order_acquire) ? "true" : "false") << ","
+                  << "\"hotkeys\":" << movement_hotkeys.BindingsJson() << ","
                   << "\"hasDrillPosition\":" << (has_drill_position ? "true" : "false") << ","
                   << "\"drillFeedback\":\"" << drill_state << "\","
                   << "\"drillGeneration\":" << drill_generation
@@ -2757,6 +2812,7 @@ int main(int argc, char** argv) {
             PrintClient("client fully connected", client);
             if (!client.is_bot) {
               human_slot.store(client.slot, std::memory_order_relaxed);
+              movement_hotkeys.SetEnabled(true);
               panorama_bridge.SetState(R"({"active":true})");
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
@@ -2772,6 +2828,7 @@ int main(int argc, char** argv) {
             }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
+              movement_hotkeys.SetEnabled(false);
               {
                 std::scoped_lock lock(drill_mutex);
                 drill_position.reset();
@@ -2822,6 +2879,7 @@ int main(int argc, char** argv) {
   std::string run_error;
   const int code = split::movement::RunDedicatedServer(game_dir, launch, run_error);
 
+  movement_hotkeys.Stop();
   command_thread.request_stop();
 
   if (!run_error.empty()) {
