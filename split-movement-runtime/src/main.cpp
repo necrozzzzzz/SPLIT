@@ -1431,6 +1431,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> show_hud{true};
   std::atomic<bool> practice_infinite_stamina{false};
   std::atomic<bool> practice_no_cooldowns{false};
+  std::atomic<bool> practice_infinite_ammo{false};
   std::string last_pawn_error;
   std::string last_practice_stamina_error;
   std::string last_practice_cooldown_error;
@@ -1668,6 +1669,9 @@ int main(int argc, char** argv) {
           << "\"showRings\":" << (show_rings.load() ? "true" : "false") << ","
           << "\"showCheckpoints\":" << (show_checkpoints.load() ? "true" : "false") << ","
           << "\"showHud\":" << (show_hud.load() ? "true" : "false") << ","
+          << "\"practiceInfiniteStamina\":" << (practice_infinite_stamina.load(std::memory_order_acquire) ? "true" : "false") << ","
+          << "\"practiceNoCooldowns\":" << (practice_no_cooldowns.load(std::memory_order_acquire) ? "true" : "false") << ","
+          << "\"practiceInfiniteAmmo\":" << (practice_infinite_ammo.load(std::memory_order_acquire) ? "true" : "false") << ","
           << "\"inGameVisualsReady\":false"
           << "}";
       return out.str();
@@ -1698,6 +1702,20 @@ int main(int argc, char** argv) {
       last_practice_cooldown_error.clear();
       std::cout << "[SPLIT][Practice] no cooldowns="
                 << (on ? "on" : "off") << "\n";
+    } else if (command == "practice ammo on" ||
+               command == "practice ammo off") {
+      const bool on = command == "practice ammo on";
+      std::string command_error;
+      const std::string server_command =
+          std::string("sv_infinite_ammo ") + (on ? "1" : "0");
+      if (!split::movement::RunServerCommand(server_command, command_error)) {
+        std::cout << "[SPLIT][Practice] infinite ammo unavailable: "
+                  << command_error << "\n";
+      } else {
+        practice_infinite_ammo.store(on, std::memory_order_release);
+        std::cout << "[SPLIT][Practice] infinite ammo="
+                  << (on ? "on" : "off") << "\n";
+      }
     } else if (command == "record") {
       {
         std::scoped_lock lock(route_cues_mutex);
@@ -1779,7 +1797,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, techdiag [on|off], practice stamina [on|off], practice cooldowns [on|off], clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, techdiag [on|off], practice stamina [on|off], practice cooldowns [on|off], practice ammo [on|off], clear)\n";
     }
     return {};
   };
