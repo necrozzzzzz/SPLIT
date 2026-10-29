@@ -1413,6 +1413,7 @@ int main(int argc, char** argv) {
   split::movement::MovementRecorder race_run_recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
+  bool practice_souls_granted = false;
   int pre_spawn_cleanup_passes_remaining = 0;
   std::uint64_t next_pre_spawn_cleanup_frame = 0;
   bool steering_was_active = false;
@@ -1905,10 +1906,24 @@ int main(int argc, char** argv) {
             last_pawn_error.clear();
             if (!pawn_announced) {
               pawn_announced = true;
-              pre_spawn_cleanup_passes_remaining = 2;
-              next_pre_spawn_cleanup_frame = frame;
               std::cout << "[SPLIT][Movement] pawn attached slot=" << sample->slot
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
+            }
+
+            // Deadlock overwrites citadel_player_starting_gold during its real
+            // spawn flow. Once the live pawn exists, top the wallet up from the
+            // native server console instead. With one practice player this
+            // brings the usual 600-soul spawn to roughly one million souls.
+            if (!practice_souls_granted) {
+              std::string souls_error;
+              if (split::movement::RunServerCommand(
+                      "citadel_give_gold 999400", souls_error)) {
+                practice_souls_granted = true;
+                std::cout << "[SPLIT][Practice] live wallet topped up for practice\n";
+              } else if (!souls_error.empty()) {
+                std::cout << "[SPLIT][Practice] soul grant unavailable: "
+                          << souls_error << "\n";
+              }
             }
 
             // Practice mutations deliberately run only after Observe() proved
@@ -2521,6 +2536,7 @@ int main(int argc, char** argv) {
             visual_renderer.Clear();
             current_map.assign(map);
             pawn_announced = false;
+            practice_souls_granted = false;
             pre_spawn_cleanup_passes_remaining = 0;
             next_pre_spawn_cleanup_frame = 0;
             std::cout << "[SPLIT][Movement] loading world: " << map << "\n";
@@ -2556,6 +2572,7 @@ int main(int argc, char** argv) {
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
               pawn_announced = false;
+              practice_souls_granted = false;
               pre_spawn_cleanup_passes_remaining = 0;
               next_pre_spawn_cleanup_frame = 0;
             }
