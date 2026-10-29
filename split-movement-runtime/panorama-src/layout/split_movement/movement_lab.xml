@@ -4,44 +4,76 @@
            hittestchildren="false"
            style="width: 100%; height: 100%;">
 
-        <Panel id="SplitRouteHud"
-               hittest="false"
-               style="horizontal-align: center; vertical-align: top; margin-top: 138px; width: 430px; flow-children: down; padding: 10px 16px 12px 16px; background-color: #0d1217dd; border: 1px solid #8ea0aa44; border-radius: 4px;">
-            <Panel style="width: 100%; height: 22px;">
-                <Label id="SplitHudStatus"
-                       text="MOVEMENT LAB"
-                       style="horizontal-align: center; font-size: 14px; font-weight: bold; letter-spacing: 1.2px; color: #dce6ec;" />
-                <Label id="SplitHudRec"
-                       text="● REC"
-                       style="visibility: collapse; horizontal-align: right; font-size: 13px; font-weight: bold; color: #ff6a63;" />
+        <Panel id="MovementBrand"
+               style="horizontal-align: left; vertical-align: top; margin-left: 22px; margin-top: 18px; flow-children: down;">
+            <Panel style="flow-children: right; height: 34px;">
+                <Label text="M"
+                       style="width: 28px; height: 28px; text-align: center; padding-top: 3px; background-color: #d74b47; color: white; font-size: 17px; font-weight: bold; border-radius: 3px;" />
+                <Label text="MOVEMENT LAB"
+                       style="margin-left: 8px; margin-top: 3px; color: #f2ece3; font-size: 16px; font-weight: bold; letter-spacing: 1.5px;" />
             </Panel>
 
-            <Label id="SplitHudTimer"
-                   text="00:00.000"
-                   style="visibility: collapse; horizontal-align: center; margin-top: 2px; font-size: 34px; font-weight: bold; color: white;" />
-
-            <Panel style="horizontal-align: center; flow-children: right; margin-top: 2px;">
-                <Label id="SplitHudPb"
-                       text="PB  --:--.---"
-                       style="visibility: collapse; font-size: 13px; color: #98a9b3; margin-right: 20px;" />
-                <Label id="SplitHudSplit"
-                       text=""
-                       style="visibility: collapse; font-size: 13px; color: #98a9b3; margin-right: 20px;" />
-                <Label id="SplitHudDelta"
-                       text=""
-                       style="visibility: collapse; font-size: 13px; font-weight: bold; color: #dce6ec;" />
+            <Panel style="flow-children: right; margin-top: 5px;">
+                <Panel style="flow-children: right; background-color: #111418dd; padding: 5px 9px; border-radius: 3px; margin-right: 8px;">
+                    <Label text="MENU" style="font-size: 13px; font-weight: bold; color: #f0ece6;" />
+                    <Label text="F6" style="margin-left: 7px; padding: 0px 4px; background-color: #3a3d40; color: #f4f4f4; font-size: 11px; font-weight: bold;" />
+                </Panel>
+                <Panel style="flow-children: right; background-color: #111418dd; padding: 5px 9px; border-radius: 3px;">
+                    <Label text="PLAYLISTS" style="font-size: 13px; font-weight: bold; color: #f0ece6;" />
+                    <Label text="9" style="margin-left: 7px; padding: 0px 4px; background-color: #3a3d40; color: #f4f4f4; font-size: 11px; font-weight: bold;" />
+                </Panel>
             </Panel>
+
+            <Label text="ROUTE LIMITS"
+                   style="margin-top: 10px; color: #e25455; font-size: 11px; font-weight: bold; letter-spacing: 1.2px;" />
+            <Panel style="flow-children: right; margin-top: 4px;">
+                <Label text="Moves" style="color: #d5d0c8; font-size: 11px; margin-right: 18px;" />
+                <Label text="Strict" style="color: #d5d0c8; font-size: 11px;" />
+            </Panel>
+        </Panel>
+
+        <Panel id="MovementRouteControls"
+               style="horizontal-align: center; vertical-align: top; margin-top: 20px; flow-children: right; background-color: #111418e8; padding: 5px 9px; border-radius: 2px;">
+            <Label id="CtlPrev" text="PREV" style="color: #d9d4cc; font-size: 12px; font-weight: bold; margin-right: 12px;" />
+            <Label id="CtlRetry" text="RETRY" style="color: #d9d4cc; font-size: 12px; font-weight: bold; margin-right: 5px;" />
+            <Label text="E" style="padding: 0px 4px; background-color: #45484b; color: white; font-size: 10px; font-weight: bold; margin-right: 12px;" />
+            <Label id="CtlWatch" text="WATCH" style="color: #d9d4cc; font-size: 12px; font-weight: bold; margin-right: 5px;" />
+            <Label text="L" style="padding: 0px 4px; background-color: #45484b; color: white; font-size: 10px; font-weight: bold; margin-right: 12px;" />
+            <Label id="CtlStop" text="STOP" style="color: #d9d4cc; font-size: 12px; font-weight: bold; margin-right: 5px;" />
+            <Label text="I" style="padding: 0px 4px; background-color: #45484b; color: white; font-size: 10px; font-weight: bold; margin-right: 12px;" />
+            <Label id="CtlAllRoutes" text="ALL ROUTES" style="color: #e16b67; font-size: 12px; font-weight: bold; margin-right: 12px;" />
+            <Label id="CtlNext" text="NEXT" style="color: #d9d4cc; font-size: 12px; font-weight: bold;" />
+        </Panel>
+
+        <Panel id="MovementRouteHeader"
+               style="horizontal-align: center; vertical-align: top; margin-top: 55px; width: 900px; flow-children: down;">
+            <Label id="RouteTitle"
+                   text="RECORDED ROUTE · UNRATED"
+                   style="horizontal-align: center; color: #f0ebe2; font-size: 17px; font-weight: bold; letter-spacing: 1.1px;" />
+
+            <Panel style="horizontal-align: center; flow-children: right; margin-top: 8px;">
+                <Panel style="flow-children: down; width: 120px;">
+                    <Label text="YOU" style="horizontal-align: center; color: #d9d4cc; font-size: 11px; font-weight: bold;" />
+                    <Label id="RouteYou" text="0.00" style="horizontal-align: center; color: white; font-size: 28px; font-weight: bold;" />
+                </Panel>
+
+                <Label id="RouteDelta"
+                       text="READY"
+                       style="margin-left: 12px; margin-right: 12px; margin-top: 16px; min-width: 100px; text-align: center; padding: 4px 10px; background-color: #201b1bdd; border: 1px solid #954441; color: #f06a64; font-size: 20px; font-weight: bold;" />
+
+                <Panel style="flow-children: down; width: 120px;">
+                    <Label text="REFERENCE" style="horizontal-align: center; color: #cbb98e; font-size: 11px; font-weight: bold;" />
+                    <Label id="RouteReference" text="—" style="horizontal-align: center; color: #cdbb88; font-size: 27px; font-weight: bold;" />
+                </Panel>
+            </Panel>
+
+            <Label id="RouteInstruction"
+                   text="Leave the start to go"
+                   style="horizontal-align: center; margin-top: 2px; color: #d9d4cc; font-size: 13px;" />
         </Panel>
 
         <Label id="SplitHudFeedback"
                text=""
-               hittest="false"
                style="visibility: collapse; horizontal-align: center; vertical-align: center; margin-top: 170px; padding: 7px 12px; background-color: #0d1217dd; border: 1px solid #8ea0aa55; font-size: 14px; font-weight: bold; color: #e7f0f5;" />
-
-
-        <Label id="SplitHudAssists"
-               text=""
-               hittest="false"
-               style="visibility: collapse; horizontal-align: center; vertical-align: bottom; margin-bottom: 145px; padding: 5px 10px; background-color: #0d1217bb; font-size: 12px; font-weight: bold; color: #aebdc5;" />
     </Panel>
 </root>
