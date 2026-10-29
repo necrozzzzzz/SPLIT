@@ -9,6 +9,7 @@
 #include "split_movement/native_visual_renderer.h"
 #include "split_movement/pawn_probe.h"
 #include "split_movement/panorama_mount.h"
+#include "split_movement/panorama_bridge_server.h"
 #include "split_movement/pb_route_store.h"
 #include "split_movement/recorder.h"
 #include "split_movement/race_timer.h"
@@ -1868,6 +1869,17 @@ int main(int argc, char** argv) {
   }
   std::cout << "SPLIT Movement Runtime: local control listening on 127.0.0.1:27168.\n";
 
+  split::movement::PanoramaBridgeServer panorama_bridge;
+  std::string panorama_bridge_error;
+  if (!panorama_bridge.Start(27169, panorama_bridge_error)) {
+    command_thread.request_stop();
+    std::cerr << "Panorama bridge server failed: "
+              << panorama_bridge_error << "\n";
+    return 1;
+  }
+  panorama_bridge.SetState(R"({"active":false})");
+  std::cout << "[SPLIT][Panorama] state bridge listening on 127.0.0.1:27169\n";
+
   std::string input_error;
   if (!input_capture.Install(input_error)) {
     command_thread.request_stop();
@@ -2637,6 +2649,7 @@ int main(int argc, char** argv) {
             PrintClient("client fully connected", client);
             if (!client.is_bot) {
               human_slot.store(client.slot, std::memory_order_relaxed);
+              panorama_bridge.SetState(R"({"active":true})");
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
                         << "; attaching pawn probe.\n";
@@ -2651,6 +2664,7 @@ int main(int argc, char** argv) {
             }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
+              panorama_bridge.SetState(R"({"active":false})");
               pawn_announced = false;
               practice_shop_ready = false;
               pre_spawn_cleanup_passes_remaining = 0;
