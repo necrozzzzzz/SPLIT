@@ -190,6 +190,8 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
           << ",\"forward\":" << tick.input->forward
           << ",\"left\":" << tick.input->left
           << ",\"held\":" << tick.input->held
+          << ",\"changed\":" << tick.input->changed
+          << ",\"scroll\":" << tick.input->scroll
           << ",\"pressed\":" << tick.input->pressed << "}";
     } else {
       out << ",\"input\":null";
