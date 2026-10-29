@@ -9,13 +9,6 @@
     var parts = null;
     var lastTitle = "";
     var acked = false;
-    var boundMenuKey = false;
-    var menuOpen = false;
-    var toggles = {
-        stamina: false,
-        cooldowns: false,
-        ammo: false
-    };
 
     function findGameHud(panel) {
         for (var at = panel; at; at = at.GetParent()) {
@@ -24,90 +17,100 @@
         return null;
     }
 
-    function command(text) {
-        try {
-            $.DispatchEvent("CitadelConCommand", text);
-            return true;
-        } catch (error) {
-            $.Msg("[SPLIT][Panorama] command failed: " + text + " (" + error + ")");
-            return false;
-        }
-    }
-
-    function panel(id) {
-        return root ? root.FindChildTraverse(id) : null;
-    }
-
-    function setToggle(id, enabled) {
-        var value = panel(id);
-        if (!value) return;
-        value.SetSelected(enabled);
-        value.style.backgroundColor = enabled ? "#526875" : "#202a31";
-    }
-
-    function toggle(kind) {
-        if (!(kind in toggles)) return;
-        toggles[kind] = !toggles[kind];
-
-        if (kind === "stamina") {
-            command("split_practice_stamina " + (toggles[kind] ? "1" : "0"));
-            setToggle("SplitStamina", toggles[kind]);
-        } else if (kind === "cooldowns") {
-            command("split_practice_cooldowns " + (toggles[kind] ? "1" : "0"));
-            setToggle("SplitCooldowns", toggles[kind]);
-        } else if (kind === "ammo") {
-            command("split_practice_ammo " + (toggles[kind] ? "1" : "0"));
-            setToggle("SplitAmmo", toggles[kind]);
-        }
-    }
-
-    function toggleCollapsed() {
-        if (!root) return;
-        var body = panel("SplitMovementBody");
-        var frame = panel("SplitMovementRoot");
-        var glyph = panel("SplitCollapseGlyph");
-        var collapsed = body ? body.visible : true;
-        if (body) body.visible = !collapsed;
-        if (frame) frame.style.height = collapsed ? "90px" : "560px";
-        if (glyph) glyph.text = collapsed ? "+" : "—";
-    }
-
-    function show(active) {
+    function ensureHud() {
         var game = findGameHud(context);
-        if (!active || !game) {
+        if (!game) return null;
+        if (root && root.IsValid()) return root;
+
+        root = $.CreatePanel("Panel", game, "SplitMovementHudHost");
+        root.hittest = false;
+        root.hittestchildren = false;
+        root.style.width = "100%";
+        root.style.height = "100%";
+        root.BLoadLayout("file://{resources}/layout/split_movement/movement_lab.xml", false, false);
+        return root;
+    }
+
+    function label(id) {
+        var hud = ensureHud();
+        return hud ? hud.FindChildTraverse(id) : null;
+    }
+
+    function formatTime(seconds) {
+        if (typeof seconds !== "number" || !isFinite(seconds)) return "--:--.---";
+        var wholeMinutes = Math.floor(seconds / 60);
+        var remaining = seconds - wholeMinutes * 60;
+        var sec = remaining.toFixed(3);
+        if (remaining < 10) sec = "0" + sec;
+        return (wholeMinutes < 10 ? "0" : "") + wholeMinutes + ":" + sec;
+    }
+
+    function setVisible(panel, visible) {
+        if (panel) panel.style.visibility = visible ? "visible" : "collapse";
+    }
+
+    function applyState(next) {
+        if (next.active !== true) {
             if (root && root.IsValid()) root.DeleteAsync(0);
             root = null;
             return;
         }
 
-        if (root && root.IsValid()) return;
+        var hud = ensureHud();
+        if (!hud) return;
 
-        root = $.CreatePanel("Panel", game, "SplitMovementRootHost");
-        root.hittest = false;
-        root.hittestchildren = true;
-        root.style.width = "100%";
-        root.style.height = "100%";
-        root.style.horizontalAlign = "left";
-        root.style.verticalAlign = "top";
-        root.BLoadLayout(
-            "file://{resources}/layout/split_movement/movement_lab.xml",
-            false,
-            false
-        );
-        $.Msg("[SPLIT][Panorama] Movement Lab visible");
+        var status = label("SplitHudStatus");
+        var timer = label("SplitHudTimer");
+        var pb = label("SplitHudPb");
+        var split = label("SplitHudSplit");
+        var rec = label("SplitHudRec");
+        var assists = label("SplitHudAssists");
+
+        var phase = next.racePhase || "idle";
+        var racing = phase === "armed" || phase === "running" || phase === "finished";
+
+        if (status) {
+            status.text = phase === "armed" ? "ROUTE ARMED" :
+                          phase === "running" ? "ROUTE" :
+                          phase === "finished" ? "FINISHED" :
+                          next.recording ? "RECORDING ROUTE" :
+                          "MOVEMENT LAB";
+        }
+
+        if (timer) timer.text = formatTime(next.elapsedSeconds || 0);
+        setVisible(timer, racing);
+
+        if (pb) {
+            pb.text = next.personalBestSeconds == null
+                ? "PB  --:--.---"
+                : "PB  " + formatTime(next.personalBestSeconds);
+        }
+        setVisible(pb, racing);
+
+        if (split) {
+            var total = Number(next.checkpointCount || 0);
+            var current = Number(next.nextCheckpoint || 0);
+            split.text = total > 0 ? ("CHECKPOINT  " + current + " / " + total) : "";
+        }
+        setVisible(split, racing && Number(next.checkpointCount || 0) > 0);
+
+        setVisible(rec, next.recording === true);
+
+        var activeAssists = [];
+        if (next.stamina) activeAssists.push("∞ STAMINA");
+        if (next.cooldowns) activeAssists.push("NO COOLDOWN");
+        if (next.ammo) activeAssists.push("∞ AMMO");
+        if (assists) assists.text = activeAssists.join("   ·   ");
+        setVisible(assists, activeAssists.length > 0);
     }
 
     function unpack(text) {
         var output = "";
         for (var i = 0; i < text.length; i++) {
             var code = text.charCodeAt(i);
-            if (code >= 1 && code <= 127) {
-                output += String.fromCharCode(code);
-            } else if (code >= 0x100 && code <= 0x1ff) {
-                output += String.fromCharCode(code - 0x100);
-            } else {
-                return null;
-            }
+            if (code >= 1 && code <= 127) output += String.fromCharCode(code);
+            else if (code >= 0x100 && code <= 0x1ff) output += String.fromCharCode(code - 0x100);
+            else return null;
         }
         return output;
     }
@@ -116,40 +119,9 @@
         try {
             var json = unpack(text);
             if (json === null) throw new Error("invalid packed bytes");
-            var next = JSON.parse(json);
-            var active = next.active === true;
-            var nextMenuOpen = active && next.menuOpen === true;
-
-            if (active && !boundMenuKey) {
-                command("bind F6 split_menu_toggle");
-                boundMenuKey = true;
-                $.Msg("[SPLIT][Panorama] F6 bound to Movement Lab menu");
-            }
-
-            if (!active) {
-                if (menuOpen) command("gameui_hide");
-                menuOpen = false;
-                show(false);
-                return;
-            }
-
-            if (nextMenuOpen !== menuOpen) {
-                menuOpen = nextMenuOpen;
-                if (menuOpen) {
-                    command("gameui_activate");
-                    show(true);
-                } else {
-                    show(false);
-                    command("gameui_hide");
-                }
-            } else {
-                show(menuOpen);
-            }
+            applyState(JSON.parse(json));
         } catch (error) {
-            $.Msg("[SPLIT][Panorama] invalid bridge frame: " + error);
-            if (menuOpen) command("gameui_hide");
-            menuOpen = false;
-            show(false);
+            $.Msg("[SPLIT][Panorama] invalid HUD frame: " + error);
         }
     }
 
@@ -157,17 +129,15 @@
         if (!title.startsWith(titlePrefix)) {
             parts = null;
             lastTitle = "";
-            if (title === "") show(false);
+            if (title === "") applyState({ active: false });
             return false;
         }
-
         if (title === lastTitle) return false;
         lastTitle = title;
 
         try {
             var fields = title.slice(titlePrefix.length).split(":", 4);
             if (fields.length !== 4) throw new Error("malformed relay frame");
-
             var id = Number(fields[0]);
             var offset = Number(fields[1]);
             var total = Number(fields[2]);
@@ -183,7 +153,6 @@
             parts.text += chunk;
             acked = !acked;
             statePanel.SetURL(bridgeURL + "#" + (acked ? "1" : "0"));
-
             if (parts.text.length < parts.total) return false;
 
             var complete = parts.text;
@@ -192,30 +161,20 @@
         } catch (error) {
             $.Msg("[SPLIT][Panorama] bridge read failed: " + error);
             parts = null;
-            show(false);
         }
         return false;
     }
-
-    globalThis.SplitMovement = {
-        command: command,
-        toggle: toggle,
-        toggleCollapsed: toggleCollapsed
-    };
 
     if (!statePanel) {
         $.Msg("[SPLIT][Panorama] bridge HTML panel missing");
         return;
     }
 
-    $.RegisterEventHandler("HTMLStartRequest", statePanel, function () {
-        return false;
-    });
+    $.RegisterEventHandler("HTMLStartRequest", statePanel, function () { return false; });
     $.RegisterEventHandler("HTMLTitle", statePanel, function (_, title) {
         return readTitle(title);
     });
 
-    show(false);
     statePanel.SetURL(bridgeURL);
-    $.Msg("[SPLIT][Panorama] bridge started");
+    $.Msg("[SPLIT][Panorama] Freestyle-style HUD bridge started");
 })();
