@@ -1887,10 +1887,17 @@ int main(int argc, char** argv) {
 
               if (recorder.Stats().recording && IsRouteCallout(movement.execution)) {
                 std::scoped_lock lock(route_cues_mutex);
+                const bool semantic_event =
+                    movement.execution == split::movement::MovementExecution::kMeleeStarted ||
+                    movement.execution == split::movement::MovementExecution::kAbilityExecuted;
                 const bool duplicate =
                     !route_cues.empty() &&
                     route_cues.back().label == label &&
-                    RouteDistance(route_cues.back().position, sample->position) < 48.0;
+                    (semantic_event
+                         ? (frame >= route_cues.back().frame &&
+                            frame - route_cues.back().frame <= 2)
+                         : RouteDistance(route_cues.back().position,
+                                         sample->position) < 48.0);
                 if (!duplicate) {
                   route_cues.push_back({label, sample->position, frame});
                 }
