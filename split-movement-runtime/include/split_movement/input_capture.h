@@ -13,6 +13,9 @@ struct InputSample {
   float forward = 0.0f;
   float left = 0.0f;
   std::uint64_t held = 0;
+  std::uint64_t changed = 0;
+  std::uint64_t scroll = 0;
+  // Aggregate one-shot presses for recognizers: (changed & held) | scroll.
   std::uint64_t pressed = 0;
   std::uint64_t sequence = 0;
 };
