@@ -464,11 +464,11 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
   }
 
   layout.ability_charges = OptionalFieldOffset(
-      schema_system, "CCitadelBaseAbility", "m_nAbilityCharges", sizeof(std::int32_t));
+      schema_system, "CCitadelBaseAbility", "m_iRemainingCharges", sizeof(std::int32_t));
   layout.ability_cooldown_start = OptionalFieldOffset(
-      schema_system, "CCitadelBaseAbility", "m_flCooldownStartTime", sizeof(float));
+      schema_system, "CCitadelBaseAbility", "m_flCooldownStart", sizeof(float));
   layout.ability_cooldown_end = OptionalFieldOffset(
-      schema_system, "CCitadelBaseAbility", "m_flCooldownEndTime", sizeof(float));
+      schema_system, "CCitadelBaseAbility", "m_flCooldownEnd", sizeof(float));
   layout.ability_recharge_start = OptionalFieldOffset(
       schema_system, "CCitadelBaseAbility", "m_flChargeRechargeStart", sizeof(float));
   layout.ability_recharge_end = OptionalFieldOffset(
