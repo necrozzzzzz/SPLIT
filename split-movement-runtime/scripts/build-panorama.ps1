@@ -27,7 +27,6 @@ New-Item -ItemType Directory -Force -Path (Join-Path $WorkDir "panorama/scripts/
 $Archive = Join-Path $DeadlockDir "game/citadel/pak01_dir.vpk"
 $LatestNews = Join-Path $WorkDir "panorama/layout/latest_news.xml"
 $HeroTesting = Join-Path $WorkDir "panorama/layout/hud_hero_testing.xml"
-$HudLayout = Join-Path $WorkDir "panorama/layout/hud.xml"
 
 Write-Host "[SPLIT][Panorama] decompiling current Deadlock latest_news layout..."
 $xml = & $Modlock panorama decompile --archive $Archive panorama/layout/latest_news.vxml_c
@@ -48,39 +47,6 @@ if ($xmlText.Contains("<scripts>")) {
 
 Set-Content -Path $LatestNews -Value $xmlText -Encoding UTF8
 
-Write-Host "[SPLIT][Panorama] injecting Movement Lab into active match HUD..."
-$hudXml = & $Modlock panorama decompile --archive $Archive panorama/layout/hud.vxml_c
-if ($LASTEXITCODE -ne 0 -or -not $hudXml) {
-    throw "Could not decompile hud.vxml_c"
-}
-$hudText = ($hudXml -join [Environment]::NewLine)
-
-if ($hudText.Contains("<scripts>")) {
-    if (-not $hudText.Contains($bootInclude)) {
-        $hudText = $hudText.Replace("<scripts>", "<scripts>" + [Environment]::NewLine + $tab + $tab + $bootInclude)
-    }
-} elseif ($hudText.Contains("<root>")) {
-    $hudText = $hudText.Replace("<root>", "<root>" + [Environment]::NewLine + $tab + "<scripts>" + $bootInclude + "</scripts>")
-} else {
-    throw "hud.xml has no root/scripts element"
-}
-
-# Diagnostic: inject a static panel directly into hud.xml. This bypasses
-# boot.js/BLoadLayout entirely, so visibility proves the active HUD override
-# itself is being loaded by the client.
-$diagPanel = @'
-<Panel id="SplitPanoramaDiagnostic" hittest="false" style="width: 520px; height: 90px; horizontal-align: center; vertical-align: top; margin-top: 120px; background-color: #101820ee; border: 3px solid #ffffff; z-index: 9999;">
-    <Label text="SPLIT PANORAMA OK" style="horizontal-align: center; vertical-align: center; font-size: 34px; font-weight: bold; color: white;" />
-</Panel>
-'@
-
-$hudClose = "</CitadelHud>"
-if ($hudText.Contains($hudClose) -and -not $hudText.Contains("SplitPanoramaDiagnostic")) {
-    $hudText = $hudText.Replace($hudClose, $diagPanel + [Environment]::NewLine + $hudClose)
-}
-
-Set-Content -Path $HudLayout -Value $hudText -Encoding UTF8
-
 Write-Host "[SPLIT][Panorama] hiding stock Hero Testing tools for Movement Lab..."
 $heroXml = & $Modlock panorama decompile --archive $Archive panorama/layout/hud_hero_testing.vxml_c
 if ($LASTEXITCODE -eq 0 -and $heroXml) {
@@ -94,6 +60,7 @@ if ($LASTEXITCODE -eq 0 -and $heroXml) {
     Write-Host "[SPLIT][Panorama] warning: could not patch hud_hero_testing; stock tools may remain visible"
 }
 
+Copy-Item (Join-Path $RuntimeDir "panorama-src/layout/split_movement/bootstrap.xml") (Join-Path $WorkDir "panorama/layout/split_movement/bootstrap.xml")
 Copy-Item (Join-Path $RuntimeDir "panorama-src/layout/split_movement/movement_lab.xml") (Join-Path $WorkDir "panorama/layout/split_movement/movement_lab.xml")
 Copy-Item (Join-Path $RuntimeDir "panorama-src/scripts/split_movement/boot.js") (Join-Path $WorkDir "panorama/scripts/split_movement/boot.js")
 Copy-Item (Join-Path $RuntimeDir "panorama-src/scripts/split_movement/movement_lab.js") (Join-Path $WorkDir "panorama/scripts/split_movement/movement_lab.js")
