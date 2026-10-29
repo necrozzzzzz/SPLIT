@@ -632,6 +632,8 @@ type MovementLabStatus = {
   showRings?: boolean;
   showCheckpoints?: boolean;
   showHud?: boolean;
+  practiceInfiniteStamina?: boolean;
+  practiceNoCooldowns?: boolean;
 };
 
 type SlotColorDisplayMode =
@@ -5633,6 +5635,48 @@ function App() {
             <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("race")}><strong>{runtimeUiText("Race", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRace)}</kbd></button>
             <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("replay")}><strong>{runtimeUiText("Replay", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementReplay)}</kbd></button>
             <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("retry")}><strong>{runtimeUiText("Retry", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRetry)}</kbd></button>
+          </div>
+
+          <div className="movement-display-card">
+            <div className="movement-display-heading">
+              <div>
+                <p className="label">{runtimeUiText("PRACTICE", language)}</p>
+                <h2>{runtimeUiText("Training assists", language)}</h2>
+              </div>
+              <span>{movementStatus?.playerConnected ? runtimeUiText("Applied to your hero", language) : runtimeUiText("Waiting for player", language)}</span>
+            </div>
+            <div className="movement-display-toggles">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={movementStatus?.practiceInfiniteStamina ?? false}
+                  disabled={!movementStatus || movementBusy !== null}
+                  onChange={(event) => void runMovementCommand(
+                    `practice stamina ${event.target.checked ? "on" : "off"}`,
+                  )}
+                />
+                <span>{runtimeUiText("Infinite stamina", language)}</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={movementStatus?.practiceNoCooldowns ?? false}
+                  disabled={!movementStatus || movementBusy !== null}
+                  onChange={(event) => void runMovementCommand(
+                    `practice cooldowns ${event.target.checked ? "on" : "off"}`,
+                  )}
+                />
+                <span>{runtimeUiText("No cooldown", language)}</span>
+              </label>
+              <label title={runtimeUiText("Coming next: native clip refill matching Hyperline.", language)}>
+                <input type="checkbox" checked={false} disabled />
+                <span>{runtimeUiText("Infinite ammo", language)} · {runtimeUiText("Coming next", language)}</span>
+              </label>
+              <label title={runtimeUiText("Coming next: disable lane waves after world load.", language)}>
+                <input type="checkbox" checked={false} disabled />
+                <span>{runtimeUiText("Disable troopers", language)} · {runtimeUiText("Coming next", language)}</span>
+              </label>
+            </div>
           </div>
 
           <div className="movement-display-card">
