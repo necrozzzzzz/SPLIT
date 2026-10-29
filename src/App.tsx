@@ -221,6 +221,8 @@ type HotkeySettings = {
   movementRace: Hotkey;
   movementReplay: Hotkey;
   movementRetry: Hotkey;
+  movementDrillSave: Hotkey;
+  movementDrillReturn: Hotkey;
   quickAccess: Hotkey;
 };
 
@@ -231,7 +233,7 @@ type QuickAccessSettings = {
 
 type HotkeyTarget =
   | { group: "loadSlots" | "saveSlots"; index: number }
-  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" | "movementRecord" | "movementRace" | "movementReplay" | "movementRetry" | "quickAccess" };
+  | { group: "undo" | "redo" | "cyclePreset" | "favoriteMode" | "movementRecord" | "movementRace" | "movementReplay" | "movementRetry" | "movementDrillSave" | "movementDrillReturn" | "quickAccess" };
 
 const SLOT_COLORS = [
   {
@@ -301,6 +303,8 @@ const DEFAULT_HOTKEY_SETTINGS: HotkeySettings = {
   movementRace: { key: "T", ctrl: true, alt: false, shift: true },
   movementReplay: { key: "P", ctrl: true, alt: false, shift: true },
   movementRetry: { key: "Y", ctrl: true, alt: false, shift: true },
+  movementDrillSave: { key: "PageUp", ctrl: false, alt: false, shift: false },
+  movementDrillReturn: { key: "PageDown", ctrl: false, alt: false, shift: false },
   quickAccess: {
     key: "CapsLock",
     ctrl: false,
@@ -486,6 +490,8 @@ function findHotkeyConflictLabel(
     ["movementRace", "Movement Race"],
     ["movementReplay", "Movement Replay"],
     ["movementRetry", "Movement Retry"],
+    ["movementDrillSave", "Drill Save Position"],
+    ["movementDrillReturn", "Drill Return"],
   ] as const) {
     if (target.group !== group && hotkeysEqual(settings[group], candidate)) {
       return runtimeUiText(label, language);
@@ -7276,6 +7282,38 @@ function App() {
               })}
             </div>
           ))}
+
+          <div className="hotkey-category hotkey-actions-category">
+            <h3>{runtimeUiText("MOVEMENT / FREESTYLE", language)}</h3>
+            {([
+              ["Drill Save Position", "movementDrillSave", hotkeySettings.movementDrillSave],
+              ["Drill Return", "movementDrillReturn", hotkeySettings.movementDrillReturn],
+            ] as const).map(([label, group, hotkey]) => {
+              const target: HotkeyTarget = { group };
+              const capturing = isHotkeyTarget(capturingHotkey, target);
+              return (
+                <div className="hotkey-action-item" key={group}>
+                  <div className={`hotkey-row ${capturing ? "capturing" : ""}`}>
+                    <span>{runtimeUiText(label, language)}</span>
+                    <HotkeyKeys hotkey={hotkey} capturing={capturing} />
+                    <button
+                      type="button"
+                      disabled={hotkeySettingsSaving}
+                      onClick={() => {
+                        setHotkeyMessage(null);
+                        setCapturingHotkey(capturing ? null : target);
+                      }}
+                    >
+                      {capturing ? uiText("Cancel", language) : runtimeUiText("Change", language)}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <p className="hotkey-text-key-note">
+              {runtimeUiText("Freestyle drill: save where you stand, then return to repeat the same movement.", language)}
+            </p>
+          </div>
 
           <div className="hotkey-category hotkey-actions-category">
             <h3>{uiText("ACTIONS", language)}</h3>
