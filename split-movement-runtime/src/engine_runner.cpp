@@ -45,10 +45,36 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
       "-dedicated -nodedicatedconsole -novconsole -dev -insecure "
       "-allow_no_lobby_connect -playtest "
       "+tv_citadel_auto_record 0 +spec_replay_enable 0 +tv_enable 0 "
-      "+citadel_upload_replay_enabled 0";
+      "+citadel_upload_replay_enabled 0 "
+      // Hyperline/Modlock-style clean practice world. These disable the
+      // systems that would populate Midtown, without enabling hero_testing
+      // or touching the player's normal pawn spawn flow.
+      "+sv_hibernate_when_empty 0 "
+      "+citadel_solo_bot_match 0 "
+      "+citadel_koth_enabled 0 "
+      "+citadel_trooper_spawn_enabled 0 "
+      "+citadel_neutral_spawn_enabled 0 "
+      "+citadel_powerup_spawn_enabled 0 "
+      "+citadel_pickup_spawner_enabled 0 "
+      "+citadel_breakable_prop_breakable_enabled 0 "
+      "+citadel_spawn_practice_bots 0 "
+      "+citadel_start_players_on_zipline 0";
   command += " +hostport " + std::to_string(launch.port);
   command += " +ip 127.0.0.1";
   command += " +map " + launch.map;
+
+  // These are stock Deadlock Testing Tools commands. They run after the map
+  // command, removing map-authored units that already exist even though their
+  // future spawners are disabled above.
+  command +=
+      " +citadel_force_kill troopers"
+      " +citadel_force_kill neutrals"
+      " +citadel_force_kill breakables"
+      " +citadel_force_kill healing_snacks"
+      " +citadel_force_kill guardians"
+      " +citadel_force_kill walkers"
+      " +citadel_force_kill base_guardians"
+      " +citadel_force_kill shrines";
   command += " -game \"" + (base_dir / "citadel").string() + "\"";
   if (!launch.extra_args.empty()) {
     command += " " + launch.extra_args;
