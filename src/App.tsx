@@ -5631,60 +5631,15 @@ function App() {
             <div className="movement-runtime-badge"><StatusDot tone={movementStatus ? "ok" : "off"} /><span>{movementStatus ? `v${movementStatus.version}` : runtimeUiText("OFFLINE", language)}</span></div>
           </div>
 
-          <div className="movement-control-grid">
-            <button className={movementStatus?.recording ? "movement-action danger" : "movement-action primary"} disabled={!movementStatus || movementBusy !== null} onClick={() => void runMovementCommand("recordtoggle")}><strong>{movementStatus?.recording ? runtimeUiText("Stop recording", language) : runtimeUiText("Record route", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRecord)}</kbd></button>
-            <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("race")}><strong>{runtimeUiText("Race", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRace)}</kbd></button>
-            <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("replay")}><strong>{runtimeUiText("Replay", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementReplay)}</kbd></button>
-            <button className="movement-action" disabled={!movementStatus?.hasRoute || movementBusy !== null} onClick={() => void runMovementCommand("retry")}><strong>{runtimeUiText("Retry", language)}</strong><kbd>{formatHotkey(hotkeySettings.movementRetry)}</kbd></button>
-          </div>
-
           <div className="movement-display-card">
             <div className="movement-display-heading">
               <div>
-                <p className="label">{runtimeUiText("PRACTICE", language)}</p>
-                <h2>{runtimeUiText("Training assists", language)}</h2>
+                <p className="label">{runtimeUiText("IN-GAME CONTROL", language)}</p>
+                <h2>{runtimeUiText("Panorama controls", language)}</h2>
               </div>
-              <span>{movementStatus?.playerConnected ? runtimeUiText("Applied to your hero", language) : runtimeUiText("Waiting for player", language)}</span>
+              <span>{movementStatus?.playerConnected ? runtimeUiText("Available in Deadlock", language) : runtimeUiText("Waiting for player", language)}</span>
             </div>
-            <div className="movement-display-toggles">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={movementStatus?.practiceInfiniteStamina ?? false}
-                  disabled={!movementStatus || movementBusy !== null}
-                  onChange={(event) => void runMovementCommand(
-                    `practice stamina ${event.target.checked ? "on" : "off"}`,
-                  )}
-                />
-                <span>{runtimeUiText("Infinite stamina", language)}</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={movementStatus?.practiceNoCooldowns ?? false}
-                  disabled={!movementStatus || movementBusy !== null}
-                  onChange={(event) => void runMovementCommand(
-                    `practice cooldowns ${event.target.checked ? "on" : "off"}`,
-                  )}
-                />
-                <span>{runtimeUiText("No cooldown", language)}</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={movementStatus?.practiceInfiniteAmmo ?? false}
-                  disabled={!movementStatus || movementBusy !== null}
-                  onChange={(event) => void runMovementCommand(
-                    `practice ammo ${event.target.checked ? "on" : "off"}`,
-                  )}
-                />
-                <span>{runtimeUiText("Infinite ammo", language)}</span>
-              </label>
-              <label title={runtimeUiText("Coming next: disable lane waves after world load.", language)}>
-                <input type="checkbox" checked={false} disabled />
-                <span>{runtimeUiText("Disable troopers", language)} · {runtimeUiText("Coming next", language)}</span>
-              </label>
-            </div>
+            <p className="movement-display-note">{runtimeUiText("Record, retry, replay, race and practice assists are controlled from the Movement Lab Panorama inside Deadlock.", language)}</p>
           </div>
 
           <div className="movement-display-card">
