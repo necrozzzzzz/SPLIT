@@ -228,7 +228,12 @@ std::vector<MovementCue> ConsolidateMovementCues(
       absorb(i, "Slide", 16, 8);
       absorb(i, "Ground dash", 24, 4);
     } else if (cues[i].label == "Superglide") {
-      absorb(i, "Mantle", 16, 8);
+      // Superglide is the most specific mantle-exit technique in this
+      // sequence. Hide the broader mantle/slide labels that describe the
+      // same transition so world text never stacks on the same movement.
+      absorb(i, "Mantle slide", 16, 8);
+      absorb(i, "Mantle", 64, 8);
+      absorb(i, "Slide", 16, 8);
     } else if (cues[i].label == "Short hop") {
       // Short hop is the more specific composed technique: a valid dash
       // cancel followed by the quick takeoff. Do not also show its generic
