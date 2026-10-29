@@ -1412,7 +1412,6 @@ int main(int argc, char** argv) {
   split::movement::MovementRecorder recorder;
   split::movement::MovementRecorder race_run_recorder;
   std::atomic<int> human_slot{-1};
-  std::string human_name;
   bool pawn_announced = false;
   bool practice_souls_granted = false;
   int pre_spawn_cleanup_passes_remaining = 0;
@@ -1911,21 +1910,14 @@ int main(int argc, char** argv) {
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
             }
 
-            // Deadlock overwrites citadel_player_starting_gold during its real
-            // spawn flow. Target the connected human explicitly once the pawn
-            // exists; this is the stock Deadlock Testing Tools command for
-            // granting gold to one named player.
-            if (!practice_souls_granted && !human_name.empty()) {
-              std::string souls_error;
-              const std::string command =
-                  "citadel_give_player_gold \"" + human_name + "\" 999400";
-              if (split::movement::RunServerCommand(command, souls_error)) {
+            if (!practice_souls_granted) {
+              std::string setup_error;
+              if (pawn_probe.GrantPracticeSouls(slot, 999400, setup_error)) {
                 practice_souls_granted = true;
-                std::cout << "[SPLIT][Practice] targeted practice soul grant sent to "
-                          << human_name << "\n";
-              } else if (!souls_error.empty()) {
-                std::cout << "[SPLIT][Practice] soul grant unavailable: "
-                          << souls_error << "\n";
+                std::cout << "[SPLIT][Practice] player setup applied\n";
+              } else if (!setup_error.empty()) {
+                std::cout << "[SPLIT][Practice] player setup unavailable: "
+                          << setup_error << "\n";
               }
             }
 
@@ -2560,7 +2552,6 @@ int main(int argc, char** argv) {
             PrintClient("client fully connected", client);
             if (!client.is_bot) {
               human_slot.store(client.slot, std::memory_order_relaxed);
-              human_name = client.name;
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
                         << "; attaching pawn probe.\n";
@@ -2575,7 +2566,6 @@ int main(int argc, char** argv) {
             }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
-              human_name.clear();
               pawn_announced = false;
               practice_souls_granted = false;
               pre_spawn_cleanup_passes_remaining = 0;
