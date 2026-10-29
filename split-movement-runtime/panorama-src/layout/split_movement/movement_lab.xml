@@ -1,63 +1,38 @@
 <root>
-<Panel id="SplitMovementRoot"
-           hittest="true"
-           style="width: 390px; height: 560px; horizontal-align: right; vertical-align: center; margin-right: 28px; flow-children: down; padding: 18px; background-color: #101418ee; border: 1px solid #63717d88; border-radius: 8px;">
-        <Panel style="width: 100%; height: 54px; flow-children: right;">
-            <Panel style="flow-children: down; width: fill-parent-flow(1);">
-                <Label text="SPLIT" style="font-size: 15px; color: #91a4b5; font-weight: bold;" />
-                <Label text="Movement Lab" style="font-size: 28px; color: white; font-weight: bold;" />
+    <Panel id="SplitHudRoot"
+           hittest="false"
+           hittestchildren="false"
+           style="width: 100%; height: 100%;">
+
+        <Panel id="SplitRouteHud"
+               hittest="false"
+               style="horizontal-align: center; vertical-align: top; margin-top: 44px; width: 430px; flow-children: down; padding: 10px 16px 12px 16px; background-color: #0d1217dd; border: 1px solid #8ea0aa44; border-radius: 4px;">
+            <Panel style="width: 100%; height: 22px;">
+                <Label id="SplitHudStatus"
+                       text="MOVEMENT LAB"
+                       style="horizontal-align: center; font-size: 14px; font-weight: bold; letter-spacing: 1.2px; color: #dce6ec;" />
+                <Label id="SplitHudRec"
+                       text="● REC"
+                       style="visibility: collapse; horizontal-align: right; font-size: 13px; font-weight: bold; color: #ff6a63;" />
             </Panel>
-            <Button id="SplitCollapseButton" hittest="true" onactivate="SplitMovement.toggleCollapsed()"
-                    style="width: 44px; height: 38px; horizontal-align: right; background-color: #26313a; border-radius: 4px;">
-                <Label id="SplitCollapseGlyph" text="—" style="horizontal-align: center; vertical-align: center; font-size: 22px; color: white;" />
-            </Button>
+
+            <Label id="SplitHudTimer"
+                   text="00:00.000"
+                   style="visibility: collapse; horizontal-align: center; margin-top: 2px; font-size: 34px; font-weight: bold; color: white;" />
+
+            <Panel style="horizontal-align: center; flow-children: right; margin-top: 2px;">
+                <Label id="SplitHudPb"
+                       text="PB  --:--.---"
+                       style="visibility: collapse; font-size: 13px; color: #98a9b3; margin-right: 20px;" />
+                <Label id="SplitHudSplit"
+                       text=""
+                       style="visibility: collapse; font-size: 13px; color: #98a9b3;" />
+            </Panel>
         </Panel>
 
-        <Panel id="SplitMovementBody" style="width: 100%; flow-children: down;">
-            <Label text="ROUTE" style="margin-top: 16px; font-size: 13px; color: #8f9ca6; font-weight: bold;" />
-
-            <Panel style="width: 100%; flow-children: right; margin-top: 8px;">
-                <Button hittest="true" class="SplitPrimary" onactivate="SplitMovement.command('split_record')"
-                        style="width: 170px; height: 48px; margin-right: 10px; background-color: #dce5ec; border-radius: 5px;">
-                    <Label text="Record / Stop" style="horizontal-align: center; vertical-align: center; color: #11171b; font-size: 17px; font-weight: bold;" />
-                </Button>
-                <Button hittest="true" onactivate="SplitMovement.command('split_race')"
-                        style="width: 170px; height: 48px; background-color: #28343d; border-radius: 5px;">
-                    <Label text="Race" style="horizontal-align: center; vertical-align: center; color: white; font-size: 17px; font-weight: bold;" />
-                </Button>
-            </Panel>
-
-            <Panel style="width: 100%; flow-children: right; margin-top: 10px;">
-                <Button hittest="true" onactivate="SplitMovement.command('split_replay')"
-                        style="width: 170px; height: 48px; margin-right: 10px; background-color: #28343d; border-radius: 5px;">
-                    <Label text="Replay" style="horizontal-align: center; vertical-align: center; color: white; font-size: 17px; font-weight: bold;" />
-                </Button>
-                <Button hittest="true" onactivate="SplitMovement.command('split_retry')"
-                        style="width: 170px; height: 48px; background-color: #28343d; border-radius: 5px;">
-                    <Label text="Retry" style="horizontal-align: center; vertical-align: center; color: white; font-size: 17px; font-weight: bold;" />
-                </Button>
-            </Panel>
-
-            <Label text="PRACTICE" style="margin-top: 24px; font-size: 13px; color: #8f9ca6; font-weight: bold;" />
-
-            <ToggleButton id="SplitStamina" hittest="true" onactivate="SplitMovement.toggle('stamina')"
-                          style="width: 100%; height: 48px; margin-top: 8px; background-color: #202a31; border-radius: 5px;">
-                <Label text="Infinite stamina" style="margin-left: 15px; vertical-align: center; color: white; font-size: 17px;" />
-            </ToggleButton>
-
-            <ToggleButton id="SplitCooldowns" hittest="true" onactivate="SplitMovement.toggle('cooldowns')"
-                          style="width: 100%; height: 48px; margin-top: 8px; background-color: #202a31; border-radius: 5px;">
-                <Label text="No cooldown" style="margin-left: 15px; vertical-align: center; color: white; font-size: 17px;" />
-            </ToggleButton>
-
-            <ToggleButton id="SplitAmmo" hittest="true" onactivate="SplitMovement.toggle('ammo')"
-                          style="width: 100%; height: 48px; margin-top: 8px; background-color: #202a31; border-radius: 5px;">
-                <Label text="Infinite ammo" style="margin-left: 15px; vertical-align: center; color: white; font-size: 17px;" />
-            </ToggleButton>
-
-            <Panel style="width: 100%; height: 1px; margin-top: 20px; background-color: #55626b55;" />
-            <Label id="SplitMovementStatus" text="Connected to SPLIT runtime"
-                   style="margin-top: 13px; font-size: 13px; color: #8fa2b0;" />
-        </Panel>
+        <Label id="SplitHudAssists"
+               text=""
+               hittest="false"
+               style="visibility: collapse; horizontal-align: center; vertical-align: bottom; margin-bottom: 145px; padding: 5px 10px; background-color: #0d1217bb; font-size: 12px; font-weight: bold; color: #aebdc5;" />
     </Panel>
 </root>
