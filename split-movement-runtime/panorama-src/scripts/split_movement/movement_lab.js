@@ -9,7 +9,6 @@
     var parts = null;
     var lastTitle = "";
     var acked = false;
-    var hotkeysBound = false;
     var lastDrillGeneration = -1;
     var feedbackToken = 0;
 
@@ -52,18 +51,6 @@
         if (panel) panel.style.visibility = visible ? "visible" : "collapse";
     }
 
-    function bindFreestyleHotkeys() {
-        if (hotkeysBound) return;
-        try {
-            $.DispatchEvent("CitadelConCommand", "bind ] split_drill_save");
-            $.DispatchEvent("CitadelConCommand", "bind [ split_drill_return");
-            hotkeysBound = true;
-            $.Msg("[SPLIT][Panorama] Freestyle drill hotkeys bound: ] save / [ return");
-        } catch (error) {
-            $.Msg("[SPLIT][Panorama] could not bind drill hotkeys: " + error);
-        }
-    }
-
     function showFeedback(text) {
         var feedback = label("SplitHudFeedback");
         if (!feedback) return;
@@ -87,11 +74,8 @@
         if (next.active !== true) {
             if (root && root.IsValid()) root.DeleteAsync(0);
             root = null;
-            hotkeysBound = false;
             return;
         }
-
-        bindFreestyleHotkeys();
 
         var hud = ensureHud();
         if (!hud) return;
@@ -103,7 +87,6 @@
         var rec = label("SplitHudRec");
         var assists = label("SplitHudAssists");
         var delta = label("SplitHudDelta");
-        var drillHint = label("SplitHudDrillHint");
 
         var phase = next.racePhase || "idle";
         var racing = phase === "armed" || phase === "running" || phase === "finished";
@@ -147,12 +130,6 @@
         if (next.ammo) activeAssists.push("∞ AMMO");
         if (assists) assists.text = activeAssists.join("   ·   ");
         setVisible(assists, activeAssists.length > 0);
-
-        if (drillHint) {
-            drillHint.text = next.hasDrillPosition
-                ? "] SAVE    [ RETURN"
-                : "] SAVE POSITION";
-        }
 
         var generation = Number(next.drillGeneration || 0);
         if (generation !== lastDrillGeneration) {
