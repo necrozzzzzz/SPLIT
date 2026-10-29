@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cwctype>
 #include <chrono>
 #include <fstream>
 #include <map>
