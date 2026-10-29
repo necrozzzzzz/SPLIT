@@ -230,6 +230,11 @@ std::vector<MovementCue> ConsolidateMovementCues(
     } else if (cues[i].label == "Superglide") {
       absorb(i, "Mantle", 16, 8);
     } else if (cues[i].label == "Short hop") {
+      // Short hop is the more specific composed technique: a valid dash
+      // cancel followed by the quick takeoff. Do not also show its generic
+      // Slide hop / Dash cancel / primitive labels on the same sequence.
+      absorb(i, "Slide hop", 16, 8);
+      absorb(i, "Dash cancel", 24, 8);
       absorb(i, "Slide", 16, 8);
       absorb(i, "Ground dash", 24, 4);
     } else if (cues[i].label == "Instant air dash" ||
