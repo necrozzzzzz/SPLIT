@@ -120,6 +120,37 @@ void* ResolveInterface(const wchar_t* module_name, const char* version, std::str
 #endif
 }
 
+
+#if defined(_WIN32)
+void* FindMappedPattern(HMODULE module, const std::vector<int>& pattern) {
+  if (!module || pattern.empty()) return nullptr;
+
+  const auto* base = reinterpret_cast<const std::uint8_t*>(module);
+  const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+  if (dos->e_magic != IMAGE_DOS_SIGNATURE) return nullptr;
+
+  const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+      base + dos->e_lfanew);
+  if (nt->Signature != IMAGE_NT_SIGNATURE) return nullptr;
+
+  const std::size_t image_size = nt->OptionalHeader.SizeOfImage;
+  if (image_size < pattern.size()) return nullptr;
+
+  for (std::size_t i = 0; i <= image_size - pattern.size(); ++i) {
+    bool matches = true;
+    for (std::size_t j = 0; j < pattern.size(); ++j) {
+      if (pattern[j] >= 0 &&
+          base[i + j] != static_cast<std::uint8_t>(pattern[j])) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return const_cast<std::uint8_t*>(base + i);
+  }
+  return nullptr;
+}
+#endif
+
 template <typename T>
 T Read(const void* base, std::size_t offset) {
   T value{};
@@ -558,6 +589,7 @@ struct PawnProbe::Impl {
 
   void* schema_system = nullptr;
   void* resource_service = nullptr;
+  void* modify_currency = nullptr;
   std::optional<Layout> layout;
 };
 
@@ -641,6 +673,101 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
   }
 
   return sample;
+}
+
+
+bool PawnProbe::GrantPracticeSouls(int slot, std::int32_t amount,
+                                  std::string& error) {
+  error.clear();
+#if !defined(_WIN32)
+  (void)slot;
+  (void)amount;
+  error = "native currency mutation requires Windows";
+  return false;
+#else
+  if (slot < 0 || slot >= 64) {
+    error = "player slot is outside the Deadlock slot range";
+    return false;
+  }
+  if (amount <= 0) {
+    error = "practice soul grant must be positive";
+    return false;
+  }
+
+  if (!impl_->layout) {
+    auto resolved = ResolveLayout(impl_->schema_system);
+    if (!resolved) {
+      error = resolved.error();
+      return false;
+    }
+    impl_->layout = *resolved;
+  }
+
+  if (!impl_->resource_service) {
+    impl_->resource_service =
+        ResolveInterface(L"engine2.dll", "GameResourceServiceServerV001", error);
+    if (!impl_->resource_service) return false;
+  }
+
+  void* entity_system =
+      Read<void*>(impl_->resource_service, kResourceServiceEntitySystemOffset);
+  if (!entity_system) {
+    error = "CGameResourceService has no live entity system";
+    return false;
+  }
+
+  auto* entity_list =
+      static_cast<unsigned char*>(entity_system) + kEntityListOffset;
+  auto* controller_identity =
+      IdentityOfIndex(entity_list, static_cast<std::uint32_t>(slot + 1));
+  void* controller = InstanceOf(controller_identity);
+  if (!controller) {
+    error = "controller is not live";
+    return false;
+  }
+
+  const auto pawn_handle =
+      Read<std::uint32_t>(controller, impl_->layout->pawn_handle);
+  auto* pawn_identity = IdentityOfHandle(entity_list, pawn_handle);
+  void* pawn = InstanceOf(pawn_identity);
+  if (!pawn) {
+    error = "pawn is not live";
+    return false;
+  }
+
+  if (!impl_->modify_currency) {
+    HMODULE server = GetModuleHandleW(L"server.dll");
+    if (!server) {
+      error = "server.dll is not mapped";
+      return false;
+    }
+
+    // Modlock data/game_signatures.txtpb:
+    // pawn.modify-currency / CCitadelPlayerPawn::ModifyCurrency
+    const std::vector<int> signature = {
+        0x44, 0x89, 0x44, 0x24, -1,
+        0x55, 0x56, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57,
+        0x48, 0x8D, 0xAC, 0x24, -1, -1, -1, -1,
+        0x48, 0x81, 0xEC, -1, -1, -1, -1,
+        0x4C, 0x8B, 0xF1, 0x4D, 0x63, 0xF9,
+    };
+    impl_->modify_currency = FindMappedPattern(server, signature);
+    if (!impl_->modify_currency) {
+      error = "CCitadelPlayerPawn::ModifyCurrency signature was not found";
+      return false;
+    }
+  }
+
+  using ModifyCurrency = void (*)(void*, std::uint32_t, std::int32_t,
+                                  std::uint32_t, std::uint8_t, std::uint8_t,
+                                  std::uint8_t, void*, void*);
+  auto modify = reinterpret_cast<ModifyCurrency>(impl_->modify_currency);
+
+  // Match Modlock PrepareStartingSouls exactly:
+  // EGold=0, ECheats=7, silent=true, forceGain=true, spendOnly=false.
+  modify(pawn, 0, amount, 7, 1, 1, 0, nullptr, nullptr);
+  return true;
+#endif
 }
 
 
