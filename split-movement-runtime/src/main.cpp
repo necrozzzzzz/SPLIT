@@ -586,6 +586,9 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
   constexpr std::uint64_t kDashCancelTicks = 24;
   constexpr std::uint64_t kSuperglideSettleTicks = 2;
   constexpr std::uint64_t kZiplineDashTicks = 90;
+  constexpr std::uint64_t kAirTraverseRecentTicks = 1024;
+  constexpr std::uint64_t kAirTraverseMinTicks = 6;
+  constexpr double kAirTraverseMinDisplacement = 64.0;
   constexpr double kCornerBoostMinVerticalSpeed = 600.0;
   constexpr double kEdgeBoostMinEntrySpeed = 150.0;
   constexpr std::uint64_t kEdgeBoostMaxDetachedTicks = 16;
@@ -1008,6 +1011,71 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
         diag("Short hop", anchor, detail.str());
       }
       continue;
+    }
+
+    if (anchor.kind == "touchdown") {
+      // Exact Hyperline airTraverse rule: pair this touchdown with the latest
+      // takeoff within 1024 ticks, unless another touchdown interrupted the
+      // interval. It is sole=true, so suppress it when a more specific
+      // technique was already recognized during the same airborne section.
+      const auto from =
+          anchor.frame > kAirTraverseRecentTicks
+              ? anchor.frame - kAirTraverseRecentTicks
+              : 0;
+      const auto* takeoff =
+          LastPrimitive(primitives, "takeoff", from, anchor.frame);
+
+      bool interrupted = false;
+      if (takeoff) {
+        interrupted = AnyPrimitive(
+            primitives, "touchdown", takeoff->frame + 1,
+            anchor.frame > 0 ? anchor.frame - 1 : anchor.frame);
+      }
+
+      if (takeoff && !interrupted) {
+        const auto duration = anchor.frame - takeoff->frame;
+        const double dx =
+            static_cast<double>(anchor.position[0]) - takeoff->position[0];
+        const double dy =
+            static_cast<double>(anchor.position[1]) - takeoff->position[1];
+        const double displacement = std::hypot(dx, dy);
+
+        const bool occupied = std::any_of(
+            recognized.begin(), recognized.end(),
+            [&](const MovementCue& cue) {
+              return cue.frame >= takeoff->frame &&
+                     cue.frame <= anchor.frame;
+            });
+
+        const bool ok =
+            duration >= kAirTraverseMinTicks &&
+            displacement >= kAirTraverseMinDisplacement &&
+            !occupied;
+
+        if (diagnostics) {
+          std::ostringstream detail;
+          detail << "accepted=" << (ok ? "yes" : "no")
+                 << " takeoff=yes"
+                 << " duration=" << duration
+                 << "/" << kAirTraverseMinTicks
+                 << " displacement=" << std::fixed << std::setprecision(1)
+                 << displacement << "/" << kAirTraverseMinDisplacement
+                 << " interrupted=no"
+                 << " soleOccupied=" << (occupied ? "yes" : "no");
+          diag("Air traverse", anchor, detail.str());
+        }
+
+        if (ok) {
+          add("Air traverse", anchor);
+          continue;
+        }
+      } else if (diagnostics) {
+        std::ostringstream detail;
+        detail << "accepted=no"
+               << " takeoff=" << (takeoff ? "yes" : "no")
+               << " interrupted=" << (interrupted ? "yes" : "no");
+        diag("Air traverse", anchor, detail.str());
+      }
     }
 
     if (anchor.kind == "airDash") {
