@@ -353,7 +353,13 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
     else continue;
 
     if (const auto* tick = RecordedAt(ticks, cue.frame)) {
-      out.push_back({kind, cue.frame, cue.position, tick->pawn.velocity});
+      auto velocity = tick->pawn.velocity;
+      if (kind == "groundDash" && HorizontalSpeed(velocity) <= 1.0) {
+        if (const auto nearby = UsableHorizontalVelocityNear(ticks, cue.frame, 4)) {
+          velocity = *nearby;
+        }
+      }
+      out.push_back({kind, cue.frame, cue.position, velocity});
     }
   }
 
@@ -1134,6 +1140,8 @@ int main(int argc, char** argv) {
   std::optional<std::uint64_t> last_slide_start_frame;
   std::optional<std::uint64_t> last_slide_end_frame;
   std::optional<std::uint64_t> last_jump_press_frame;
+  std::optional<std::uint64_t> techdiag_dash_window_until;
+  std::uint64_t techdiag_last_input_held = 0;
 
   const auto route_directory =
       std::filesystem::current_path() / "routes";
@@ -1568,6 +1576,10 @@ int main(int argc, char** argv) {
                         << sample->position[1] << ", "
                         << sample->position[2] << ")\n";
 
+              if (movement.execution == split::movement::MovementExecution::kGroundDash &&
+                  technique_diagnostics.load(std::memory_order_acquire)) {
+                techdiag_dash_window_until = frame + 40;
+              }
               if (movement.execution == split::movement::MovementExecution::kSlide) {
                 native_slide_started = true;
               }
@@ -1594,6 +1606,8 @@ int main(int argc, char** argv) {
               last_slide_start_frame.reset();
               last_slide_end_frame.reset();
               last_jump_press_frame.reset();
+              techdiag_dash_window_until.reset();
+              techdiag_last_input_held = 0;
             }
 
             {
@@ -1648,6 +1662,34 @@ int main(int argc, char** argv) {
                 previous_movement_sample->mantling && !sample->mantling;
             if (mantle_ended) {
               last_mantle_end_frame = frame;
+            }
+
+            if (technique_diagnostics.load(std::memory_order_acquire) &&
+                techdiag_dash_window_until &&
+                frame <= *techdiag_dash_window_until) {
+              const std::uint64_t held = latest_input ? latest_input->held : 0;
+              const std::uint64_t pressed = latest_input ? latest_input->pressed : 0;
+              const bool held_changed = held != techdiag_last_input_held;
+              const bool state_changed =
+                  !previous_movement_sample ||
+                  previous_movement_sample->grounded != sample->grounded ||
+                  previous_movement_sample->sliding != sample->sliding;
+              if (held_changed || pressed != 0 || state_changed ||
+                  native_slide_started) {
+                std::cout << "[SPLIT][TechDiag][DashFrame] frame=" << frame
+                          << " grounded=" << (sample->grounded ? "1" : "0")
+                          << " sliding=" << (sample->sliding ? "1" : "0")
+                          << " nativeSlide=" << (native_slide_started ? "1" : "0")
+                          << " speed=" << std::fixed << std::setprecision(1)
+                          << HorizontalSpeed(sample->velocity)
+                          << " held=0x" << std::hex << held
+                          << " pressed=0x" << pressed << std::dec
+                          << "\n";
+              }
+              techdiag_last_input_held = held;
+              if (frame == *techdiag_dash_window_until) {
+                techdiag_dash_window_until.reset();
+              }
             }
 
             const bool slide_started =
