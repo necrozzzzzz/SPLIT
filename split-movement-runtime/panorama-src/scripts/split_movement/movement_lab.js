@@ -9,6 +9,8 @@
     var parts = null;
     var lastTitle = "";
     var acked = false;
+    var boundMenuKey = false;
+    var menuOpen = false;
     var toggles = {
         stamina: false,
         cooldowns: false,
@@ -115,9 +117,38 @@
             var json = unpack(text);
             if (json === null) throw new Error("invalid packed bytes");
             var next = JSON.parse(json);
-            show(next.active === true);
+            var active = next.active === true;
+            var nextMenuOpen = active && next.menuOpen === true;
+
+            if (active && !boundMenuKey) {
+                command("bind F6 split_menu_toggle");
+                boundMenuKey = true;
+                $.Msg("[SPLIT][Panorama] F6 bound to Movement Lab menu");
+            }
+
+            if (!active) {
+                if (menuOpen) command("gameui_hide");
+                menuOpen = false;
+                show(false);
+                return;
+            }
+
+            if (nextMenuOpen !== menuOpen) {
+                menuOpen = nextMenuOpen;
+                if (menuOpen) {
+                    command("gameui_activate");
+                    show(true);
+                } else {
+                    show(false);
+                    command("gameui_hide");
+                }
+            } else {
+                show(menuOpen);
+            }
         } catch (error) {
             $.Msg("[SPLIT][Panorama] invalid bridge frame: " + error);
+            if (menuOpen) command("gameui_hide");
+            menuOpen = false;
             show(false);
         }
     }
