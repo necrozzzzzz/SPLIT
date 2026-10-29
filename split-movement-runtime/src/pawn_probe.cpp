@@ -376,6 +376,7 @@ struct Layout {
   std::size_t hero_id = 0;
   std::size_t render_mode = 0;
   std::size_t render_color = 0;
+  std::optional<std::size_t> currencies;
 
   // Optional native movement-ability capability. These offsets mirror
   // Modlock's PawnObserver and remain absent when the running schema differs.
@@ -441,6 +442,12 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
     }
     *field.target = *offset;
   }
+
+  // Modlock PawnObserver reads the three native wallet currencies directly
+  // from CCitadelPlayerPawn::m_nCurrencies. Keep this optional so a schema
+  // change degrades the practice economy capability without breaking movement.
+  layout.currencies = OptionalFieldOffset(
+      schema_system, "CCitadelPlayerPawn", "m_nCurrencies", sizeof(std::int32_t) * 3);
 
   // Optional movement ability state. The handle vector is inline in the
   // pawn's ability component, matching Modlock's current PawnObserver.
@@ -664,6 +671,13 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
       Read<std::uint32_t>(pawn, impl_->layout->ground_entity);
   sample.ground_entity_handle = ground;
   sample.grounded = ground != kInvalidEHandleIndex;
+  if (impl_->layout->currencies) {
+    std::array<std::int32_t, 3> currencies{};
+    std::memcpy(currencies.data(),
+                static_cast<const std::byte*>(pawn) + *impl_->layout->currencies,
+                sizeof(currencies));
+    sample.currencies = currencies;
+  }
 
   ApplyMovementAbilityState(*impl_->layout, entity_list, pawn, pawn_handle, sample);
 
@@ -676,12 +690,12 @@ std::optional<PawnSample> PawnProbe::Observe(int slot, std::string& error) {
 }
 
 
-bool PawnProbe::GrantPracticeSouls(int slot, std::int32_t amount,
+bool PawnProbe::GrantPracticeSouls(int slot, std::int32_t target_souls,
                                   std::string& error) {
   error.clear();
 #if !defined(_WIN32)
   (void)slot;
-  (void)amount;
+  (void)target_souls;
   error = "native currency mutation requires Windows";
   return false;
 #else
@@ -689,19 +703,22 @@ bool PawnProbe::GrantPracticeSouls(int slot, std::int32_t amount,
     error = "player slot is outside the Deadlock slot range";
     return false;
   }
-  if (amount <= 0) {
-    error = "practice soul grant must be positive";
+  if (target_souls < 0) {
+    error = "practice soul target must be non-negative";
     return false;
   }
 
-  if (!impl_->layout) {
-    auto resolved = ResolveLayout(impl_->schema_system);
-    if (!resolved) {
-      error = resolved.error();
-      return false;
-    }
-    impl_->layout = *resolved;
+  // Match Modlock PrepareStartingSouls: observe the native wallet first and
+  // grant only the shortfall. A successful native call is not enough; the
+  // post-call wallet must actually retain the requested balance.
+  std::string observe_error;
+  auto before = Observe(slot, observe_error);
+  if (!before || !before->currencies) {
+    error = observe_error.empty() ? "native starting economy unavailable" : observe_error;
+    return false;
   }
+  const std::int32_t balance = (*before->currencies)[0];
+  if (balance >= target_souls) return true;
 
   if (!impl_->resource_service) {
     impl_->resource_service =
@@ -722,12 +739,16 @@ bool PawnProbe::GrantPracticeSouls(int slot, std::int32_t amount,
       IdentityOfIndex(entity_list, static_cast<std::uint32_t>(slot + 1));
   void* controller = InstanceOf(controller_identity);
   if (!controller) {
-    error = "controller is not live";
+    error = "player controller is not live";
     return false;
   }
 
   const auto pawn_handle =
       Read<std::uint32_t>(controller, impl_->layout->pawn_handle);
+  if (pawn_handle != before->pawn_handle) {
+    error = "starting pawn ownership changed";
+    return false;
+  }
   auto* pawn_identity = IdentityOfHandle(entity_list, pawn_handle);
   void* pawn = InstanceOf(pawn_identity);
   if (!pawn) {
@@ -763,13 +784,22 @@ bool PawnProbe::GrantPracticeSouls(int slot, std::int32_t amount,
                                   std::uint8_t, void*, void*);
   auto modify = reinterpret_cast<ModifyCurrency>(impl_->modify_currency);
 
-  // Match Modlock PrepareStartingSouls exactly:
-  // EGold=0, ECheats=7, silent=true, forceGain=true, spendOnly=false.
-  modify(pawn, 0, amount, 7, 1, 1, 0, nullptr, nullptr);
+  // Modlock PrepareStartingSouls exactly: EGold=0, ECheats=7,
+  // silent=true, forceGain=true, spendOnly=false.
+  modify(pawn, 0, target_souls - balance, 7, 1, 1, 0, nullptr, nullptr);
+
+  std::string after_error;
+  auto after = Observe(slot, after_error);
+  if (!after || after->pawn_handle != before->pawn_handle || !after->currencies ||
+      (*after->currencies)[0] < target_souls) {
+    error = after_error.empty()
+                ? "native starting grant did not retain pawn and balance"
+                : after_error;
+    return false;
+  }
   return true;
 #endif
 }
-
 
 bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
   error.clear();
