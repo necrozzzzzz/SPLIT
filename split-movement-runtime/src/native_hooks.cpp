@@ -213,13 +213,30 @@ void DisconnectThunk(void* self, int slot, int reason, const char* name, std::ui
 
 std::string ReadClientCommand(void* args) {
   if (!args) return {};
+
   const auto* base = static_cast<const unsigned char*>(args);
-  const auto count = *reinterpret_cast<const std::int32_t*>(base + 8);
-  const auto data = *reinterpret_cast<const char* const*>(base + 16);
-  if (count <= 0 || count > 512 || !data) return {};
+  std::int32_t count = 0;
+  const char* data = nullptr;
+  SIZE_T read = 0;
+
+  if (!ReadProcessMemory(GetCurrentProcess(), base + 8, &count, sizeof(count), &read) ||
+      read != sizeof(count) || count <= 0 || count > 512) {
+    return {};
+  }
+  if (!ReadProcessMemory(GetCurrentProcess(), base + 16, &data, sizeof(data), &read) ||
+      read != sizeof(data) || !data) {
+    return {};
+  }
+
   std::array<char, 512> text{};
-  std::memcpy(text.data(), data, static_cast<std::size_t>(count));
-  const auto* nul = static_cast<const char*>(std::memchr(text.data(), '\0', static_cast<std::size_t>(count)));
+  if (!ReadProcessMemory(GetCurrentProcess(), data, text.data(),
+                         static_cast<SIZE_T>(count), &read) ||
+      read != static_cast<SIZE_T>(count)) {
+    return {};
+  }
+
+  const auto* nul = static_cast<const char*>(
+      std::memchr(text.data(), '\0', static_cast<std::size_t>(count)));
   if (!nul) return {};
   return std::string(text.data(), static_cast<std::size_t>(nul - text.data()));
 }
