@@ -2,5 +2,9 @@
     <scripts>
         <include src="file://{resources}/scripts/split_movement/movement_lab.js" />
     </scripts>
-    <Panel hittest="false" style="width: 2px; height: 2px; opacity: 0;" />
+    <Panel hittest="false">
+        <HTML id="SplitBridgeState"
+              hittest="false"
+              style="width: 2px; height: 2px; opacity: 0;" />
+    </Panel>
 </root>
