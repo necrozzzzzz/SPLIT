@@ -1413,8 +1413,8 @@ int main(int argc, char** argv) {
   split::movement::MovementRecorder race_run_recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
-  int clean_world_passes_remaining = 0;
-  std::uint64_t next_clean_world_frame = 0;
+  int pre_spawn_cleanup_passes_remaining = 0;
+  std::uint64_t next_pre_spawn_cleanup_frame = 0;
   bool steering_was_active = false;
   int pb_ghost_slot = -1;
   std::atomic<bool> replay_requested{false};
@@ -1842,6 +1842,40 @@ int main(int argc, char** argv) {
   std::string hook_error;
   if (!hooks.Install(
           [&](std::uint64_t frame) {
+            if (pre_spawn_cleanup_passes_remaining > 0 &&
+                frame >= next_pre_spawn_cleanup_frame &&
+                !pawn_announced) {
+              static constexpr std::array<std::string_view, 8> kMapNpcClasses{
+                  "npc_trooper",
+                  "npc_trooper_neutral",
+                  "npc_neutral",
+                  "npc_super_neutral",
+                  "npc_neutral_sinners_sacrifice",
+                  "npc_trooper_boss",
+                  "npc_boss_tier1",
+                  "npc_boss_tier2",
+              };
+
+              bool all_ok = true;
+              for (const auto class_name : kMapNpcClasses) {
+                std::string command_error;
+                const std::string command =
+                    std::string("ent_remove_all ") + std::string(class_name);
+                if (!split::movement::RunServerCommand(command, command_error)) {
+                  all_ok = false;
+                  std::cout << "[SPLIT][World] silent remove failed: "
+                            << command << " (" << command_error << ")\n";
+                }
+              }
+              if (all_ok) {
+                std::cout << "[SPLIT][World] silent pre-spawn cleanup pass "
+                          << (4 - pre_spawn_cleanup_passes_remaining)
+                          << "/3 complete\n";
+              }
+              --pre_spawn_cleanup_passes_remaining;
+              next_pre_spawn_cleanup_frame = frame + 30;
+            }
+
             if (frame == 1 || frame % 300 == 0) {
               std::cout << "[SPLIT][Movement] server frame " << frame << "\n";
             }
@@ -1875,40 +1909,6 @@ int main(int argc, char** argv) {
               next_clean_world_frame = frame;
               std::cout << "[SPLIT][Movement] pawn attached slot=" << sample->slot
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
-            }
-
-            // Hyperline-style world cleanup: only after a real player pawn is
-            // alive. Run two bounded passes so late map initialization cannot
-            // repopulate lane/objective NPCs. Training interactables such as
-            // breakables and healing snacks are intentionally preserved.
-            if (clean_world_passes_remaining > 0 &&
-                frame >= next_clean_world_frame) {
-              static constexpr std::array<std::string_view, 6> kCleanWorldTypes{
-                  "troopers",
-                  "neutrals",
-                  "guardians",
-                  "walkers",
-                  "base_guardians",
-                  "shrines",
-              };
-              bool all_ok = true;
-              for (const auto type : kCleanWorldTypes) {
-                std::string command_error;
-                const std::string command =
-                    std::string("citadel_force_kill ") + std::string(type);
-                if (!split::movement::RunServerCommand(command, command_error)) {
-                  all_ok = false;
-                  std::cout << "[SPLIT][World] cleanup command failed: "
-                            << command << " (" << command_error << ")\n";
-                }
-              }
-              if (all_ok) {
-                std::cout << "[SPLIT][World] clean world pass "
-                          << (3 - clean_world_passes_remaining)
-                          << "/2 complete\n";
-              }
-              --clean_world_passes_remaining;
-              next_clean_world_frame = frame + 120;
             }
 
             // Practice mutations deliberately run only after Observe() proved
@@ -2521,12 +2521,18 @@ int main(int argc, char** argv) {
             visual_renderer.Clear();
             current_map.assign(map);
             pawn_announced = false;
-            clean_world_passes_remaining = 0;
-            next_clean_world_frame = 0;
+            pre_spawn_cleanup_passes_remaining = 0;
+            next_pre_spawn_cleanup_frame = 0;
             std::cout << "[SPLIT][Movement] loading world: " << map << "\n";
           },
-          [](std::string_view map) {
-            std::cout << "[SPLIT][Movement] world ready: " << map << "\n";
+          [&](std::string_view map) {
+            // Hyperline removes map NPC entities directly rather than killing
+            // them. Arm a few silent ent_remove_all passes while no player pawn
+            // exists yet, so objectives never visibly explode on entry.
+            pre_spawn_cleanup_passes_remaining = 3;
+            next_pre_spawn_cleanup_frame = hooks.FrameCount() + 1;
+            std::cout << "[SPLIT][Movement] world ready: " << map
+                      << " (silent cleanup armed)\n";
           },
           [](const split::movement::ClientConnection& client) {
             PrintClient("client entered", client);
@@ -2550,8 +2556,8 @@ int main(int argc, char** argv) {
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
               pawn_announced = false;
-              clean_world_passes_remaining = 0;
-              next_clean_world_frame = 0;
+              pre_spawn_cleanup_passes_remaining = 0;
+              next_pre_spawn_cleanup_frame = 0;
             }
           },
           hook_error)) {
