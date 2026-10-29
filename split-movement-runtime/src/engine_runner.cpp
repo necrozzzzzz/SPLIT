@@ -109,10 +109,10 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
       "+citadel_spawn_practice_bots 0 "
       "+citadel_start_players_on_zipline 0 "
       // Freestyle-style practice economy: keep Deadlock's native shop UI,
-      // allow purchases anywhere, and start with enough souls to freely buy
+      // allow purchases anywhere, and start with an effectively unlimited soul budget to freely buy
       // items for movement testing without a separate SPLIT item browser.
       "+citadel_allow_purchasing_anywhere 1 "
-      "+citadel_player_starting_gold 50000";
+      "+citadel_player_starting_gold 1000000";
   command += " +hostport " + std::to_string(launch.port);
   command += " +ip 127.0.0.1";
   command += " +map " + launch.map;
