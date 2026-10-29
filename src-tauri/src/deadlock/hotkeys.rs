@@ -68,8 +68,6 @@ enum UserHotkeyAction {
     MovementRace,
     MovementReplay,
     MovementRetry,
-    MovementDrillSave,
-    MovementDrillReturn,
 }
 
 #[derive(Debug, Clone)]
@@ -247,8 +245,6 @@ pub struct HotkeySettings {
     pub movement_race: Hotkey,
     pub movement_replay: Hotkey,
     pub movement_retry: Hotkey,
-    pub movement_drill_save: Hotkey,
-    pub movement_drill_return: Hotkey,
     pub quick_access: Hotkey,
 }
 
@@ -269,8 +265,6 @@ impl Default for HotkeySettings {
             movement_race: Hotkey::new("T", true, false, true),
             movement_replay: Hotkey::new("P", true, false, true),
             movement_retry: Hotkey::new("Y", true, false, true),
-            movement_drill_save: Hotkey::new("PageUp", false, false, false),
-            movement_drill_return: Hotkey::new("PageDown", false, false, false),
             quick_access: Hotkey::new("CapsLock", false, false, false),
         }
     }
@@ -318,8 +312,6 @@ impl HotkeySettings {
             &self.movement_race,
             &self.movement_replay,
             &self.movement_retry,
-            &self.movement_drill_save,
-            &self.movement_drill_return,
             &self.quick_access,
         ] {
             validate_hotkey(hotkey, false)?;
@@ -354,8 +346,6 @@ impl HotkeySettings {
             ("Movement Race", &self.movement_race),
             ("Movement Replay", &self.movement_replay),
             ("Movement Retry", &self.movement_retry),
-            ("Drill Save Position", &self.movement_drill_save),
-            ("Drill Return", &self.movement_drill_return),
             ("Quick Access", &self.quick_access),
         ]);
         bindings
@@ -374,8 +364,6 @@ impl HotkeySettings {
             &mut self.movement_race,
             &mut self.movement_replay,
             &mut self.movement_retry,
-            &mut self.movement_drill_save,
-            &mut self.movement_drill_return,
             &mut self.quick_access,
         ]);
         bindings
@@ -426,14 +414,6 @@ impl HotkeySettings {
             })
             .or_else(|| {
                 (self.movement_retry == *hotkey).then_some(UserHotkeyAction::MovementRetry)
-            })
-            .or_else(|| {
-                (self.movement_drill_save == *hotkey)
-                    .then_some(UserHotkeyAction::MovementDrillSave)
-            })
-            .or_else(|| {
-                (self.movement_drill_return == *hotkey)
-                    .then_some(UserHotkeyAction::MovementDrillReturn)
             })
     }
 }
@@ -3235,25 +3215,6 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
                             eprintln!("[SPLIT][Movement] {error}");
                         }
                     }
-
-                    HotkeyAction::User {
-                        action: UserHotkeyAction::MovementDrillSave,
-                        hotkey,
-                    } => {
-                        println!("[SPLIT][Movement] Drill save: {}", hotkey.display());
-                        if let Err(error) = send_movement_command("drill save") {
-                            eprintln!("[SPLIT][Movement] {error}");
-                        }
-                    }
-
-                    HotkeyAction::User {
-                        action: UserHotkeyAction::MovementDrillReturn,
-                        hotkey,
-                    } => {
-                        println!("[SPLIT][Movement] Drill return: {}", hotkey.display());
-                        if let Err(error) = send_movement_command("drill return") {
-                            eprintln!("[SPLIT][Movement] {error}");
-                        }
                     }
 
                     HotkeyAction::Shutdown => {
@@ -3306,8 +3267,6 @@ fn start_inner(app: AppHandle) -> Result<(), String> {
             println!("[SPLIT]   Movement Race = Ctrl+Shift+T");
             println!("[SPLIT]   Movement Replay = Ctrl+Shift+P");
             println!("[SPLIT]   Movement Retry = Ctrl+Shift+Y");
-            println!("[SPLIT]   Freestyle Drill Save = PageUp");
-            println!("[SPLIT]   Freestyle Drill Return = PageDown");
 
             let mut message = MSG::default();
 
