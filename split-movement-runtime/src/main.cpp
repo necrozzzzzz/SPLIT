@@ -1403,32 +1403,43 @@ int main(int argc, char** argv) {
   // the lifetime of this Movement Lab session. This avoids a permanent VPK.
   const auto panorama_package =
       std::filesystem::current_path() / "panorama-package" / "pak01_dir.vpk";
+  bool panorama_build_ready = std::filesystem::exists(panorama_package);
 #if defined(_WIN32)
   {
     const auto panorama_script =
         std::filesystem::current_path() / "scripts" / "build-panorama.ps1";
     if (std::filesystem::exists(panorama_script)) {
+      // Never reuse an older package after a failed build: it makes a broken
+      // current build look mounted successfully.
+      std::error_code remove_error;
+      std::filesystem::remove(panorama_package, remove_error);
+
       const std::string command =
           "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" +
           panorama_script.string() + "\" -DeadlockDir \"" +
           game_dir.string() + "\"";
       std::cout << "[SPLIT][Panorama] preparing current-game UI package...\n";
       const int panorama_build = std::system(command.c_str());
-      if (panorama_build != 0) {
+      panorama_build_ready =
+          panorama_build == 0 && std::filesystem::exists(panorama_package);
+      if (!panorama_build_ready) {
         std::cout << "[SPLIT][Panorama] package build failed with code "
-                  << panorama_build << "; server will continue without in-game UI\n";
+                  << panorama_build
+                  << "; skipping Panorama mount for this session\n";
       }
     }
   }
 #endif
 
   split::movement::PanoramaMount panorama_mount;
-  std::string panorama_mount_error;
-  if (panorama_mount.Mount(game_dir, panorama_package, panorama_mount_error)) {
-    std::cout << "[SPLIT][Panorama] temporary Movement Lab package mounted\n";
-  } else {
-    std::cout << "[SPLIT][Panorama] mount unavailable: "
-              << panorama_mount_error << "\n";
+  if (panorama_build_ready) {
+    std::string panorama_mount_error;
+    if (panorama_mount.Mount(game_dir, panorama_package, panorama_mount_error)) {
+      std::cout << "[SPLIT][Panorama] temporary Movement Lab package mounted\n";
+    } else {
+      std::cout << "[SPLIT][Panorama] mount unavailable: "
+                << panorama_mount_error << "\n";
+    }
   }
 
   split::movement::EngineBridge bridge;
