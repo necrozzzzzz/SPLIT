@@ -11,12 +11,55 @@
     var acked = false;
     var lastDrillGeneration = -1;
     var feedbackToken = 0;
+    var hiddenGamePanels = [];
 
     function findGameHud(panel) {
         for (var at = panel; at; at = at.GetParent()) {
             if (at.paneltype === "CitadelHud") return at;
         }
         return null;
+    }
+
+    function walkPanels(panel, visit) {
+        if (!panel || !panel.IsValid()) return;
+        visit(panel);
+        var children = panel.Children();
+        for (var i = 0; i < children.length; i++) {
+            walkPanels(children[i], visit);
+        }
+    }
+
+    function setNativeMatchHudHidden(hidden) {
+        var game = findGameHud(context);
+        if (!game) return;
+
+        if (hidden) {
+            if (hiddenGamePanels.length > 0) return;
+            walkPanels(game, function (panel) {
+                // Freestyle keeps gameplay HUD (crosshair, minimap, abilities)
+                // but removes the stock match/team top bar.
+                if (panel.paneltype === "CitadelHudTopBar") {
+                    hiddenGamePanels.push({
+                        panel: panel,
+                        visibility: panel.style.visibility
+                    });
+                    panel.style.visibility = "collapse";
+                    $.Msg("[SPLIT][Panorama] stock CitadelHudTopBar hidden");
+                }
+            });
+            return;
+        }
+
+        for (var i = 0; i < hiddenGamePanels.length; i++) {
+            var item = hiddenGamePanels[i];
+            if (item.panel && item.panel.IsValid()) {
+                item.panel.style.visibility = item.visibility || "visible";
+            }
+        }
+        if (hiddenGamePanels.length > 0) {
+            $.Msg("[SPLIT][Panorama] stock CitadelHudTopBar restored");
+        }
+        hiddenGamePanels = [];
     }
 
     function ensureHud() {
@@ -72,11 +115,13 @@
 
     function applyState(next) {
         if (next.active !== true) {
+            setNativeMatchHudHidden(false);
             if (root && root.IsValid()) root.DeleteAsync(0);
             root = null;
             return;
         }
 
+        setNativeMatchHudHidden(true);
         ensureHud();
 
         var phase = next.racePhase || "idle";
