@@ -1478,6 +1478,11 @@ int main(int argc, char** argv) {
   std::atomic<bool> practice_infinite_stamina{false};
   std::atomic<bool> practice_no_cooldowns{false};
   std::atomic<bool> practice_infinite_ammo{false};
+  std::optional<std::array<float, 3>> drill_position;
+  std::optional<std::array<float, 3>> drill_angles;
+  std::atomic<std::uint64_t> drill_feedback_generation{0};
+  std::string drill_feedback;
+  std::mutex drill_mutex;
   std::string last_pawn_error;
   std::string last_practice_stamina_error;
   std::string last_practice_cooldown_error;
@@ -1762,6 +1767,53 @@ int main(int argc, char** argv) {
         std::cout << "[SPLIT][Practice] infinite ammo="
                   << (on ? "on" : "off") << "\n";
       }
+    } else if (command == "drill save") {
+      const int slot = human_slot.load(std::memory_order_relaxed);
+      std::string error;
+      const auto pawn = pawn_probe.Observe(slot, error);
+      const auto input = input_capture.Latest(slot);
+      if (!pawn || !input) {
+        std::cout << "[SPLIT][Drill] save unavailable"
+                  << (error.empty() ? "" : ": ") << error << "\n";
+      } else {
+        {
+          std::scoped_lock lock(drill_mutex);
+          drill_position = pawn->position;
+          drill_angles = input->angles;
+          drill_feedback = "saved";
+          drill_feedback_generation.fetch_add(1, std::memory_order_acq_rel);
+        }
+        std::cout << "[SPLIT][Drill] position saved\n";
+      }
+    } else if (command == "drill return") {
+      const int slot = human_slot.load(std::memory_order_relaxed);
+      std::optional<std::array<float, 3>> position;
+      std::optional<std::array<float, 3>> angles;
+      {
+        std::scoped_lock lock(drill_mutex);
+        position = drill_position;
+        angles = drill_angles;
+      }
+      if (!position || !angles) {
+        {
+          std::scoped_lock lock(drill_mutex);
+          drill_feedback = "empty";
+          drill_feedback_generation.fetch_add(1, std::memory_order_acq_rel);
+        }
+        std::cout << "[SPLIT][Drill] no saved position\n";
+      } else {
+        std::string error;
+        if (!pawn_probe.Teleport(slot, *position, *angles, error)) {
+          std::cout << "[SPLIT][Drill] return failed: " << error << "\n";
+        } else {
+          {
+            std::scoped_lock lock(drill_mutex);
+            drill_feedback = "returned";
+            drill_feedback_generation.fetch_add(1, std::memory_order_acq_rel);
+          }
+          std::cout << "[SPLIT][Drill] returned to saved position\n";
+        }
+      }
     } else if (command == "record") {
       {
         std::scoped_lock lock(route_cues_mutex);
@@ -1965,6 +2017,16 @@ int main(int argc, char** argv) {
               const auto hud_stats = recorder.Stats();
               const auto hud_race = race_timer.Status();
               const auto hud_course = race_timer.Course();
+              std::string drill_state;
+              bool has_drill_position = false;
+              std::uint64_t drill_generation = 0;
+              {
+                std::scoped_lock lock(drill_mutex);
+                drill_state = drill_feedback;
+                has_drill_position = drill_position.has_value();
+                drill_generation =
+                    drill_feedback_generation.load(std::memory_order_acquire);
+              }
               std::ostringstream hud;
               hud << "{"
                   << "\"active\":true,"
@@ -1973,11 +2035,16 @@ int main(int argc, char** argv) {
                   << "\"racePhase\":\"" << RacePhaseName(hud_race.phase) << "\","
                   << "\"elapsedSeconds\":" << hud_race.elapsed_seconds << ","
                   << "\"personalBestSeconds\":" << JsonNumberOrNull(hud_race.personal_best_seconds) << ","
+                  << "\"lastDeltaSeconds\":" << JsonNumberOrNull(hud_race.last_delta_seconds) << ","
+                  << "\"lastWasPb\":" << (hud_race.last_was_pb ? "true" : "false") << ","
                   << "\"nextCheckpoint\":" << hud_race.next_checkpoint << ","
                   << "\"checkpointCount\":" << (hud_course ? hud_course->checkpoints.size() : 0) << ","
                   << "\"stamina\":" << (practice_infinite_stamina.load(std::memory_order_acquire) ? "true" : "false") << ","
                   << "\"cooldowns\":" << (practice_no_cooldowns.load(std::memory_order_acquire) ? "true" : "false") << ","
-                  << "\"ammo\":" << (practice_infinite_ammo.load(std::memory_order_acquire) ? "true" : "false")
+                  << "\"ammo\":" << (practice_infinite_ammo.load(std::memory_order_acquire) ? "true" : "false") << ","
+                  << "\"hasDrillPosition\":" << (has_drill_position ? "true" : "false") << ","
+                  << "\"drillFeedback\":\"" << drill_state << "\","
+                  << "\"drillGeneration\":" << drill_generation
                   << "}";
               panorama_bridge.SetState(hud.str());
             }
@@ -2650,6 +2717,13 @@ int main(int argc, char** argv) {
           [&](std::string_view map) {
             visual_renderer.Clear();
             current_map.assign(map);
+            {
+              std::scoped_lock lock(drill_mutex);
+              drill_position.reset();
+              drill_angles.reset();
+              drill_feedback.clear();
+              drill_feedback_generation.fetch_add(1, std::memory_order_acq_rel);
+            }
             pawn_announced = false;
             practice_shop_ready = false;
             pre_spawn_cleanup_passes_remaining = 0;
@@ -2687,6 +2761,13 @@ int main(int argc, char** argv) {
             }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
+              {
+                std::scoped_lock lock(drill_mutex);
+                drill_position.reset();
+                drill_angles.reset();
+                drill_feedback.clear();
+                drill_feedback_generation.fetch_add(1, std::memory_order_acq_rel);
+              }
               panorama_bridge.SetState(R"({"active":false})");
               pawn_announced = false;
               practice_shop_ready = false;
@@ -2707,6 +2788,8 @@ int main(int argc, char** argv) {
             if (command == "split_retry") return dispatch("retry");
             if (command == "split_replay") return dispatch("replay");
             if (command == "split_race") return dispatch("race");
+            if (command == "split_drill_save") return dispatch("drill save");
+            if (command == "split_drill_return") return dispatch("drill return");
             if (command == "split_practice_stamina 1") return dispatch("practice stamina on");
             if (command == "split_practice_stamina 0") return dispatch("practice stamina off");
             if (command == "split_practice_cooldowns 1") return dispatch("practice cooldowns on");
