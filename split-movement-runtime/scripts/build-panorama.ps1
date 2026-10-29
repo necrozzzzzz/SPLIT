@@ -65,6 +65,20 @@ if ($hudText.Contains("<scripts>")) {
     throw "hud.xml has no root/scripts element"
 }
 
+# Diagnostic: inject a static panel directly into hud.xml. This bypasses
+# boot.js/BLoadLayout entirely, so visibility proves the active HUD override
+# itself is being loaded by the client.
+$diagPanel = @'
+<Panel id="SplitPanoramaDiagnostic" hittest="false" style="width: 520px; height: 90px; horizontal-align: center; vertical-align: top; margin-top: 120px; background-color: #101820ee; border: 3px solid #ffffff; z-index: 9999;">
+    <Label text="SPLIT PANORAMA OK" style="horizontal-align: center; vertical-align: center; font-size: 34px; font-weight: bold; color: white;" />
+</Panel>
+'@
+
+$hudClose = "</CitadelHud>"
+if ($hudText.Contains($hudClose) -and -not $hudText.Contains("SplitPanoramaDiagnostic")) {
+    $hudText = $hudText.Replace($hudClose, $diagPanel + [Environment]::NewLine + $hudClose)
+}
+
 Set-Content -Path $HudLayout -Value $hudText -Encoding UTF8
 
 Write-Host "[SPLIT][Panorama] hiding stock Hero Testing tools for Movement Lab..."
