@@ -421,6 +421,42 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
                           return a.frame == b.frame && a.kind == b.kind;
                         }),
             out.end());
+
+  // The native Slide event/state can surface 1-2 server frames after the
+  // actual crouch press that starts the dash cancel. Hyperline evaluates the
+  // slide-start sample itself, so preserve its 500 u/s threshold by anchoring
+  // a confirmed native slide back to the immediately preceding crouch press.
+  for (auto& primitive : out) {
+    if (primitive.kind != "slideStart") continue;
+
+    const auto from = primitive.frame > 2 ? primitive.frame - 2 : 0;
+    const TechniquePrimitive* crouch = nullptr;
+    for (auto it = out.rbegin(); it != out.rend(); ++it) {
+      if (it->kind != "crouchPress" || it->frame < from ||
+          it->frame >= primitive.frame) {
+        continue;
+      }
+      crouch = &*it;
+      break;
+    }
+    if (!crouch) continue;
+
+    primitive.frame = crouch->frame;
+    primitive.position = crouch->position;
+    primitive.velocity = crouch->velocity;
+  }
+
+  std::sort(out.begin(), out.end(),
+            [](const TechniquePrimitive& a, const TechniquePrimitive& b) {
+              if (a.frame != b.frame) return a.frame < b.frame;
+              return a.kind < b.kind;
+            });
+  out.erase(std::unique(out.begin(), out.end(),
+                        [](const TechniquePrimitive& a,
+                           const TechniquePrimitive& b) {
+                          return a.frame == b.frame && a.kind == b.kind;
+                        }),
+            out.end());
   return out;
 }
 
@@ -539,7 +575,8 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
     if (diagnostics) {
       std::ostringstream detail;
       detail << "accepted=" << (ok ? "yes" : "no")
-             << " groundDash=" << (dash ? "yes" : "no");
+             << " groundDash=" << (dash ? "yes" : "no")
+             << " effectiveSlideFrame=" << slide.frame;
       if (!dash && nearest_dash) {
         detail << " nearestGroundDashDelta="
                << (slide.frame - nearest_dash->frame);
