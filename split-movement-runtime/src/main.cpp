@@ -363,9 +363,17 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
     }
   }
 
+  constexpr std::uint64_t kCrouchButton = std::uint64_t{1} << 2;
+  constexpr std::uint64_t kCrouchToggleButton = std::uint64_t{1} << 59;
+
   for (std::size_t i = 1; i < ticks.size(); ++i) {
     const auto& before = ticks[i - 1];
     const auto& now = ticks[i];
+
+    if (now.input &&
+        (now.input->pressed & (kCrouchButton | kCrouchToggleButton)) != 0) {
+      push("crouchPress", now);
+    }
 
     if (before.pawn.grounded && !now.pawn.grounded) push("takeoff", now);
     if (!before.pawn.grounded && now.pawn.grounded) push("touchdown", now);
@@ -475,6 +483,7 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
   if (diagnostics) {
     for (const auto& primitive : primitives) {
       if (primitive.kind == "groundDash" ||
+          primitive.kind == "crouchPress" ||
           primitive.kind == "slideStart" ||
           primitive.kind == "takeoff" ||
           primitive.kind == "touchdown") {
@@ -536,6 +545,20 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
                << (slide.frame - nearest_dash->frame);
       }
       if (dash_delta) detail << " dashToSlide=" << *dash_delta << "/24";
+
+      const auto* crouch_press =
+          LastPrimitive(primitives, "crouchPress",
+                        dash ? dash->frame : from, slide.frame);
+      detail << " crouchPress=" << (crouch_press ? "yes" : "no");
+      if (crouch_press) {
+        detail << " dashToCrouch="
+               << (dash ? crouch_press->frame - dash->frame : 0)
+               << " crouchToSlide="
+               << (slide.frame - crouch_press->frame)
+               << " crouchSpeed=" << std::fixed << std::setprecision(1)
+               << HorizontalSpeed(crouch_press->velocity);
+      }
+
       detail << " takeoffBetween=" << (airborne ? "yes" : "no")
              << " dashSpeed=";
       if (dash_speed) detail << std::fixed << std::setprecision(1) << *dash_speed;
@@ -790,6 +813,9 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
                          anchor.frame);
         const bool cancelled = dash_cancelled(*slide);
         const auto slide_delta = anchor.frame - slide->frame;
+        const auto crouch_from = slide->frame > 16 ? slide->frame - 16 : 0;
+        const auto* crouch_press =
+            LastPrimitive(primitives, "crouchPress", crouch_from, slide->frame);
 
         if (!touchdown && cancelled) {
           add("Short hop", anchor);
@@ -811,7 +837,14 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
                  << " slideToTakeoff=" << slide_delta << "/8"
                  << " touchdownBetween=" << (touchdown ? "yes" : "no")
                  << " dashCancel=" << (cancelled ? "yes" : "no")
-                 << " takeoffSpeed=" << std::fixed << std::setprecision(1)
+                 << " crouchPress=" << (crouch_press ? "yes" : "no");
+          if (crouch_press) {
+            detail << " crouchToSlide="
+                   << (slide->frame - crouch_press->frame)
+                   << " crouchSpeed=" << std::fixed << std::setprecision(1)
+                   << HorizontalSpeed(crouch_press->velocity);
+          }
+          detail << " takeoffSpeed=" << std::fixed << std::setprecision(1)
                  << HorizontalSpeed(anchor.velocity);
           diag("Short hop", anchor, detail.str());
         }
