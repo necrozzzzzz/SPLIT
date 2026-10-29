@@ -75,7 +75,27 @@ $patterns = @(
   "superglide",
   "mantleWallJump",
   "mantleStrafe",
-  "edgeBoost"
+  "edgeBoost",
+  "CitadelHudTopBar",
+  "citadel_hud_top_bar",
+  "citadel_hud_visible",
+  "visibility\s*[:=]",
+  "collapse",
+  "opacity\s*[:=]\s*0",
+  "FindChildTraverse",
+  "paneltype",
+  "style\.visibility",
+  "SetHasClass",
+  "AddClass",
+  "RemoveClass",
+  "gScoreboardOpen",
+  "hud_top",
+  "top.?bar",
+  "scoreboard",
+  "match.?time",
+  "TeamInfo",
+  "GameTime",
+  "HudTopBar"
 )
 
 $seen = @{}
