@@ -375,7 +375,10 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
     const auto& before = ticks[i - 1];
     const auto& now = ticks[i];
 
-    if (now.input &&
+    const bool fresh_input =
+        now.input &&
+        (!before.input || before.input->sequence != now.input->sequence);
+    if (fresh_input &&
         (now.input->pressed & (kCrouchButton | kCrouchToggleButton)) != 0) {
       push("crouchPress", now);
     }
@@ -1743,6 +1746,8 @@ int main(int argc, char** argv) {
                 techdiag_dash_window_until &&
                 frame <= *techdiag_dash_window_until) {
               const std::uint64_t held = latest_input ? latest_input->held : 0;
+              const std::uint64_t changed = latest_input ? latest_input->changed : 0;
+              const std::uint64_t scroll = latest_input ? latest_input->scroll : 0;
               const std::uint64_t pressed = latest_input ? latest_input->pressed : 0;
               const bool held_changed = held != techdiag_last_input_held;
               const bool state_changed =
@@ -1758,6 +1763,8 @@ int main(int argc, char** argv) {
                           << " speed=" << std::fixed << std::setprecision(1)
                           << HorizontalSpeed(sample->velocity)
                           << " held=0x" << std::hex << held
+                          << " changed=0x" << changed
+                          << " scroll=0x" << scroll
                           << " pressed=0x" << pressed << std::dec
                           << "\n";
               }
