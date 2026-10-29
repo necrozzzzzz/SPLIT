@@ -23,6 +23,7 @@ class NativeHooks {
   using WorldCallback = std::function<void(std::string_view)>;
   using ClientCallback = std::function<void(const ClientConnection&)>;
   using DisconnectCallback = std::function<void(int, std::uint64_t)>;
+  using CommandCallback = std::function<bool(int, std::string_view)>;
 
   NativeHooks();
   ~NativeHooks();
@@ -32,7 +33,8 @@ class NativeHooks {
 
   bool Install(FrameCallback on_frame, WorldCallback before_world, WorldCallback after_world,
                ClientCallback on_connected, ClientCallback on_fully_connected,
-               DisconnectCallback on_disconnecting, std::string& error);
+               DisconnectCallback on_disconnecting, CommandCallback on_command,
+               std::string& error);
   bool Installed() const;
   std::uint64_t FrameCount() const;
   std::optional<ClientConnection> ClientAt(int slot) const;
