@@ -228,9 +228,10 @@ std::vector<MovementCue> ConsolidateMovementCues(
       absorb(i, "Slide", 16, 8);
       absorb(i, "Ground dash", 24, 4);
     } else if (cues[i].label == "Superglide") {
-      // Superglide is the most specific mantle-exit technique in this
-      // sequence. Hide the broader mantle/slide labels that describe the
-      // same transition so world text never stacks on the same movement.
+      // Superglide already contains the mantle-exit slide/takeoff sequence.
+      // Prefer it over the generic Slide hop and broader mantle/slide labels
+      // so the same movement never renders stacked world text.
+      absorb(i, "Slide hop", 16, 12);
       absorb(i, "Mantle slide", 16, 8);
       absorb(i, "Mantle", 64, 8);
       absorb(i, "Slide", 16, 8);
