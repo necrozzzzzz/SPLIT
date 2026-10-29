@@ -8,6 +8,7 @@
 #include "split_movement/movement_events.h"
 #include "split_movement/native_visual_renderer.h"
 #include "split_movement/pawn_probe.h"
+#include "split_movement/panorama_mount.h"
 #include "split_movement/pb_route_store.h"
 #include "split_movement/recorder.h"
 #include "split_movement/race_timer.h"
@@ -1395,6 +1396,39 @@ int main(int argc, char** argv) {
     const auto status = split::movement::ProbeRuntime(game_dir);
     split::movement::PrintStatus(status);
     return status.engine_bridge_ready ? 0 : 1;
+  }
+
+  // Modlock-style client content mount. Build the Panorama package from the
+  // player's installed Deadlock resources, then mount it ahead of citadel for
+  // the lifetime of this Movement Lab session. This avoids a permanent VPK.
+  const auto panorama_package =
+      std::filesystem::current_path() / "panorama-package" / "pak01_dir.vpk";
+#if defined(_WIN32)
+  {
+    const auto panorama_script =
+        std::filesystem::current_path() / "scripts" / "build-panorama.ps1";
+    if (std::filesystem::exists(panorama_script)) {
+      const std::string command =
+          "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" +
+          panorama_script.string() + "\" -DeadlockDir \"" +
+          game_dir.string() + "\"";
+      std::cout << "[SPLIT][Panorama] preparing current-game UI package...\n";
+      const int panorama_build = std::system(command.c_str());
+      if (panorama_build != 0) {
+        std::cout << "[SPLIT][Panorama] package build failed with code "
+                  << panorama_build << "; server will continue without in-game UI\n";
+      }
+    }
+  }
+#endif
+
+  split::movement::PanoramaMount panorama_mount;
+  std::string panorama_mount_error;
+  if (panorama_mount.Mount(game_dir, panorama_package, panorama_mount_error)) {
+    std::cout << "[SPLIT][Panorama] temporary Movement Lab package mounted\n";
+  } else {
+    std::cout << "[SPLIT][Panorama] mount unavailable: "
+              << panorama_mount_error << "\n";
   }
 
   split::movement::EngineBridge bridge;
