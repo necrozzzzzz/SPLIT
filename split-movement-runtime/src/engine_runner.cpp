@@ -45,7 +45,18 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
       "-dedicated -nodedicatedconsole -novconsole -dev -insecure "
       "-allow_no_lobby_connect -playtest "
       "+tv_citadel_auto_record 0 +spec_replay_enable 0 +tv_enable 0 "
-      "+citadel_upload_replay_enabled 0";
+      "+citadel_upload_replay_enabled 0 "
+      // Movement Lab is an isolated local practice server. Keep the real
+      // Deadlock map/shop, but remove the usual resource friction so movement
+      // and item-dependent techniques can be repeated immediately.
+      "+sv_cheats 1 "
+      "+citadel_hero_testing_enabled true "
+      "+citadel_hero_testing_infinite_money true "
+      "+citadel_allow_purchasing_anywhere true "
+      "+citadel_enable_fast_stamina "
+      "+citadel_enable_fast_cooldowns "
+      "+sv_infinite_ammo 1 "
+      "+citadel_trooper_spawn_enabled false";
   command += " +hostport " + std::to_string(launch.port);
   command += " +ip 127.0.0.1";
   command += " +map " + launch.map;
