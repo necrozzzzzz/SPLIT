@@ -55,8 +55,6 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
       "+citadel_trooper_spawn_enabled 0 "
       "+citadel_neutral_spawn_enabled 0 "
       "+citadel_powerup_spawn_enabled 0 "
-      "+citadel_pickup_spawner_enabled 0 "
-      "+citadel_breakable_prop_breakable_enabled 0 "
       "+citadel_spawn_practice_bots 0 "
       "+citadel_start_players_on_zipline 0";
   command += " +hostport " + std::to_string(launch.port);
@@ -64,13 +62,12 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
   command += " +map " + launch.map;
 
   // These are stock Deadlock Testing Tools commands. They run after the map
-  // command, removing map-authored units that already exist even though their
-  // future spawners are disabled above.
+  // command, removing lane/objective NPCs that already exist even though their
+  // future spawners are disabled above. Breakables and healing snacks are
+  // intentionally preserved because Movement Lab routes can train on them.
   command +=
       " +citadel_force_kill troopers"
       " +citadel_force_kill neutrals"
-      " +citadel_force_kill breakables"
-      " +citadel_force_kill healing_snacks"
       " +citadel_force_kill guardians"
       " +citadel_force_kill walkers"
       " +citadel_force_kill base_guardians"
