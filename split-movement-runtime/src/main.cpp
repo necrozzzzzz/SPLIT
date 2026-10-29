@@ -430,6 +430,50 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
                         }),
             out.end());
 
+  // A wheel-bound crouch/slide is delivered through the command scroll
+  // mask. On this Deadlock build it can cancel a dash without surfacing the
+  // native Slide event/state that keyboard crouch produces. When a real
+  // crouch press occurs during the same 24-tick Ground Dash window, treat that
+  // press as the slideStart anchor. The normal dash-cancel speed/takeoff rules
+  // still decide whether it qualifies as a technique.
+  {
+    std::vector<TechniquePrimitive> inferred;
+    for (const auto& primitive : out) {
+      if (primitive.kind != "crouchPress") continue;
+      const auto from = primitive.frame > 24 ? primitive.frame - 24 : 0;
+
+      const TechniquePrimitive* dash = nullptr;
+      bool native_slide_nearby = false;
+      for (auto it = out.rbegin(); it != out.rend(); ++it) {
+        if (it->frame > primitive.frame) continue;
+        if (it->frame < from) break;
+        if (it->kind == "groundDash" && !dash) dash = &*it;
+        if (it->kind == "slideStart" &&
+            primitive.frame >= it->frame &&
+            primitive.frame - it->frame <= 2) {
+          native_slide_nearby = true;
+        }
+      }
+
+      if (dash && !native_slide_nearby) {
+        inferred.push_back({"slideStart", primitive.frame,
+                            primitive.position, primitive.velocity});
+      }
+    }
+    out.insert(out.end(), inferred.begin(), inferred.end());
+    std::sort(out.begin(), out.end(),
+              [](const TechniquePrimitive& a, const TechniquePrimitive& b) {
+                if (a.frame != b.frame) return a.frame < b.frame;
+                return a.kind < b.kind;
+              });
+    out.erase(std::unique(out.begin(), out.end(),
+                          [](const TechniquePrimitive& a,
+                             const TechniquePrimitive& b) {
+                            return a.frame == b.frame && a.kind == b.kind;
+                          }),
+              out.end());
+  }
+
   // The native Slide event/state can surface 1-2 server frames after the
   // actual crouch press that starts the dash cancel. Hyperline evaluates the
   // slide-start sample itself, so preserve its 500 u/s threshold by anchoring
@@ -533,8 +577,15 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           primitive.kind == "touchdown") {
         std::cout << "[SPLIT][TechDiag][Primitive] frame="
                   << primitive.frame
-                  << " kind=" << primitive.kind
-                  << " speed=" << std::fixed << std::setprecision(1)
+                  << " kind=" << primitive.kind;
+        if (primitive.kind == "slideStart") {
+          const auto* same_crouch =
+              LastPrimitive(primitives, "crouchPress",
+                            primitive.frame, primitive.frame);
+          std::cout << " source="
+                    << (same_crouch ? "crouchPress" : "native");
+        }
+        std::cout << " speed=" << std::fixed << std::setprecision(1)
                   << HorizontalSpeed(primitive.velocity) << "\n";
       }
     }
