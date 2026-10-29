@@ -2039,6 +2039,13 @@ int main(int argc, char** argv) {
                   << "\"lastWasPb\":" << (hud_race.last_was_pb ? "true" : "false") << ","
                   << "\"nextCheckpoint\":" << hud_race.next_checkpoint << ","
                   << "\"checkpointCount\":" << (hud_course ? hud_course->checkpoints.size() : 0) << ","
+                  << "\"routeName\":\"" << (hud_course ? hud_course->name : std::string("Recorded Route")) << "\","
+                  << "\"difficulty\":\"" << (hud_course ? hud_course->difficulty : std::string("Unrated")) << "\","
+                  << "\"referenceSeconds\":"
+                  << (hud_course && hud_course->reference_seconds
+                          ? JsonNumberOrNull(hud_course->reference_seconds)
+                          : std::string("null"))
+                  << ","
                   << "\"stamina\":" << (practice_infinite_stamina.load(std::memory_order_acquire) ? "true" : "false") << ","
                   << "\"cooldowns\":" << (practice_no_cooldowns.load(std::memory_order_acquire) ? "true" : "false") << ","
                   << "\"ammo\":" << (practice_infinite_ammo.load(std::memory_order_acquire) ? "true" : "false") << ","
@@ -2439,6 +2446,10 @@ int main(int argc, char** argv) {
                 course.name = "Recorded Route";
                 course.difficulty = "Unrated";
                 course.hero_id = first->hero_id;
+                const auto reference_stats = recorder.Stats();
+                if (reference_stats.duration_seconds > 0.0) {
+                  course.reference_seconds = reference_stats.duration_seconds;
+                }
 
                 std::string race_error;
                 if (!race_timer.Configure(course, race_error)) {
