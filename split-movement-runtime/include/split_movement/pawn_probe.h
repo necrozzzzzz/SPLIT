@@ -17,6 +17,7 @@ struct PawnSample {
   std::array<float, 3> position{};
   std::array<float, 3> velocity{};
   bool grounded = false;
+  std::optional<std::array<std::int32_t, 3>> currencies;
 
   // Exact movement state read from the player's native movement abilities.
   bool sliding = false;
@@ -41,7 +42,7 @@ class PawnProbe {
   bool SetGhostVisual(int slot, bool ghost, std::string& error);
   bool RestorePracticeStamina(int slot, std::string& error);
   bool RefreshPracticeCooldowns(int slot, std::string& error);
-  bool GrantPracticeSouls(int slot, std::int32_t amount, std::string& error);
+  bool GrantPracticeSouls(int slot, std::int32_t target_souls, std::string& error);
   bool Teleport(int slot, const std::array<float, 3>& position,
                 const std::array<float, 3>& angles, std::string& error);
 
