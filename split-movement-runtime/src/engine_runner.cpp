@@ -11,6 +11,56 @@
 
 namespace split::movement {
 
+bool RunServerCommand(std::string_view command, std::string& error) {
+#if !defined(_WIN32)
+  (void)command;
+  error = "Source 2 server command bridge requires Windows";
+  return false;
+#else
+  error.clear();
+  if (command.empty()) {
+    error = "server command is empty";
+    return false;
+  }
+
+  HMODULE engine = GetModuleHandleW(L"engine2.dll");
+  if (!engine) {
+    error = "engine2.dll is not mapped";
+    return false;
+  }
+
+  using CreateInterfaceFn = void* (*)(const char*, int*);
+  const auto create_interface = reinterpret_cast<CreateInterfaceFn>(
+      GetProcAddress(engine, "CreateInterface"));
+  if (!create_interface) {
+    error = "engine2.dll does not export CreateInterface";
+    return false;
+  }
+
+  void* server = create_interface("Source2EngineToServer001", nullptr);
+  if (!server) {
+    error = "Source2EngineToServer001 is unavailable";
+    return false;
+  }
+
+  // Current Modlock game signatures identify CEngineServer::ServerCommand as
+  // virtual slot 45. Validate the table entry before calling it.
+  constexpr std::size_t kServerCommandSlot = 45;
+  auto** table = *static_cast<void***>(server);
+  if (!table || !table[kServerCommandSlot]) {
+    error = "IVEngineServer2::ServerCommand slot is unavailable";
+    return false;
+  }
+
+  std::string line(command);
+  if (line.empty() || line.back() != '\n') line.push_back('\n');
+  using ServerCommandFn = void (*)(void*, const char*);
+  reinterpret_cast<ServerCommandFn>(table[kServerCommandSlot])(
+      server, line.c_str());
+  return true;
+#endif
+}
+
 int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch& launch,
                        std::string& error) {
 #if !defined(_WIN32)
@@ -46,6 +96,7 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
       "-allow_no_lobby_connect -playtest "
       "+tv_citadel_auto_record 0 +spec_replay_enable 0 +tv_enable 0 "
       "+citadel_upload_replay_enabled 0 "
+      "+sv_cheats 1 "
       // Hyperline/Modlock-style clean practice world. These disable the
       // systems that would populate Midtown, without enabling hero_testing
       // or touching the player's normal pawn spawn flow.
