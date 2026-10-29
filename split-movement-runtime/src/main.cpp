@@ -1905,8 +1905,8 @@ int main(int argc, char** argv) {
             last_pawn_error.clear();
             if (!pawn_announced) {
               pawn_announced = true;
-              clean_world_passes_remaining = 2;
-              next_clean_world_frame = frame;
+              pre_spawn_cleanup_passes_remaining = 2;
+              next_pre_spawn_cleanup_frame = frame;
               std::cout << "[SPLIT][Movement] pawn attached slot=" << sample->slot
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
             }
