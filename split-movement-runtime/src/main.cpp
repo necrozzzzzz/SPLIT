@@ -594,7 +594,10 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
     for (const auto& primitive : primitives) {
       if (primitive.kind == "groundDash" ||
           primitive.kind == "crouchPress" ||
+          primitive.kind == "mantleStart" ||
+          primitive.kind == "mantleEnd" ||
           primitive.kind == "slideStart" ||
+          primitive.kind == "slideEnd" ||
           primitive.kind == "takeoff" ||
           primitive.kind == "touchdown") {
         std::cout << "[SPLIT][TechDiag][Primitive] frame="
@@ -797,7 +800,11 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           }
           if (diagnostics) {
             std::ostringstream detail;
-            detail << "mantleStart=yes"
+            detail << "accepted=" << (ok ? "yes" : "no")
+                   << " mantleStart=yes"
+                   << " mantleToSlide=" << (anchor.frame - mantle->frame)
+                   << "/112"
+                   << " settle=" << kMantleStrafeTicks
                    << " mantleVelocity="
                    << (mantle_velocity ? "yes" : "no")
                    << " turn=";
@@ -813,7 +820,10 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           }
         } else if (diagnostics) {
           std::ostringstream detail;
-          detail << "mantleStart=yes"
+          detail << "accepted=no"
+                 << " mantleStart=yes"
+                 << " mantleToSlide=" << (anchor.frame - mantle->frame)
+                 << "/112"
                  << " startSample=" << (start ? "yes" : "no")
                  << " sampleAt+12=" << (later ? "yes" : "no");
           diag("Mantle strafe", anchor, detail.str());
