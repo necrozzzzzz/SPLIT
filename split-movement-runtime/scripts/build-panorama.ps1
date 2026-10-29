@@ -26,6 +26,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $WorkDir "panorama/scripts/
 
 $Archive = Join-Path $DeadlockDir "game/citadel/pak01_dir.vpk"
 $LatestNews = Join-Path $WorkDir "panorama/layout/latest_news.xml"
+$HeroTesting = Join-Path $WorkDir "panorama/layout/hud_hero_testing.xml"
 
 Write-Host "[SPLIT][Panorama] decompiling current Deadlock latest_news layout..."
 $xml = & $Modlock panorama decompile --archive $Archive panorama/layout/latest_news.vxml_c
@@ -45,6 +46,19 @@ if ($xmlText.Contains("<scripts>")) {
 }
 
 Set-Content -Path $LatestNews -Value $xmlText -Encoding UTF8
+
+Write-Host "[SPLIT][Panorama] hiding stock Hero Testing tools for Movement Lab..."
+$heroXml = & $Modlock panorama decompile --archive $Archive panorama/layout/hud_hero_testing.vxml_c
+if ($LASTEXITCODE -eq 0 -and $heroXml) {
+    $heroText = ($heroXml -join [Environment]::NewLine)
+    $heroText = $heroText.Replace(
+        '<CitadelHudHeroTesting class="hud_hero_testing_root">',
+        '<CitadelHudHeroTesting class="hud_hero_testing_root" style="visibility: collapse;">'
+    )
+    Set-Content -Path $HeroTesting -Value $heroText -Encoding UTF8
+} else {
+    Write-Host "[SPLIT][Panorama] warning: could not patch hud_hero_testing; stock tools may remain visible"
+}
 
 Copy-Item (Join-Path $RuntimeDir "panorama-src/layout/split_movement/movement_lab.xml") (Join-Path $WorkDir "panorama/layout/split_movement/movement_lab.xml")
 Copy-Item (Join-Path $RuntimeDir "panorama-src/scripts/split_movement/boot.js") (Join-Path $WorkDir "panorama/scripts/split_movement/boot.js")
