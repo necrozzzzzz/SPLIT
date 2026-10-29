@@ -1478,6 +1478,7 @@ int main(int argc, char** argv) {
   std::atomic<bool> practice_infinite_stamina{false};
   std::atomic<bool> practice_no_cooldowns{false};
   std::atomic<bool> practice_infinite_ammo{false};
+  std::atomic<bool> panorama_menu_open{false};
   std::string last_pawn_error;
   std::string last_practice_stamina_error;
   std::string last_practice_cooldown_error;
@@ -2649,7 +2650,8 @@ int main(int argc, char** argv) {
             PrintClient("client fully connected", client);
             if (!client.is_bot) {
               human_slot.store(client.slot, std::memory_order_relaxed);
-              panorama_bridge.SetState(R"({"active":true})");
+              panorama_menu_open.store(false, std::memory_order_release);
+              panorama_bridge.SetState(R"({"active":true,"menuOpen":false})");
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
                         << "; attaching pawn probe.\n";
@@ -2664,7 +2666,8 @@ int main(int argc, char** argv) {
             }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
-              panorama_bridge.SetState(R"({"active":false})");
+              panorama_menu_open.store(false, std::memory_order_release);
+              panorama_bridge.SetState(R"({"active":false,"menuOpen":false})");
               pawn_announced = false;
               practice_shop_ready = false;
               pre_spawn_cleanup_passes_remaining = 0;
@@ -2684,6 +2687,18 @@ int main(int argc, char** argv) {
             if (command == "split_retry") return dispatch("retry");
             if (command == "split_replay") return dispatch("replay");
             if (command == "split_race") return dispatch("race");
+            if (command == "split_menu_toggle") {
+              const bool open =
+                  !panorama_menu_open.load(std::memory_order_acquire);
+              panorama_menu_open.store(open, std::memory_order_release);
+              panorama_bridge.SetState(
+                  open
+                      ? R"({"active":true,"menuOpen":true})"
+                      : R"({"active":true,"menuOpen":false})");
+              std::cout << "[SPLIT][Panorama] menu "
+                        << (open ? "opened" : "closed") << "\n";
+              return true;
+            }
             if (command == "split_practice_stamina 1") return dispatch("practice stamina on");
             if (command == "split_practice_stamina 0") return dispatch("practice stamina off");
             if (command == "split_practice_cooldowns 1") return dispatch("practice cooldowns on");
