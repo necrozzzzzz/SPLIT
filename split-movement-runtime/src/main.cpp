@@ -487,14 +487,38 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
         LastPrimitive(primitives, "groundDash", from, slide.frame);
     const bool airborne =
         dash && AnyPrimitive(primitives, "takeoff", dash->frame, slide.frame);
-    const double speed = HorizontalSpeed(slide.velocity);
-    const bool ok = dash && !airborne && speed >= kDashCancelMinSpeed;
-    if (diagnostics && !ok) {
+    const double slide_speed = HorizontalSpeed(slide.velocity);
+
+    std::optional<double> dash_speed;
+    std::optional<double> peak_speed;
+    std::optional<std::uint64_t> dash_delta;
+    if (dash) {
+      dash_speed = HorizontalSpeed(dash->velocity);
+      dash_delta = slide.frame - dash->frame;
+      peak_speed = PeakRecorded(
+          ticks, dash->frame, slide.frame,
+          [](const split::movement::PawnSample& pawn) {
+            return HorizontalSpeed(pawn.velocity);
+          });
+    }
+
+    const bool ok =
+        dash && !airborne && slide_speed >= kDashCancelMinSpeed;
+
+    if (diagnostics) {
       std::ostringstream detail;
-      detail << "groundDash=" << (dash ? "yes" : "no")
-             << " takeoffBetween=" << (airborne ? "yes" : "no")
-             << " slideSpeed=" << std::fixed << std::setprecision(1)
-             << speed << "/" << kDashCancelMinSpeed;
+      detail << "accepted=" << (ok ? "yes" : "no")
+             << " groundDash=" << (dash ? "yes" : "no");
+      if (dash_delta) detail << " dashToSlide=" << *dash_delta << "/24";
+      detail << " takeoffBetween=" << (airborne ? "yes" : "no")
+             << " dashSpeed=";
+      if (dash_speed) detail << std::fixed << std::setprecision(1) << *dash_speed;
+      else detail << "n/a";
+      detail << " peakDashToSlide=";
+      if (peak_speed) detail << std::fixed << std::setprecision(1) << *peak_speed;
+      else detail << "n/a";
+      detail << " slideSpeed=" << std::fixed << std::setprecision(1)
+             << slide_speed << "/" << kDashCancelMinSpeed;
       diag("Dash cancel", slide, detail.str());
     }
     return ok;
@@ -735,12 +759,43 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
       if (const auto* slide =
               LastPrimitive(primitives, "slideStart", slide_from,
                             anchor.frame)) {
-        if (!AnyPrimitive(primitives, "touchdown", slide->frame + 1,
-                          anchor.frame) &&
-            dash_cancelled(*slide)) {
+        const bool touchdown =
+            AnyPrimitive(primitives, "touchdown", slide->frame + 1,
+                         anchor.frame);
+        const bool cancelled = dash_cancelled(*slide);
+        const auto slide_delta = anchor.frame - slide->frame;
+
+        if (!touchdown && cancelled) {
           add("Short hop", anchor);
+          if (diagnostics) {
+            std::ostringstream detail;
+            detail << "accepted=yes"
+                   << " slideToTakeoff=" << slide_delta << "/8"
+                   << " touchdownBetween=no"
+                   << " dashCancel=yes";
+            diag("Short hop", anchor, detail.str());
+          }
           continue;
         }
+
+        if (diagnostics) {
+          std::ostringstream detail;
+          detail << "accepted=no"
+                 << " slideStart=yes"
+                 << " slideToTakeoff=" << slide_delta << "/8"
+                 << " touchdownBetween=" << (touchdown ? "yes" : "no")
+                 << " dashCancel=" << (cancelled ? "yes" : "no")
+                 << " takeoffSpeed=" << std::fixed << std::setprecision(1)
+                 << HorizontalSpeed(anchor.velocity);
+          diag("Short hop", anchor, detail.str());
+        }
+      } else if (diagnostics) {
+        std::ostringstream detail;
+        detail << "accepted=no"
+               << " slideStart=no within=8"
+               << " takeoffSpeed=" << std::fixed << std::setprecision(1)
+               << HorizontalSpeed(anchor.velocity);
+        diag("Short hop", anchor, detail.str());
       }
       continue;
     }
