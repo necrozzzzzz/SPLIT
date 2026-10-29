@@ -25,6 +25,7 @@ add_executable(split-movement-runtime
   src/native_hooks.cpp
   src/native_visual_renderer.cpp
   src/panorama_mount.cpp
+  src/panorama_bridge_server.cpp
   src/pawn_probe.cpp
   src/input_capture.cpp
   src/movement_events.cpp
