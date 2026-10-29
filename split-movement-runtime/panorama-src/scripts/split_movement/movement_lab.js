@@ -81,7 +81,8 @@
         if (root && root.IsValid()) return;
 
         root = $.CreatePanel("Panel", game, "SplitMovementRootHost");
-        root.hittest = true;
+        root.hittest = false;
+        root.hittestchildren = true;
         root.style.width = "100%";
         root.style.height = "100%";
         root.style.horizontalAlign = "left";
