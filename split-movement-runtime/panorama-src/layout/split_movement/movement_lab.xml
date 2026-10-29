@@ -38,10 +38,6 @@
                hittest="false"
                style="visibility: collapse; horizontal-align: center; vertical-align: center; margin-top: 170px; padding: 7px 12px; background-color: #0d1217dd; border: 1px solid #8ea0aa55; font-size: 14px; font-weight: bold; color: #e7f0f5;" />
 
-        <Label id="SplitHudDrillHint"
-               text="] SAVE POSITION"
-               hittest="false"
-               style="horizontal-align: left; vertical-align: bottom; margin-left: 24px; margin-bottom: 118px; padding: 4px 8px; background-color: #0d121799; font-size: 11px; color: #91a1aa;" />
 
         <Label id="SplitHudAssists"
                text=""
