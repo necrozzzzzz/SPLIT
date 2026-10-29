@@ -1478,7 +1478,6 @@ int main(int argc, char** argv) {
   std::atomic<bool> practice_infinite_stamina{false};
   std::atomic<bool> practice_no_cooldowns{false};
   std::atomic<bool> practice_infinite_ammo{false};
-  std::atomic<bool> panorama_menu_open{false};
   std::string last_pawn_error;
   std::string last_practice_stamina_error;
   std::string last_practice_cooldown_error;
@@ -1959,6 +1958,29 @@ int main(int argc, char** argv) {
 
             const int slot = human_slot.load(std::memory_order_relaxed);
             if (slot < 0) return;
+
+            // Freestyle-style in-match UI: Panorama is a passive HUD driven by
+            // server state. Publish at ~10 Hz instead of opening a mouse menu.
+            if (frame % 6 == 0) {
+              const auto hud_stats = recorder.Stats();
+              const auto hud_race = race_timer.Status();
+              const auto hud_course = race_timer.Course();
+              std::ostringstream hud;
+              hud << "{"
+                  << "\"active\":true,"
+                  << "\"recording\":" << (hud_stats.recording ? "true" : "false") << ","
+                  << "\"hasRoute\":" << (hud_stats.ticks > 0 ? "true" : "false") << ","
+                  << "\"racePhase\":\"" << RacePhaseName(hud_race.phase) << "\","
+                  << "\"elapsedSeconds\":" << hud_race.elapsed_seconds << ","
+                  << "\"personalBestSeconds\":" << JsonNumberOrNull(hud_race.personal_best_seconds) << ","
+                  << "\"nextCheckpoint\":" << hud_race.next_checkpoint << ","
+                  << "\"checkpointCount\":" << (hud_course ? hud_course->checkpoints.size() : 0) << ","
+                  << "\"stamina\":" << (practice_infinite_stamina.load(std::memory_order_acquire) ? "true" : "false") << ","
+                  << "\"cooldowns\":" << (practice_no_cooldowns.load(std::memory_order_acquire) ? "true" : "false") << ","
+                  << "\"ammo\":" << (practice_infinite_ammo.load(std::memory_order_acquire) ? "true" : "false")
+                  << "}";
+              panorama_bridge.SetState(hud.str());
+            }
 
             std::string error;
             auto sample = pawn_probe.Observe(slot, error);
@@ -2650,8 +2672,7 @@ int main(int argc, char** argv) {
             PrintClient("client fully connected", client);
             if (!client.is_bot) {
               human_slot.store(client.slot, std::memory_order_relaxed);
-              panorama_menu_open.store(false, std::memory_order_release);
-              panorama_bridge.SetState(R"({"active":true,"menuOpen":false})");
+              panorama_bridge.SetState(R"({"active":true})");
               std::cout << "[SPLIT][Movement] human session ready on slot "
                         << client.slot
                         << "; attaching pawn probe.\n";
@@ -2666,8 +2687,7 @@ int main(int argc, char** argv) {
             }
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
-              panorama_menu_open.store(false, std::memory_order_release);
-              panorama_bridge.SetState(R"({"active":false,"menuOpen":false})");
+              panorama_bridge.SetState(R"({"active":false})");
               pawn_announced = false;
               practice_shop_ready = false;
               pre_spawn_cleanup_passes_remaining = 0;
@@ -2687,18 +2707,6 @@ int main(int argc, char** argv) {
             if (command == "split_retry") return dispatch("retry");
             if (command == "split_replay") return dispatch("replay");
             if (command == "split_race") return dispatch("race");
-            if (command == "split_menu_toggle") {
-              const bool open =
-                  !panorama_menu_open.load(std::memory_order_acquire);
-              panorama_menu_open.store(open, std::memory_order_release);
-              panorama_bridge.SetState(
-                  open
-                      ? R"({"active":true,"menuOpen":true})"
-                      : R"({"active":true,"menuOpen":false})");
-              std::cout << "[SPLIT][Panorama] menu "
-                        << (open ? "opened" : "closed") << "\n";
-              return true;
-            }
             if (command == "split_practice_stamina 1") return dispatch("practice stamina on");
             if (command == "split_practice_stamina 0") return dispatch("practice stamina off");
             if (command == "split_practice_cooldowns 1") return dispatch("practice cooldowns on");
