@@ -41,6 +41,7 @@ class PawnProbe {
   bool SetGhostVisual(int slot, bool ghost, std::string& error);
   bool RestorePracticeStamina(int slot, std::string& error);
   bool RefreshPracticeCooldowns(int slot, std::string& error);
+  bool GrantPracticeSouls(int slot, std::int32_t amount, std::string& error);
   bool Teleport(int slot, const std::array<float, 3>& position,
                 const std::array<float, 3>& angles, std::string& error);
 
