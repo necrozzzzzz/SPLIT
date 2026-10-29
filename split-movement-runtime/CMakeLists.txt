@@ -24,6 +24,7 @@ add_executable(split-movement-runtime
   src/engine_runner.cpp
   src/native_hooks.cpp
   src/native_visual_renderer.cpp
+  src/panorama_mount.cpp
   src/pawn_probe.cpp
   src/input_capture.cpp
   src/movement_events.cpp
