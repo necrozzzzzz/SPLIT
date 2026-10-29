@@ -20,6 +20,7 @@ struct RaceCourse {
   std::string name = "Recorded Route";
   std::string difficulty = "Unrated";
   std::uint32_t hero_id = 0;
+  std::optional<double> reference_seconds;
 };
 
 struct RaceStatus {
