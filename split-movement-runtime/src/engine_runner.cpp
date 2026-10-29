@@ -61,17 +61,9 @@ int RunDedicatedServer(const std::filesystem::path& game_dir, const ServerLaunch
   command += " +ip 127.0.0.1";
   command += " +map " + launch.map;
 
-  // These are stock Deadlock Testing Tools commands. They run after the map
-  // command, removing lane/objective NPCs that already exist even though their
-  // future spawners are disabled above. Breakables and healing snacks are
-  // intentionally preserved because Movement Lab routes can train on them.
-  command +=
-      " +citadel_force_kill troopers"
-      " +citadel_force_kill neutrals"
-      " +citadel_force_kill guardians"
-      " +citadel_force_kill walkers"
-      " +citadel_force_kill base_guardians"
-      " +citadel_force_kill shrines";
+  // Objective/NPC cleanup is intentionally NOT issued from the launch
+  // command line. Hyperline performs that sweep only after the world is alive;
+  // firing Force Kill during hero selection can invalidate map-owned state.
   command += " -game \"" + (base_dir / "citadel").string() + "\"";
   if (!launch.extra_args.empty()) {
     command += " " + launch.extra_args;
