@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -28,6 +29,7 @@ struct RecordingStats {
   double max_speed = 0.0;
   std::uint64_t first_frame = 0;
   std::uint64_t last_frame = 0;
+  double duration_seconds = 0.0;
 };
 
 class MovementRecorder {
@@ -53,5 +55,7 @@ class MovementRecorder {
   std::vector<RecordedTick> ticks_;
   double distance_ = 0.0;
   double max_speed_ = 0.0;
+  std::chrono::steady_clock::time_point started_at_{};
+  double duration_seconds_ = 0.0;
 };
 }  // namespace split::movement
