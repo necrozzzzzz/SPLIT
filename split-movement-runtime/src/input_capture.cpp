@@ -189,7 +189,9 @@ void WriteCommand(std::byte* command, const InputSample& drive,
   // changed/press state to ProcessMovement itself.
   const std::uint64_t held = drive.held;
   const std::array<std::uint64_t, 3> buttons{
-      held, first ? (held ^ last_held) : 0, 0};
+      held,
+      first ? (held ^ last_held) : 0,
+      first ? drive.scroll : 0};
   Store(command, kCommandButtons, buttons);
   last_held = held;
 
@@ -232,7 +234,9 @@ int ProcessUsercmdsThunk(void* controller, std::byte* commands, int count,
     const auto buttons =
         Load<std::array<std::uint64_t, 3>>(newest, kCommandButtons);
     captured.held = buttons[0];
-    captured.pressed = buttons[1] & buttons[0];
+    captured.changed = buttons[1];
+    captured.scroll = buttons[2];
+    captured.pressed = (captured.changed & captured.held) | captured.scroll;
 
     if (const auto* base = Load<const std::byte*>(newest, kCommandBase)) {
       captured.forward = Load<float>(base, kBaseForward);
