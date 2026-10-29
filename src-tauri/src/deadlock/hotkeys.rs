@@ -2890,6 +2890,10 @@ pub struct MovementLabStatus {
     pub show_checkpoints: Option<bool>,
     #[serde(default)]
     pub show_hud: Option<bool>,
+    #[serde(default)]
+    pub practice_infinite_stamina: bool,
+    #[serde(default)]
+    pub practice_no_cooldowns: bool,
 }
 
 pub fn movement_status() -> Result<MovementLabStatus, String> {
