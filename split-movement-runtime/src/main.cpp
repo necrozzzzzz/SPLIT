@@ -1426,7 +1426,11 @@ int main(int argc, char** argv) {
   std::atomic<bool> show_rings{true};
   std::atomic<bool> show_checkpoints{true};
   std::atomic<bool> show_hud{true};
+  std::atomic<bool> practice_infinite_stamina{false};
+  std::atomic<bool> practice_no_cooldowns{false};
   std::string last_pawn_error;
+  std::string last_practice_stamina_error;
+  std::string last_practice_cooldown_error;
   std::string current_map = launch.map;
   std::mutex route_cues_mutex;
   std::vector<MovementCue> route_cues;
@@ -1677,6 +1681,20 @@ int main(int argc, char** argv) {
       show_checkpoints.store(command == "checkpoints on");
     } else if (command == "hud on" || command == "hud off") {
       show_hud.store(command == "hud on");
+    } else if (command == "practice stamina on" ||
+               command == "practice stamina off") {
+      const bool on = command == "practice stamina on";
+      practice_infinite_stamina.store(on, std::memory_order_release);
+      last_practice_stamina_error.clear();
+      std::cout << "[SPLIT][Practice] infinite stamina="
+                << (on ? "on" : "off") << "\n";
+    } else if (command == "practice cooldowns on" ||
+               command == "practice cooldowns off") {
+      const bool on = command == "practice cooldowns on";
+      practice_no_cooldowns.store(on, std::memory_order_release);
+      last_practice_cooldown_error.clear();
+      std::cout << "[SPLIT][Practice] no cooldowns="
+                << (on ? "on" : "off") << "\n";
     } else if (command == "record") {
       {
         std::scoped_lock lock(route_cues_mutex);
@@ -1758,7 +1776,7 @@ int main(int argc, char** argv) {
       }
     } else if (!command.empty()) {
       std::cout << "[SPLIT][Recorder] unknown command: " << command
-                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, techdiag [on|off], clear)\n";
+                << " (record, recordtoggle, stop, status, state, save, replay, watch, race, retry, racestatus, racecancel, visualtest, tracertest, visualdiagnostics, movementstate, techdiag [on|off], practice stamina [on|off], practice cooldowns [on|off], clear)\n";
     }
     return {};
   };
@@ -1853,6 +1871,36 @@ int main(int argc, char** argv) {
               pawn_announced = true;
               std::cout << "[SPLIT][Movement] pawn attached slot=" << sample->slot
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
+            }
+
+            // Practice mutations deliberately run only after Observe() proved
+            // that this slot owns a live pawn. This mirrors Hyperline's
+            // per-frame player policy and avoids changing server startup flow.
+            if (practice_infinite_stamina.load(std::memory_order_acquire)) {
+              std::string practice_error;
+              if (!pawn_probe.RestorePracticeStamina(slot, practice_error)) {
+                if (!practice_error.empty() &&
+                    practice_error != last_practice_stamina_error) {
+                  last_practice_stamina_error = practice_error;
+                  std::cout << "[SPLIT][Practice] stamina unavailable: "
+                            << practice_error << "\n";
+                }
+              } else {
+                last_practice_stamina_error.clear();
+              }
+            }
+            if (practice_no_cooldowns.load(std::memory_order_acquire)) {
+              std::string practice_error;
+              if (!pawn_probe.RefreshPracticeCooldowns(slot, practice_error)) {
+                if (!practice_error.empty() &&
+                    practice_error != last_practice_cooldown_error) {
+                  last_practice_cooldown_error = practice_error;
+                  std::cout << "[SPLIT][Practice] cooldown refresh unavailable: "
+                            << practice_error << "\n";
+                }
+              } else {
+                last_practice_cooldown_error.clear();
+              }
             }
 
             const auto latest_input = input_capture.Latest(slot);
