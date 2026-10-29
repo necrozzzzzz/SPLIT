@@ -634,6 +634,7 @@ type MovementLabStatus = {
   showHud?: boolean;
   practiceInfiniteStamina?: boolean;
   practiceNoCooldowns?: boolean;
+  practiceInfiniteAmmo?: boolean;
 };
 
 type SlotColorDisplayMode =
@@ -5668,9 +5669,16 @@ function App() {
                 />
                 <span>{runtimeUiText("No cooldown", language)}</span>
               </label>
-              <label title={runtimeUiText("Coming next: native clip refill matching Hyperline.", language)}>
-                <input type="checkbox" checked={false} disabled />
-                <span>{runtimeUiText("Infinite ammo", language)} · {runtimeUiText("Coming next", language)}</span>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={movementStatus?.practiceInfiniteAmmo ?? false}
+                  disabled={!movementStatus || movementBusy !== null}
+                  onChange={(event) => void runMovementCommand(
+                    `practice ammo ${event.target.checked ? "on" : "off"}`,
+                  )}
+                />
+                <span>{runtimeUiText("Infinite ammo", language)}</span>
               </label>
               <label title={runtimeUiText("Coming next: disable lane waves after world load.", language)}>
                 <input type="checkbox" checked={false} disabled />
