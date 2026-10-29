@@ -67,7 +67,7 @@ if ($hudText.Contains("<scripts>")) {
 
 Set-Content -Path $HudLayout -Value $hudText -Encoding UTF8
 
-Write-Host "[SPLIT][Panorama] hiding stock Hero Testing tools for Movement Lab...
+Write-Host "[SPLIT][Panorama] hiding stock Hero Testing tools for Movement Lab..."
 $heroXml = & $Modlock panorama decompile --archive $Archive panorama/layout/hud_hero_testing.vxml_c
 if ($LASTEXITCODE -eq 0 -and $heroXml) {
     $heroText = ($heroXml -join [Environment]::NewLine)
