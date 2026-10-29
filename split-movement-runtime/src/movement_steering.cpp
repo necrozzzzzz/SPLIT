@@ -370,8 +370,8 @@ void MovementThunk(void* services, void* data) {
         Read<std::array<std::uint64_t, 3>>(services, g_state.layout->buttons + kButtonStates);
     const std::uint64_t held = tick->input->held;
     buttons[0] = held;
-    buttons[1] = (held ^ previous_held) | tick->input->pressed;
-    buttons[2] = 0;
+    buttons[1] = (held ^ previous_held) | tick->input->changed;
+    buttons[2] = tick->input->scroll;
     Write(services, g_state.layout->buttons + kButtonStates, buttons);
 
     Write(data, kMoveAngles, tick->input->angles);
