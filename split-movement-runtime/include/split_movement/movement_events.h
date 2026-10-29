@@ -18,6 +18,7 @@ enum class MovementExecution {
   kWallJump,
   kAirDash,
   kMeleeStarted,
+  kAbilityExecuted,
 };
 
 const char* MovementExecutionName(MovementExecution execution);
