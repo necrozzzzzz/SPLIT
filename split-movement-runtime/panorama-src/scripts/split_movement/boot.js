@@ -2,15 +2,12 @@
     "use strict";
 
     var context = $.GetContextPanel();
-    if (!context || context.FindChildTraverse("SplitMovementLabHost")) {
+    if (!context || context.FindChildTraverse("SplitMovementBootstrap")) {
         return;
     }
 
-    var host = $.CreatePanel("Panel", context, "SplitMovementLabHost");
+    // Match Modlock: latest_news only hosts a tiny bootstrap layout.
+    var host = $.CreatePanel("Panel", context, "SplitMovementBootstrap");
     host.hittest = false;
-    host.style.width = "100%";
-    host.style.height = "100%";
-    host.style.horizontalAlign = "left";
-    host.style.verticalAlign = "top";
-    host.BLoadLayout("file://{resources}/layout/split_movement/movement_lab.xml", false, false);
+    host.BLoadLayout("file://{resources}/layout/split_movement/bootstrap.xml", false, false);
 })();
