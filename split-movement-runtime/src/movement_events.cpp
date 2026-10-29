@@ -36,7 +36,7 @@ struct EventSpec {
   MovementExecution execution;
 };
 
-constexpr std::array<EventSpec, 10> kEventSpecs{{
+constexpr std::array<EventSpec, 11> kEventSpecs{{
     {"MODIFIER_EVENT_LANDED_ON_GROUND", MovementExecution::kLanded},
     {"MODIFIER_EVENT_ATTACHED_TO_ZIPLINE", MovementExecution::kZiplineAttached},
     {"MODIFIER_EVENT_PLAYER_GROUND_DASH_STARTED", MovementExecution::kGroundDash},
@@ -47,6 +47,7 @@ constexpr std::array<EventSpec, 10> kEventSpecs{{
     {"MODIFIER_EVENT_WALL_JUMP_EXECUTED", MovementExecution::kWallJump},
     {"MODIFIER_EVENT_AIR_DASH_EXECUTED", MovementExecution::kAirDash},
     {"MODIFIER_EVENT_MELEE_ATTACK_STARTED", MovementExecution::kMeleeStarted},
+    {"MODIFIER_EVENT_ABILITY_EXECUTED", MovementExecution::kAbilityExecuted},
 }};
 
 template <typename T>
@@ -239,7 +240,8 @@ const char* MovementExecutionName(MovementExecution execution) {
     case MovementExecution::kAirJump: return "Air jump";
     case MovementExecution::kWallJump: return "Wall jump";
     case MovementExecution::kAirDash: return "Air dash";
-    case MovementExecution::kMeleeStarted: return "Heavy melee";
+    case MovementExecution::kMeleeStarted: return "Melee started";
+    case MovementExecution::kAbilityExecuted: return "Ability executed";
   }
   return "Movement";
 }
