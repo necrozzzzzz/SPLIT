@@ -359,6 +359,19 @@ struct Layout {
   std::optional<std::size_t> wall_jump_normal_used;
   std::optional<std::size_t> wall_jump_facing;
   std::optional<std::size_t> last_time_on_zipline;
+
+  // Practice capabilities ported from Modlock's PawnObserver. Stamina is an
+  // inline AbilityResource_t behind the pawn's ability component; timers live
+  // on each owned CCitadelBaseAbility entity.
+  std::optional<std::size_t> stamina_current;
+  std::optional<std::size_t> stamina_max;
+  std::optional<std::size_t> stamina_latch_time;
+  std::optional<std::size_t> stamina_latch_value;
+  std::optional<std::size_t> ability_charges;
+  std::optional<std::size_t> ability_cooldown_start;
+  std::optional<std::size_t> ability_cooldown_end;
+  std::optional<std::size_t> ability_recharge_start;
+  std::optional<std::size_t> ability_recharge_end;
 };
 
 std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
@@ -428,6 +441,38 @@ std::expected<Layout, std::string> ResolveLayout(void* schema_system) {
       schema_system, "CCitadel_Ability_Jump", "m_eWallJumpFacing", sizeof(std::uint16_t));
   layout.last_time_on_zipline = OptionalFieldOffset(
       schema_system, "CCitadel_Ability_Jump", "m_flLastTimeOnZipLine", sizeof(float));
+
+  // Match Modlock's current schema path for the native stamina resource.
+  const auto stamina_resource = OptionalFieldOffset(
+      schema_system, "CCitadelAbilityComponent", "m_ResourceStamina", 1);
+  if (ability_component && stamina_resource) {
+    const auto stamina_current = OptionalFieldOffset(
+        schema_system, "AbilityResource_t", "m_flCurrentValue", sizeof(float));
+    const auto stamina_max = OptionalFieldOffset(
+        schema_system, "AbilityResource_t", "m_flMaxValue", sizeof(float));
+    const auto stamina_latch_time = OptionalFieldOffset(
+        schema_system, "AbilityResource_t", "m_flLatchTime", sizeof(float));
+    const auto stamina_latch_value = OptionalFieldOffset(
+        schema_system, "AbilityResource_t", "m_flLatchValue", sizeof(float));
+    if (stamina_current && stamina_max && stamina_latch_time && stamina_latch_value) {
+      const auto base = *ability_component + *stamina_resource;
+      layout.stamina_current = base + *stamina_current;
+      layout.stamina_max = base + *stamina_max;
+      layout.stamina_latch_time = base + *stamina_latch_time;
+      layout.stamina_latch_value = base + *stamina_latch_value;
+    }
+  }
+
+  layout.ability_charges = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_nAbilityCharges", sizeof(std::int32_t));
+  layout.ability_cooldown_start = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_flCooldownStartTime", sizeof(float));
+  layout.ability_cooldown_end = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_flCooldownEndTime", sizeof(float));
+  layout.ability_recharge_start = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_flChargeRechargeStart", sizeof(float));
+  layout.ability_recharge_end = OptionalFieldOffset(
+      schema_system, "CCitadelBaseAbility", "m_flChargeRechargeEnd", sizeof(float));
 
   return layout;
 }
@@ -705,6 +750,124 @@ bool PawnProbe::SetGhostVisual(int slot, bool ghost, std::string& error) {
     return false;
   }
 
+  return true;
+}
+
+
+bool PawnProbe::RestorePracticeStamina(int slot, std::string& error) {
+  error.clear();
+  if (slot < 0 || slot >= 64) {
+    error = "player slot is outside the Deadlock slot range";
+    return false;
+  }
+  if (!impl_->layout) {
+    auto resolved = ResolveLayout(impl_->schema_system);
+    if (!resolved) { error = resolved.error(); return false; }
+    impl_->layout = *resolved;
+  }
+  const auto& layout = *impl_->layout;
+  if (!layout.stamina_current || !layout.stamina_max ||
+      !layout.stamina_latch_value) {
+    error = "native stamina schema capability is unavailable";
+    return false;
+  }
+  if (!impl_->resource_service) {
+    impl_->resource_service =
+        ResolveInterface(L"engine2.dll", "GameResourceServiceServerV001", error);
+    if (!impl_->resource_service) return false;
+  }
+  void* entity_system =
+      Read<void*>(impl_->resource_service, kResourceServiceEntitySystemOffset);
+  if (!entity_system) { error = "CGameResourceService has no live entity system"; return false; }
+  auto* entity_list = static_cast<unsigned char*>(entity_system) + kEntityListOffset;
+  auto* controller_identity =
+      IdentityOfIndex(entity_list, static_cast<std::uint32_t>(slot + 1));
+  void* controller = InstanceOf(controller_identity);
+  if (!controller) return false;
+  const auto pawn_handle = Read<std::uint32_t>(controller, layout.pawn_handle);
+  auto* pawn = static_cast<std::byte*>(InstanceOf(IdentityOfHandle(entity_list, pawn_handle)));
+  if (!pawn) return false;
+
+  const float current = Read<float>(pawn, *layout.stamina_current);
+  const float maximum = Read<float>(pawn, *layout.stamina_max);
+  if (!std::isfinite(current) || !std::isfinite(maximum) || maximum <= 0.0f) {
+    error = "native stamina resource is not usable";
+    return false;
+  }
+  if (current >= maximum) return true;
+
+  // Hyperline/Modlock refill the native resource rather than changing stamina
+  // cooldown convars. Keeping the latch value in sync avoids a one-frame UI
+  // correction while repeated frame refreshes own the practice policy.
+  std::memcpy(pawn + *layout.stamina_current, &maximum, sizeof(maximum));
+  std::memcpy(pawn + *layout.stamina_latch_value, &maximum, sizeof(maximum));
+  if (!NotifyEntityStateChanged(pawn)) {
+    error = "stamina replication notification is unavailable";
+    return false;
+  }
+  return true;
+}
+
+bool PawnProbe::RefreshPracticeCooldowns(int slot, std::string& error) {
+  error.clear();
+  if (slot < 0 || slot >= 64) {
+    error = "player slot is outside the Deadlock slot range";
+    return false;
+  }
+  if (!impl_->layout) {
+    auto resolved = ResolveLayout(impl_->schema_system);
+    if (!resolved) { error = resolved.error(); return false; }
+    impl_->layout = *resolved;
+  }
+  const auto& layout = *impl_->layout;
+  if (!layout.ability_handles || !layout.ability_owner ||
+      !layout.ability_cooldown_start || !layout.ability_cooldown_end) {
+    error = "native ability timer schema capability is unavailable";
+    return false;
+  }
+  if (!impl_->resource_service) {
+    impl_->resource_service =
+        ResolveInterface(L"engine2.dll", "GameResourceServiceServerV001", error);
+    if (!impl_->resource_service) return false;
+  }
+  void* entity_system =
+      Read<void*>(impl_->resource_service, kResourceServiceEntitySystemOffset);
+  if (!entity_system) { error = "CGameResourceService has no live entity system"; return false; }
+  auto* entity_list = static_cast<unsigned char*>(entity_system) + kEntityListOffset;
+  auto* controller_identity =
+      IdentityOfIndex(entity_list, static_cast<std::uint32_t>(slot + 1));
+  void* controller = InstanceOf(controller_identity);
+  if (!controller) return false;
+  const auto pawn_handle = Read<std::uint32_t>(controller, layout.pawn_handle);
+  auto* pawn = static_cast<std::byte*>(InstanceOf(IdentityOfHandle(entity_list, pawn_handle)));
+  if (!pawn) return false;
+
+  const auto handles = ReadUtlVector<const std::uint32_t>(
+      pawn + *layout.ability_handles, 256);
+  if (!handles) { error = "owned ability vector is unreadable"; return false; }
+
+  const float zero = 0.0f;
+  for (std::int32_t i = 0; i < handles->count; ++i) {
+    auto* ability = static_cast<std::byte*>(
+        InstanceOf(IdentityOfHandle(entity_list, handles->data[i])));
+    if (!ability) continue;
+    if (Read<std::uint32_t>(ability, *layout.ability_owner) != pawn_handle) continue;
+
+    const float cooldown_end = Read<float>(ability, *layout.ability_cooldown_end);
+    const float recharge_end = layout.ability_recharge_end
+        ? Read<float>(ability, *layout.ability_recharge_end) : 0.0f;
+    if (!(cooldown_end > 0.0f) && !(recharge_end > 0.0f)) continue;
+
+    std::memcpy(ability + *layout.ability_cooldown_start, &zero, sizeof(zero));
+    std::memcpy(ability + *layout.ability_cooldown_end, &zero, sizeof(zero));
+    if (layout.ability_recharge_start) {
+      std::memcpy(ability + *layout.ability_recharge_start, &zero, sizeof(zero));
+    }
+    if (layout.ability_recharge_end) {
+      std::memcpy(ability + *layout.ability_recharge_end, &zero, sizeof(zero));
+    }
+    NotifyEntityStateChanged(ability);
+  }
   return true;
 }
 
