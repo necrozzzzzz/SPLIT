@@ -243,6 +243,9 @@ std::vector<MovementCue> ConsolidateMovementCues(
       absorb(i, "Dash cancel", 24, 8);
       absorb(i, "Slide", 16, 8);
       absorb(i, "Ground dash", 24, 4);
+    } else if (cues[i].label == "Heavy melee cancel") {
+      absorb(i, "Heavy melee", 96, 8);
+      absorb(i, "Light melee", 96, 8);
     } else if (cues[i].label == "Instant air dash" ||
                cues[i].label == "Zipline dash") {
       absorb(i, "Air dash", 4, 4);
@@ -361,6 +364,8 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
     else if (cue.label == "Air jump") kind = "airJump";
     else if (cue.label == "Air dash") kind = "airDash";
     else if (cue.label == "Bounce pad") kind = "bouncePad";
+    else if (cue.label == "Melee started") kind = "meleeStarted";
+    else if (cue.label == "Ability executed") kind = "abilityExecuted";
     else continue;
 
     if (const auto* tick = RecordedAt(ticks, cue.frame)) {
@@ -586,6 +591,8 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
   constexpr std::uint64_t kDashCancelTicks = 24;
   constexpr std::uint64_t kSuperglideSettleTicks = 2;
   constexpr std::uint64_t kZiplineDashTicks = 90;
+  constexpr std::uint64_t kMeleeSettleTicks = 96;
+  constexpr std::uint64_t kCancelSettleTicks = 8;
   constexpr double kCornerBoostMinVerticalSpeed = 600.0;
   constexpr double kEdgeBoostMinEntrySpeed = 150.0;
   constexpr std::uint64_t kEdgeBoostMaxDetachedTicks = 16;
@@ -594,6 +601,9 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
   constexpr double kMantleWallJumpMinSpeed = 500.0;
   constexpr double kMantleStrafeMinTurnDegrees = 45.0;
   constexpr double kMantleStrafeMinRetention = 0.8;
+  constexpr double kHeavyMeleeMinSpeedGain = 300.0;
+  constexpr double kHeavyMeleeCancelMinSpeed = 500.0;
+  constexpr double kHeavyMeleeCancelMinRetention = 0.8;
 
   const auto primitives = BuildTechniquePrimitives(ticks, raw_cues);
   if (diagnostics) {
@@ -605,7 +615,9 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
           primitive.kind == "slideStart" ||
           primitive.kind == "slideEnd" ||
           primitive.kind == "takeoff" ||
-          primitive.kind == "touchdown") {
+          primitive.kind == "touchdown" ||
+          primitive.kind == "meleeStarted" ||
+          primitive.kind == "abilityExecuted") {
         std::cout << "[SPLIT][TechDiag][Primitive] frame="
                   << primitive.frame
                   << " kind=" << primitive.kind;
@@ -1010,6 +1022,119 @@ std::vector<MovementCue> RecognizeRecordedTechniques(
       continue;
     }
 
+    if (anchor.kind == "meleeStarted") {
+      // Hyperline heavyMelee: a melee start is considered heavy only when
+      // horizontal speed gains at least 300 u/s during the following 96 ticks.
+      // A mantle start truncates the observation window.
+      bool duplicate_heavy = false;
+      for (const auto& earlier : recognized) {
+        if (earlier.label == "Heavy melee" &&
+            earlier.frame < anchor.frame &&
+            anchor.frame <= earlier.frame + kMeleeSettleTicks) {
+          duplicate_heavy = true;
+          break;
+        }
+      }
+
+      std::uint64_t end = anchor.frame + kMeleeSettleTicks;
+      for (const auto& candidate : primitives) {
+        if (candidate.kind == "mantleStart" &&
+            candidate.frame >= anchor.frame &&
+            candidate.frame <= end) {
+          end = candidate.frame > anchor.frame
+              ? candidate.frame - 1
+              : anchor.frame;
+          break;
+        }
+      }
+
+      const auto* start = RecordedAt(ticks, anchor.frame);
+      const auto peak = PeakRecorded(
+          ticks, anchor.frame, end,
+          [](const split::movement::PawnSample& pawn) {
+            return HorizontalSpeed(pawn.velocity);
+          });
+      const double start_speed =
+          start ? HorizontalSpeed(start->pawn.velocity) : 0.0;
+      const double gain = peak ? *peak - start_speed : 0.0;
+      const bool heavy =
+          !duplicate_heavy && start && peak &&
+          gain >= kHeavyMeleeMinSpeedGain;
+
+      if (diagnostics) {
+        std::ostringstream detail;
+        detail << "classified=" << (heavy ? "heavy" : "light")
+               << " startSpeed=" << std::fixed << std::setprecision(1)
+               << start_speed
+               << " peakSpeed=";
+        if (peak) detail << *peak;
+        else detail << "n/a";
+        detail << " gain=";
+        if (peak) detail << gain;
+        else detail << "n/a";
+        detail << "/" << kHeavyMeleeMinSpeedGain
+               << " window=" << (end - anchor.frame)
+               << "/" << kMeleeSettleTicks
+               << " duplicateHeavy="
+               << (duplicate_heavy ? "yes" : "no");
+        diag("Melee", anchor, detail.str());
+      }
+
+      add(heavy ? "Heavy melee" : "Light melee", anchor);
+      continue;
+    }
+
+    if (anchor.kind == "abilityExecuted") {
+      // Exact Hyperline heavyMeleeCancel: an ability executed within 96 ticks
+      // of melee start must happen at >=500 u/s and retain >=80% of that
+      // horizontal speed eight ticks later, with no mantle transition involved.
+      const auto from =
+          anchor.frame > kMeleeSettleTicks
+              ? anchor.frame - kMeleeSettleTicks
+              : 0;
+      const auto* melee =
+          LastPrimitive(primitives, "meleeStarted", from, anchor.frame);
+
+      if (melee) {
+        const auto* cast = RecordedAt(ticks, anchor.frame);
+        const auto* after =
+            RecordedAt(ticks, anchor.frame + kCancelSettleTicks);
+        const bool mantle =
+            AnyPrimitive(primitives, "mantleStart", melee->frame,
+                         anchor.frame + kCancelSettleTicks) ||
+            AnyPrimitive(primitives, "mantleEnd", melee->frame,
+                         anchor.frame + kCancelSettleTicks);
+
+        const double cast_speed =
+            cast ? HorizontalSpeed(cast->pawn.velocity) : 0.0;
+        const double after_speed =
+            after ? HorizontalSpeed(after->pawn.velocity) : 0.0;
+        const bool ok =
+            cast && after && !mantle &&
+            cast_speed >= kHeavyMeleeCancelMinSpeed &&
+            after_speed >= kHeavyMeleeCancelMinRetention * cast_speed;
+
+        if (diagnostics) {
+          std::ostringstream detail;
+          detail << "accepted=" << (ok ? "yes" : "no")
+                 << " meleeDelta=" << (anchor.frame - melee->frame)
+                 << "/" << kMeleeSettleTicks
+                 << " mantle=" << (mantle ? "yes" : "no")
+                 << " castSpeed=" << std::fixed << std::setprecision(1)
+                 << cast_speed << "/" << kHeavyMeleeCancelMinSpeed
+                 << " after8=" << after_speed
+                 << " minRetention="
+                 << (kHeavyMeleeCancelMinRetention * cast_speed);
+          diag("Heavy melee cancel", anchor, detail.str());
+        }
+
+        if (ok) {
+          add("Heavy melee cancel", anchor);
+          continue;
+        }
+      }
+    }
+
     if (anchor.kind == "airDash") {
       const auto takeoff_from = anchor.frame > 4 ? anchor.frame - 4 : 0;
       if (const auto* takeoff =
@@ -1057,6 +1182,10 @@ std::vector<MovementCue> MergeRecognizedTechniques(
   merged.reserve(raw.size() + recognized.size());
 
   for (const auto& cue : raw) {
+    if (cue.label == "Melee started" ||
+        cue.label == "Ability executed") {
+      continue;
+    }
     const bool superseded = std::any_of(
         recognized.begin(), recognized.end(),
         [&](const MovementCue& exact) {
@@ -1094,6 +1223,8 @@ bool IsRouteCallout(split::movement::MovementExecution execution) {
     case E::kAirJump:
     case E::kWallJump:
     case E::kAirDash:
+    case E::kMeleeStarted:
+    case E::kAbilityExecuted:
       return true;
     default:
       return false;
