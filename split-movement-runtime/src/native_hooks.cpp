@@ -1,7 +1,9 @@
 #include "split_movement/native_hooks.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <utility>
 
@@ -106,12 +108,14 @@ using StartupServerFn = void (*)(void*, const void*, void*, const char*);
 using PutInServerFn = void (*)(void*, int, const char*, int, std::uint64_t);
 using FullyConnectFn = void (*)(void*, int);
 using DisconnectFn = void (*)(void*, int, int, const char*, std::uint64_t, const char*);
+using ClientCommandFn = void (*)(void*, int, void*);
 
 GameFrameFn g_game_frame_original = nullptr;
 StartupServerFn g_startup_original = nullptr;
 PutInServerFn g_put_in_server_original = nullptr;
 FullyConnectFn g_fully_connect_original = nullptr;
 DisconnectFn g_disconnect_original = nullptr;
+ClientCommandFn g_client_command_original = nullptr;
 
 NativeHooks::FrameCallback g_frame_callback;
 NativeHooks::WorldCallback g_before_world;
@@ -119,6 +123,7 @@ NativeHooks::WorldCallback g_after_world;
 NativeHooks::ClientCallback g_connected_callback;
 NativeHooks::ClientCallback g_fully_connected_callback;
 NativeHooks::DisconnectCallback g_disconnecting_callback;
+NativeHooks::CommandCallback g_command_callback;
 
 std::atomic<std::uint64_t>* g_frame_count = nullptr;
 std::array<ClientConnection, 64> g_clients{};
@@ -205,6 +210,35 @@ void DisconnectThunk(void* self, int slot, int reason, const char* name, std::ui
   }
 }
 
+
+std::string ReadClientCommand(void* args) {
+  if (!args) return {};
+  const auto* base = static_cast<const unsigned char*>(args);
+  const auto count = *reinterpret_cast<const std::int32_t*>(base + 8);
+  const auto data = *reinterpret_cast<const char* const*>(base + 16);
+  if (count <= 0 || count > 512 || !data) return {};
+  std::array<char, 512> text{};
+  std::memcpy(text.data(), data, static_cast<std::size_t>(count));
+  const auto* nul = static_cast<const char*>(std::memchr(text.data(), '\0', static_cast<std::size_t>(count)));
+  if (!nul) return {};
+  return std::string(text.data(), static_cast<std::size_t>(nul - text.data()));
+}
+
+void ClientCommandThunk(void* self, int slot, void* args) {
+  auto command = ReadClientCommand(args);
+  const auto first_end = command.find_first_of(" \t");
+  std::transform(command.begin(),
+                 first_end == std::string::npos ? command.end() : command.begin() + first_end,
+                 command.begin(),
+                 [](unsigned char ch) {
+                   return static_cast<char>(ch >= 'A' && ch <= 'Z' ? ch + ('a' - 'A') : ch);
+                 });
+  if (!command.empty() && g_command_callback && g_command_callback(slot, command)) {
+    return;
+  }
+  if (g_client_command_original) g_client_command_original(self, slot, args);
+}
+
 #endif
 
 }  // namespace
@@ -216,6 +250,7 @@ struct NativeHooks::Impl {
   VtablePatch put_in_server;
   VtablePatch fully_connect;
   VtablePatch disconnect;
+  VtablePatch client_command;
 #endif
   std::atomic<std::uint64_t> frames{0};
   bool installed = false;
@@ -226,6 +261,7 @@ NativeHooks::NativeHooks() : impl_(std::make_unique<Impl>()) {}
 NativeHooks::~NativeHooks() {
 #if defined(_WIN32)
   // Restore all dispatch entries before clearing thunk state.
+  impl_->client_command.Reset();
   impl_->disconnect.Reset();
   impl_->fully_connect.Reset();
   impl_->put_in_server.Reset();
@@ -237,12 +273,14 @@ NativeHooks::~NativeHooks() {
   g_put_in_server_original = nullptr;
   g_fully_connect_original = nullptr;
   g_disconnect_original = nullptr;
+  g_client_command_original = nullptr;
   g_frame_callback = {};
   g_before_world = {};
   g_after_world = {};
   g_connected_callback = {};
   g_fully_connected_callback = {};
   g_disconnecting_callback = {};
+  g_command_callback = {};
   g_frame_count = nullptr;
 #endif
 }
@@ -250,7 +288,8 @@ NativeHooks::~NativeHooks() {
 bool NativeHooks::Install(FrameCallback on_frame, WorldCallback before_world,
                           WorldCallback after_world, ClientCallback on_connected,
                           ClientCallback on_fully_connected,
-                          DisconnectCallback on_disconnecting, std::string& error) {
+                          DisconnectCallback on_disconnecting, CommandCallback on_command,
+                          std::string& error) {
   if (impl_->installed) {
     error = "native hooks are already installed";
     return false;
@@ -266,6 +305,7 @@ bool NativeHooks::Install(FrameCallback on_frame, WorldCallback before_world,
   constexpr std::size_t kPutInServerSlot = 13;
   constexpr std::size_t kFullyConnectSlot = 15;
   constexpr std::size_t kDisconnectSlot = 16;
+  constexpr std::size_t kClientCommandSlot = 17;
 
   std::string interface_error;
   void* server = ResolveInterface(L"server.dll", "Source2Server001", interface_error);
@@ -324,12 +364,21 @@ bool NativeHooks::Install(FrameCallback on_frame, WorldCallback before_world,
   }
   g_disconnect_original = reinterpret_cast<DisconnectFn>(impl_->disconnect.Original());
 
+  if (!impl_->client_command.Install(clients, kClientCommandSlot,
+                                     reinterpret_cast<void*>(&ClientCommandThunk), error)) {
+    error = "ClientCommand hook: " + error;
+    return false;
+  }
+  g_client_command_original =
+      reinterpret_cast<ClientCommandFn>(impl_->client_command.Original());
+
   g_frame_callback = std::move(on_frame);
   g_before_world = std::move(before_world);
   g_after_world = std::move(after_world);
   g_connected_callback = std::move(on_connected);
   g_fully_connected_callback = std::move(on_fully_connected);
   g_disconnecting_callback = std::move(on_disconnecting);
+  g_command_callback = std::move(on_command);
   g_frame_count = &impl_->frames;
 
   impl_->installed = true;
