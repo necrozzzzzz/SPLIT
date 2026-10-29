@@ -34,12 +34,14 @@ std::string SafeMapName(std::string_view map) {
 }
 
 RecordingStats BuildStats(bool recording, const std::vector<RecordedTick>& ticks,
-                          double distance, double max_speed) {
+                          double distance, double max_speed,
+                          double duration_seconds) {
   RecordingStats stats;
   stats.recording = recording;
   stats.ticks = ticks.size();
   stats.distance = distance;
   stats.max_speed = max_speed;
+  stats.duration_seconds = duration_seconds;
   stats.ticks_with_input =
       static_cast<std::size_t>(std::count_if(ticks.begin(), ticks.end(),
                                             [](const RecordedTick& tick) {
@@ -59,13 +61,19 @@ void MovementRecorder::Start() {
   ticks_.clear();
   distance_ = 0.0;
   max_speed_ = 0.0;
+  duration_seconds_ = 0.0;
+  started_at_ = std::chrono::steady_clock::now();
   recording_ = true;
 }
 
 RecordingStats MovementRecorder::Stop() {
   std::scoped_lock lock(mutex_);
+  if (recording_) {
+    duration_seconds_ =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - started_at_).count();
+  }
   recording_ = false;
-  return BuildStats(false, ticks_, distance_, max_speed_);
+  return BuildStats(false, ticks_, distance_, max_speed_, duration_seconds_);
 }
 
 void MovementRecorder::Clear() {
@@ -74,6 +82,7 @@ void MovementRecorder::Clear() {
   ticks_.clear();
   distance_ = 0.0;
   max_speed_ = 0.0;
+  duration_seconds_ = 0.0;
 }
 
 void MovementRecorder::Push(std::uint64_t frame, const PawnSample& sample,
@@ -90,7 +99,12 @@ void MovementRecorder::Push(std::uint64_t frame, const PawnSample& sample,
 
 RecordingStats MovementRecorder::Stats() const {
   std::scoped_lock lock(mutex_);
-  return BuildStats(recording_, ticks_, distance_, max_speed_);
+  double duration = duration_seconds_;
+  if (recording_) {
+    duration =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - started_at_).count();
+  }
+  return BuildStats(recording_, ticks_, distance_, max_speed_, duration);
 }
 
 std::vector<InputSample> MovementRecorder::PlaybackInputs() const {
@@ -156,7 +170,7 @@ std::expected<std::filesystem::path, std::string> MovementRecorder::SaveJson(
     return std::unexpected("could not open route file for writing");
   }
 
-  const auto stats = BuildStats(false, ticks, distance, max_speed);
+  const auto stats = BuildStats(false, ticks, distance, max_speed, duration_seconds_);
   out << std::fixed << std::setprecision(4);
   out << "{\n";
   out << "  \"format\": \"split-movement-route\",\n";
