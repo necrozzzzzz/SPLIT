@@ -130,6 +130,19 @@
         var delta = label("RouteDelta");
         var reference = label("RouteReference");
         var instruction = label("RouteInstruction");
+        var retryKey = label("CtlRetryKey");
+        var watchKey = label("CtlWatchKey");
+        var stopKey = label("CtlStopKey");
+        var menuKey = label("CtlMenuKey");
+        var playlistsKey = label("CtlPlaylistsKey");
+
+        if (next.hotkeys) {
+            if (retryKey) retryKey.text = next.hotkeys.retry || "";
+            if (watchKey) watchKey.text = next.hotkeys.watch || "";
+            if (stopKey) stopKey.text = next.hotkeys.stop || "";
+            if (menuKey) menuKey.text = next.hotkeys.menu || "";
+            if (playlistsKey) playlistsKey.text = next.hotkeys.playlists || "";
+        }
 
         if (title) {
             var routeName = (next.routeName || "Recorded Route").toUpperCase();
