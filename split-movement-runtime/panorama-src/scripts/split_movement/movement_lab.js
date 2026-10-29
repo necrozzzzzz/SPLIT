@@ -9,6 +9,9 @@
     var parts = null;
     var lastTitle = "";
     var acked = false;
+    var hotkeysBound = false;
+    var lastDrillGeneration = -1;
+    var feedbackToken = 0;
 
     function findGameHud(panel) {
         for (var at = panel; at; at = at.GetParent()) {
@@ -49,12 +52,46 @@
         if (panel) panel.style.visibility = visible ? "visible" : "collapse";
     }
 
+    function bindFreestyleHotkeys() {
+        if (hotkeysBound) return;
+        try {
+            $.DispatchEvent("CitadelConCommand", "bind ] split_drill_save");
+            $.DispatchEvent("CitadelConCommand", "bind [ split_drill_return");
+            hotkeysBound = true;
+            $.Msg("[SPLIT][Panorama] Freestyle drill hotkeys bound: ] save / [ return");
+        } catch (error) {
+            $.Msg("[SPLIT][Panorama] could not bind drill hotkeys: " + error);
+        }
+    }
+
+    function showFeedback(text) {
+        var feedback = label("SplitHudFeedback");
+        if (!feedback) return;
+        feedbackToken++;
+        var token = feedbackToken;
+        feedback.text = text;
+        feedback.style.visibility = "visible";
+        $.Schedule(1.25, function () {
+            if (token === feedbackToken && feedback && feedback.IsValid()) {
+                feedback.style.visibility = "collapse";
+            }
+        });
+    }
+
+    function signedDelta(seconds) {
+        if (typeof seconds !== "number" || !isFinite(seconds)) return "";
+        return (seconds > 0 ? "+" : "") + seconds.toFixed(3);
+    }
+
     function applyState(next) {
         if (next.active !== true) {
             if (root && root.IsValid()) root.DeleteAsync(0);
             root = null;
+            hotkeysBound = false;
             return;
         }
+
+        bindFreestyleHotkeys();
 
         var hud = ensureHud();
         if (!hud) return;
@@ -65,6 +102,8 @@
         var split = label("SplitHudSplit");
         var rec = label("SplitHudRec");
         var assists = label("SplitHudAssists");
+        var delta = label("SplitHudDelta");
+        var drillHint = label("SplitHudDrillHint");
 
         var phase = next.racePhase || "idle";
         var racing = phase === "armed" || phase === "running" || phase === "finished";
@@ -72,7 +111,7 @@
         if (status) {
             status.text = phase === "armed" ? "ROUTE ARMED" :
                           phase === "running" ? "ROUTE" :
-                          phase === "finished" ? "FINISHED" :
+                          phase === "finished" ? (next.lastWasPb ? "NEW PB" : "FINISHED") :
                           next.recording ? "RECORDING ROUTE" :
                           "MOVEMENT LAB";
         }
@@ -86,6 +125,12 @@
                 : "PB  " + formatTime(next.personalBestSeconds);
         }
         setVisible(pb, racing);
+
+        if (delta) {
+            delta.text = next.lastDeltaSeconds == null ? "" :
+                (next.lastWasPb ? "PB  " : "Δ  ") + signedDelta(next.lastDeltaSeconds);
+        }
+        setVisible(delta, phase === "finished" && next.lastDeltaSeconds != null);
 
         if (split) {
             var total = Number(next.checkpointCount || 0);
@@ -102,6 +147,22 @@
         if (next.ammo) activeAssists.push("∞ AMMO");
         if (assists) assists.text = activeAssists.join("   ·   ");
         setVisible(assists, activeAssists.length > 0);
+
+        if (drillHint) {
+            drillHint.text = next.hasDrillPosition
+                ? "] SAVE    [ RETURN"
+                : "] SAVE POSITION";
+        }
+
+        var generation = Number(next.drillGeneration || 0);
+        if (generation !== lastDrillGeneration) {
+            if (lastDrillGeneration >= 0) {
+                if (next.drillFeedback === "saved") showFeedback("POSITION SAVED");
+                else if (next.drillFeedback === "returned") showFeedback("RETURNED");
+                else if (next.drillFeedback === "empty") showFeedback("NO POSITION SAVED");
+            }
+            lastDrillGeneration = generation;
+        }
     }
 
     function unpack(text) {
