@@ -77,59 +77,59 @@
             return;
         }
 
-        var hud = ensureHud();
-        if (!hud) return;
-
-        var status = label("SplitHudStatus");
-        var timer = label("SplitHudTimer");
-        var pb = label("SplitHudPb");
-        var split = label("SplitHudSplit");
-        var rec = label("SplitHudRec");
-        var assists = label("SplitHudAssists");
-        var delta = label("SplitHudDelta");
+        ensureHud();
 
         var phase = next.racePhase || "idle";
-        var racing = phase === "armed" || phase === "running" || phase === "finished";
+        var title = label("RouteTitle");
+        var you = label("RouteYou");
+        var delta = label("RouteDelta");
+        var reference = label("RouteReference");
+        var instruction = label("RouteInstruction");
 
-        if (status) {
-            status.text = phase === "armed" ? "ROUTE ARMED" :
-                          phase === "running" ? "ROUTE" :
-                          phase === "finished" ? (next.lastWasPb ? "NEW PB" : "FINISHED") :
-                          next.recording ? "RECORDING ROUTE" :
-                          "MOVEMENT LAB";
+        if (title) {
+            var routeName = (next.routeName || "Recorded Route").toUpperCase();
+            var difficulty = (next.difficulty || "Unrated").toUpperCase();
+            title.text = routeName + " · " + difficulty;
         }
 
-        if (timer) timer.text = formatTime(next.elapsedSeconds || 0);
-        setVisible(timer, racing);
-
-        if (pb) {
-            pb.text = next.personalBestSeconds == null
-                ? "PB  --:--.---"
-                : "PB  " + formatTime(next.personalBestSeconds);
+        if (you) {
+            you.text = phase === "running" || phase === "finished"
+                ? Number(next.elapsedSeconds || 0).toFixed(2)
+                : "0.00";
         }
-        setVisible(pb, racing);
+
+        if (reference) {
+            reference.text = typeof next.referenceSeconds === "number"
+                ? Number(next.referenceSeconds).toFixed(2)
+                : "—";
+        }
 
         if (delta) {
-            delta.text = next.lastDeltaSeconds == null ? "" :
-                (next.lastWasPb ? "PB  " : "Δ  ") + signedDelta(next.lastDeltaSeconds);
+            if (phase === "armed") {
+                delta.text = "READY";
+                delta.style.color = "#f06a64";
+            } else if (phase === "running" && typeof next.referenceSeconds === "number") {
+                var runningDelta = Number(next.elapsedSeconds || 0) - Number(next.referenceSeconds);
+                delta.text = (runningDelta > 0 ? "+" : "") + runningDelta.toFixed(2);
+                delta.style.color = runningDelta <= 0 ? "#55d79a" : "#f06a64";
+            } else if (phase === "finished" && typeof next.referenceSeconds === "number") {
+                var finishDelta = Number(next.elapsedSeconds || 0) - Number(next.referenceSeconds);
+                delta.text = (finishDelta > 0 ? "+" : "") + finishDelta.toFixed(2);
+                delta.style.color = finishDelta <= 0 ? "#55d79a" : "#f06a64";
+            } else {
+                delta.text = "—";
+                delta.style.color = "#f06a64";
+            }
         }
-        setVisible(delta, phase === "finished" && next.lastDeltaSeconds != null);
 
-        if (split) {
-            var total = Number(next.checkpointCount || 0);
-            var current = Number(next.nextCheckpoint || 0);
-            split.text = total > 0 ? ("CHECKPOINT  " + current + " / " + total) : "";
+        if (instruction) {
+            instruction.text = phase === "armed" ? "Leave the start to go" :
+                               phase === "running" ? "" :
+                               phase === "finished" ? "Run finished" :
+                               next.hasRoute ? "Go to the start" :
+                               "Record a route to begin";
+            instruction.style.visibility = instruction.text ? "visible" : "collapse";
         }
-        setVisible(split, racing && Number(next.checkpointCount || 0) > 0);
-
-        setVisible(rec, next.recording === true);
-
-        var activeAssists = [];
-        if (next.stamina) activeAssists.push("∞ STAMINA");
-        if (next.cooldowns) activeAssists.push("NO COOLDOWN");
-        if (next.ammo) activeAssists.push("∞ AMMO");
-        if (assists) assists.text = activeAssists.join("   ·   ");
-        setVisible(assists, activeAssists.length > 0);
 
         var generation = Number(next.drillGeneration || 0);
         if (generation !== lastDrillGeneration) {
