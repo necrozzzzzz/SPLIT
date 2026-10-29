@@ -1912,9 +1912,9 @@ int main(int argc, char** argv) {
 
             if (!practice_souls_granted) {
               std::string setup_error;
-              if (pawn_probe.GrantPracticeSouls(slot, 999400, setup_error)) {
+              if (pawn_probe.GrantPracticeSouls(slot, 1000000, setup_error)) {
                 practice_souls_granted = true;
-                std::cout << "[SPLIT][Practice] player setup applied\n";
+                std::cout << "[SPLIT][Practice] native starting souls verified at >= 1000000\n";
               } else if (!setup_error.empty()) {
                 std::cout << "[SPLIT][Practice] player setup unavailable: "
                           << setup_error << "\n";
