@@ -444,18 +444,40 @@ std::vector<TechniquePrimitive> BuildTechniquePrimitives(
 
       const TechniquePrimitive* dash = nullptr;
       bool native_slide_nearby = false;
+      bool slide_already_started_for_dash = false;
       for (auto it = out.rbegin(); it != out.rend(); ++it) {
         if (it->frame > primitive.frame) continue;
         if (it->frame < from) break;
-        if (it->kind == "groundDash" && !dash) dash = &*it;
-        if (it->kind == "slideStart" &&
-            primitive.frame >= it->frame &&
-            primitive.frame - it->frame <= 2) {
-          native_slide_nearby = true;
+
+        if (it->kind == "groundDash") {
+          if (!dash) dash = &*it;
+          break;
+        }
+
+        if (it->kind == "slideStart") {
+          slide_already_started_for_dash = true;
+          if (primitive.frame >= it->frame &&
+              primitive.frame - it->frame <= 2) {
+            native_slide_nearby = true;
+          }
+        }
+
+        if (it->kind == "slideEnd" || it->kind == "touchdown") {
+          slide_already_started_for_dash = false;
         }
       }
 
-      if (dash && !native_slide_nearby) {
+      const bool inferred_for_same_dash = std::any_of(
+          inferred.begin(), inferred.end(),
+          [&](const TechniquePrimitive& candidate) {
+            return candidate.kind == "slideStart" &&
+                   candidate.frame >= from &&
+                   candidate.frame <= primitive.frame;
+          });
+
+      if (dash && !native_slide_nearby &&
+          !slide_already_started_for_dash &&
+          !inferred_for_same_dash) {
         inferred.push_back({"slideStart", primitive.frame,
                             primitive.position, primitive.velocity});
       }
