@@ -1413,7 +1413,7 @@ int main(int argc, char** argv) {
   split::movement::MovementRecorder race_run_recorder;
   std::atomic<int> human_slot{-1};
   bool pawn_announced = false;
-  bool practice_souls_granted = false;
+  bool practice_shop_ready = false;
   int pre_spawn_cleanup_passes_remaining = 0;
   std::uint64_t next_pre_spawn_cleanup_frame = 0;
   bool steering_was_active = false;
@@ -1910,14 +1910,36 @@ int main(int argc, char** argv) {
                         << " handle=0x" << std::hex << sample->pawn_handle << std::dec << "\n";
             }
 
-            if (!practice_souls_granted) {
-              std::string setup_error;
-              if (pawn_probe.GrantPracticeSouls(slot, 1000000, setup_error)) {
-                practice_souls_granted = true;
-                std::cout << "[SPLIT][Practice] native starting souls verified at >= 1000000\n";
-              } else if (!setup_error.empty()) {
-                std::cout << "[SPLIT][Practice] player setup unavailable: "
-                          << setup_error << "\n";
+            if (!practice_shop_ready) {
+              // Use Deadlock's own Hero Testing purchase path rather than
+              // inflating CCitadelPlayerPawn::m_nCurrencies. Modlock exposes
+              // citadel_hero_testing_money as the buffer used for item
+              // purchases, and Deadlock's stock Hero Testing HUD drives
+              // citadel_hero_testing_infinite_money.
+              //
+              // Crucially this is enabled only after Observe() proved the hero
+              // pawn is already live. Enabling hero testing in the launch
+              // command previously interfered with SPLIT's normal spawn flow.
+              static constexpr std::array<std::string_view, 4> kPracticeShopCommands{
+                  "citadel_hero_testing_enabled 1",
+                  "citadel_hero_testing_money 1000000",
+                  "citadel_hero_testing_infinite_money 1",
+                  "citadel_allow_purchasing_anywhere 1",
+              };
+
+              bool shop_ok = true;
+              for (const auto command : kPracticeShopCommands) {
+                std::string command_error;
+                if (!split::movement::RunServerCommand(command, command_error)) {
+                  shop_ok = false;
+                  std::cout << "[SPLIT][Practice] shop command failed: "
+                            << command << " (" << command_error << ")\n";
+                }
+              }
+              if (shop_ok) {
+                practice_shop_ready = true;
+                std::cout << "[SPLIT][Practice] Deadlock Hero Testing shop enabled "
+                             "(infinite money + buy anywhere)\n";
               }
             }
 
@@ -2531,7 +2553,7 @@ int main(int argc, char** argv) {
             visual_renderer.Clear();
             current_map.assign(map);
             pawn_announced = false;
-            practice_souls_granted = false;
+            practice_shop_ready = false;
             pre_spawn_cleanup_passes_remaining = 0;
             next_pre_spawn_cleanup_frame = 0;
             std::cout << "[SPLIT][Movement] loading world: " << map << "\n";
@@ -2567,7 +2589,7 @@ int main(int argc, char** argv) {
             if (human_slot.load(std::memory_order_relaxed) == slot) {
               human_slot.store(-1, std::memory_order_relaxed);
               pawn_announced = false;
-              practice_souls_granted = false;
+              practice_shop_ready = false;
               pre_spawn_cleanup_passes_remaining = 0;
               next_pre_spawn_cleanup_frame = 0;
             }
